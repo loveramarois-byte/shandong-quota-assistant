@@ -41,6 +41,7 @@ data/*.sqlite-*
 tools/*.exe
 tools/7zip/
 tools/InnoSetup/
+tools/Tesseract-OCR/
 assets/fonts/_inter-4.1/
 assets/fonts/Inter-4.1.zip
 

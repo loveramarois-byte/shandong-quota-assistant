@@ -14,7 +14,7 @@ from typing import Any
 from .paths import sessions_dir
 
 SESSION_SCHEMA_VERSION = 2
-CATALOG_BUILD_ID = "legacy-v3-06a9df5102a9"
+CATALOG_BUILD_ID = "evidence-v4-84fe8cb58323"
 PROMPT_VERSION = "quota-assistant-v2"
 _LAST_UPDATED_AT = 0.0
 _WRITE_LOCK = threading.RLock()
@@ -84,6 +84,18 @@ def _json_safe_item(item: dict[str, Any]) -> dict[str, Any]:
         if key not in {"text", "metadata", "source_path"}
         and isinstance(value, (str, int, float, bool, list, dict, type(None)))
     }
+
+
+def _json_safe_validation(validation: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep evidence status in history without persisting machine-specific paths."""
+    if not isinstance(validation, dict):
+        return validation
+    cleaned = json.loads(json.dumps(validation, ensure_ascii=False))
+    for key in ("evidence", "located_references", "unlocated_references"):
+        for item in cleaned.get(key) or []:
+            if isinstance(item, dict):
+                item.pop("source_path", None)
+    return cleaned
 
 
 def serialize_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -199,7 +211,7 @@ def finish_ai_attempt(
     attempt.update({
         "status": status,
         "response": response,
-        "validation": validation,
+        "validation": _json_safe_validation(validation),
         "completed_at": _next_updated_at(),
     })
     turn["status"] = "completed" if status == "completed" else status
@@ -434,7 +446,19 @@ def export_session_markdown(session: dict[str, Any]) -> str:
                     lines.append(f"- {item.get('kind_label', '条目')}：{item.get('code', '')} {item.get('title', '')} [{item.get('record_id', '无记录ID')}]")
         attempts = turn.get("ai_attempts") or []
         if attempts and attempts[-1].get("response"):
-            lines.extend(["", "### AI 辅助解释（未核验证据链）", "", str(attempts[-1]["response"])])
+            attempt = attempts[-1]
+            validation = attempt.get("validation") if isinstance(attempt.get("validation"), dict) else {}
+            if "evidence_total" not in validation and isinstance(turn.get("retrieval_snapshot"), dict):
+                try:
+                    from .ai_validate import validate_ai_answer
+
+                    validation = validate_ai_answer(str(attempt["response"]), turn["retrieval_snapshot"])
+                except (FileNotFoundError, OSError):
+                    validation = {}
+            located = int(validation.get("evidence_located") or 0)
+            total = int(validation.get("evidence_total") or 0)
+            evidence_label = f"原书证据已定位 {located}/{total}" if total else "未引用可定位原书证据"
+            lines.extend(["", f"### AI 辅助解释（{evidence_label}）", "", str(attempt["response"])])
     for warning in session.get("migration_warnings") or []:
         lines.extend(["", f"> 迁移提示：{warning}"])
     lines.extend(["", "---", "本记录由山东定额助手导出；候选和 AI 解释不等于正式计价成果，须回到原书和项目依据复核。"])

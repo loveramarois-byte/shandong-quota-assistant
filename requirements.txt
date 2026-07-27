@@ -6,4 +6,7 @@ pycairo==1.29.0
 rlPyCairo==0.4.0
 lottie==0.7.2
 jieba==0.42.1
+pypdf==6.5.0
+PyMuPDF==1.26.5
+pytesseract==0.3.13
 pyinstaller==6.21.0

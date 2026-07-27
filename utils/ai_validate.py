@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .evidence import hydrate_result_sources, reference_evidence
 from .formatting import normalize_unit
 
 # Quota sub-item codes such as 1-2-9 / 10-4-1-23; bill codes are 9-12 digits.
@@ -145,12 +146,8 @@ def _claim_status(code: str, line: str, result: dict[str, Any] | None) -> tuple[
 
 
 def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Validate AI claims against this result snapshot, not the whole catalog.
-
-    Evidence-registry support is intentionally separate. Until it exists, a
-    matched ``[R#]`` is only a local-candidate pointer and must never be shown
-    as a verified source claim.
-    """
+    """Validate AI claims and resolve each cited candidate to its original page."""
+    result = hydrate_result_sources(result)
     codes = extract_codes(ai_text)
     statuses: dict[str, str] = {}
     claims: list[dict[str, Any]] = []
@@ -171,8 +168,30 @@ def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> di
     unverified = sorted(code for code, status in statuses.items() if status != "candidate")
     uncited = find_uncited_lines(ai_text)
     references = {f"R{number}" for number in _REFERENCE_RE.findall(ai_text)}
-    known_references = set(_reference_index(result))
+    reference_index = _reference_index(result)
+    known_references = set(reference_index)
     invalid_references = sorted(references - known_references)
+    evidence = [
+        reference_evidence(reference, reference_index[reference][1])
+        for reference in sorted(references & known_references, key=lambda value: int(value[1:]))
+    ]
+    evidence.extend({
+        "reference": reference,
+        "record_id": None,
+        "code": None,
+        "title": None,
+        "source_path": "",
+        "source_name": "",
+        "pdf_page": None,
+        "status": "invalid_reference",
+        "reason": "本轮候选中不存在该引用",
+        "located": False,
+    } for reference in invalid_references)
+    evidence.sort(key=lambda item: int(str(item["reference"])[1:]))
+    located_references = [item for item in evidence if item["located"]]
+    unlocated_references = [item for item in evidence if not item["located"]]
+    evidence_total = len(evidence)
+    evidence_located = len(located_references)
     warnings: list[str] = []
     if unverified:
         warnings.append("AI 提到了未能在本轮筛选口径内核验的编号：" + "、".join(unverified) + "。这些编号不作为建议候选，请以本地列表和原书为准。")
@@ -180,7 +199,14 @@ def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> di
         warnings.append("AI 使用了本轮结果中不存在的资料编号：" + "、".join(invalid_references) + "。")
     if uncited:
         warnings.append("AI 部分关键结论未标注本地候选编号，属于模型推断，不可直接作为套项依据。")
-    warnings.append("当前资料库尚未建立可定位证据链；[R#] 仅指向本轮本地候选，所有 AI 结论均为“未核验”。")
+    missing_sources = [item for item in unlocated_references if item["status"] != "invalid_reference"]
+    if missing_sources:
+        missing = "、".join(f"[{item['reference']}]" for item in missing_sources)
+        if evidence_located:
+            warnings.append(f"原书证据已定位 {evidence_located}/{evidence_total}；{missing} 尚未精确定位，需人工复核。")
+        else:
+            warnings.append(f"本回答引用的原书证据尚未精确定位：{missing}。")
+    evidence_verified = bool(evidence_total and evidence_located == evidence_total)
     return {
         "codes": statuses,
         "claims": claims,
@@ -189,5 +215,11 @@ def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> di
         "invalid_references": invalid_references,
         "warnings": warnings,
         "referenced": bool(references & known_references),
-        "evidence_verified": False,
+        "evidence": evidence,
+        "located_references": located_references,
+        "unlocated_references": unlocated_references,
+        "evidence_located": evidence_located,
+        "evidence_total": evidence_total,
+        "evidence_status": "verified" if evidence_verified else ("partial" if evidence_located else "unlocated"),
+        "evidence_verified": evidence_verified,
     }

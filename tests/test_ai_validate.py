@@ -44,7 +44,10 @@ class ValidateAnswerTests(unittest.TestCase):
         self.assertIn(code, validation["codes"])
         self.assertEqual(validation["codes"][code], "candidate")
         self.assertEqual(validation["claims"][0]["record_id"], item["record_id"])
-        self.assertFalse(validation["evidence_verified"])
+        self.assertTrue(validation["evidence_verified"])
+        self.assertEqual(validation["evidence_located"], 1)
+        self.assertEqual(validation["evidence_total"], 1)
+        self.assertEqual(validation["evidence"][0]["reference"], item["reference"])
 
     def test_fabricated_code_is_flagged_unverified(self):
         validation = validate_ai_answer("主选：0-0-0 不存在的定额子目 [R1]。", self.result)

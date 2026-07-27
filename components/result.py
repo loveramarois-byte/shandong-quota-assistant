@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import os
 import re
 import tkinter as tk
-from pathlib import Path, PureWindowsPath
+from pathlib import PureWindowsPath
 
 import customtkinter as ctk
 
 from themes.tokens import ThemeTokens
+from utils.evidence import open_source_page, resolve_source_path
 from utils.formatting import discipline_label, normalize_unit
 from utils.paths import resource_path
 from utils.svg import svg_image
@@ -33,15 +33,6 @@ def _source_name(value: str | None) -> str:
     if not value:
         return "来源文件未挂页"
     return PureWindowsPath(str(value).replace("/", "\\")).name or "来源文件未挂页"
-
-
-def _source_exists(value: str | None) -> bool:
-    if not value:
-        return False
-    try:
-        return Path(str(value)).exists()
-    except OSError:
-        return False
 
 
 def _display_text(value: object, limit: int = 900) -> str:
@@ -249,7 +240,18 @@ class CandidateRow(ctk.CTkFrame):
             edition_text = f"清单 {self.item.get('standard_edition') or self.item.get('edition') or '未标注'} · 定额 {self.item.get('quota_edition') or '未标注'}"
         else:
             edition_text = f"定额 {self.item.get('edition') or '未标注'}"
-        details.append(("依据", f"{edition_text} · {_source_name(self.item.get('source_path'))}"))
+        source_path = self.item.get("source_path")
+        source_page = self.item.get("pdf_page")
+        resolved_source = resolve_source_path(source_path) if source_path else None
+        if resolved_source and source_page:
+            source_detail = f"{_source_name(str(resolved_source))} · 第 {source_page} 页 · 已定位"
+        elif source_path and source_page:
+            source_detail = f"{_source_name(str(source_path))} · 第 {source_page} 页 · 来源文件未安装"
+        elif resolved_source:
+            source_detail = f"{_source_name(str(resolved_source))} · 页码待补"
+        else:
+            source_detail = "原书页待补"
+        details.append(("原书依据", f"{edition_text} · {source_detail}"))
         for name, value in details:
             value = _display_text(value)
             if not value:
@@ -262,20 +264,16 @@ class CandidateRow(ctk.CTkFrame):
             value_label = ctk.CTkLabel(row, text=value, text_color=c.text, font=self.tokens.font(self.tokens.typography.meta), anchor="nw", justify="left", wraplength=400)
             value_label.grid(row=0, column=1, sticky="ew")
             self._detail_labels.extend((label, value_label))
-        source_path = self.item.get("source_path")
-        if _source_exists(source_path):
+        if resolved_source:
             open_row = ctk.CTkFrame(self._detail_frame, fg_color="transparent")
             open_row.pack(fill="x", padx=14, pady=(0, 10))
             page = self.item.get("pdf_page")
             caption = f"打开来源（第 {page} 页）" if page else "打开来源文件"
-            open_button = DSButton(open_row, tokens=self.tokens, text=caption, variant="secondary", width=170, height=30, command=lambda: self._open_source(str(source_path)))
+            open_button = DSButton(open_row, tokens=self.tokens, text=caption, variant="secondary", width=170, height=30, command=lambda: self._open_source(str(resolved_source), page))
             open_button.pack(anchor="w")
 
-    def _open_source(self, path: str) -> None:
-        try:
-            os.startfile(path)  # type: ignore[attr-defined]
-        except (OSError, AttributeError):
-            pass
+    def _open_source(self, path: str, page: object = None) -> None:
+        open_source_page(path, page)
 
     def _ensure_details(self) -> None:
         if self._detail_frame is not None:

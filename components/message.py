@@ -5,6 +5,7 @@ import re
 import customtkinter as ctk
 
 from themes.tokens import ThemeTokens
+from utils.evidence import open_source_page
 from .button import DSButton
 from .result import ResultPanel, WarningStrip
 from .scrollable import PointerScrollableFrame
@@ -260,9 +261,42 @@ class AiAnswerCard(ctk.CTkFrame):
         references = ai_references(self.text)
         self.footer = ctk.CTkFrame(self.shell, fg_color="transparent")
         self.footer.pack(fill="x", padx=18, pady=(4, 13))
-        reference_text = "本地候选索引  " + " · ".join(f"[{ref}]" for ref in references) + " · 证据链未核验" if references else "未标注本地候选索引，不能直接作为套项依据"
-        self.reference_label = ctk.CTkLabel(self.footer, text=reference_text, text_color=c.warning, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        located = int(self.validation.get("evidence_located") or 0)
+        total = int(self.validation.get("evidence_total") or 0)
+        status = str(self.validation.get("evidence_status") or "unlocated")
+        if references and total:
+            reference_text = f"原书证据 {located}/{total} 已定位"
+        elif references:
+            reference_text = "本轮引用尚无可定位原书页"
+        else:
+            reference_text = "未标注本地候选索引，不能直接作为套项依据"
+        reference_color = c.success if status == "verified" else c.warning
+        self.reference_label = ctk.CTkLabel(self.footer, text=reference_text, text_color=reference_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
         self.reference_label.pack(anchor="w")
+        self.evidence_actions = ctk.CTkFrame(self.footer, fg_color="transparent")
+        self.evidence_buttons: list[DSButton] = []
+        action_row = None
+        for item in self.validation.get("evidence") or []:
+            if not item.get("located"):
+                continue
+            if action_row is None or len(self.evidence_buttons) % 3 == 0:
+                action_row = ctk.CTkFrame(self.evidence_actions, fg_color="transparent")
+                action_row.pack(fill="x")
+            reference = str(item.get("reference") or "")
+            page = item.get("pdf_page")
+            button = DSButton(
+                action_row,
+                tokens=self.tokens,
+                text=f"[{reference}] 第 {page} 页",
+                variant="ghost",
+                width=104,
+                height=28,
+                command=lambda current=item: open_source_page(current.get("source_path"), current.get("pdf_page")),
+            )
+            button.pack(side="left", padx=(0, 6), pady=(5, 0))
+            self.evidence_buttons.append(button)
+        if self.evidence_actions.winfo_children():
+            self.evidence_actions.pack(fill="x")
         self.footnote = ctk.CTkLabel(self.footer, text="模型负责解释，最终结论以本地资料、原书和项目条件为准。", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=self._wraplength)
         self.footnote.pack(fill="x", pady=(4, 0))
 
@@ -299,8 +333,13 @@ class AiAnswerCard(ctk.CTkFrame):
         for divider in self._section_dividers:
             divider.configure(fg_color=c.border)
         self.footer.configure(fg_color="transparent")
-        references = ai_references(self.text)
-        self.reference_label.configure(text_color=c.warning, font=tokens.font(tokens.typography.caption, "semibold"))
+        self.evidence_actions.configure(fg_color="transparent")
+        status = str(self.validation.get("evidence_status") or "unlocated")
+        self.reference_label.configure(text_color=c.success if status == "verified" else c.warning, font=tokens.font(tokens.typography.caption, "semibold"))
+        for row in self.evidence_actions.winfo_children():
+            row.configure(fg_color="transparent")
+        for button in self.evidence_buttons:
+            button.apply_theme(tokens)
         self.footnote.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
         if self.warning_frame is not None:
             self.warning_frame.configure(fg_color=c.warning_soft)
@@ -395,6 +434,10 @@ class MessageFeed(PointerScrollableFrame):
             self._parent_canvas.yview_moveto(1.0)
         except Exception:
             pass
+
+    def scroll_to_end(self, delay_ms: int = 0) -> None:
+        """Scroll after Tk has completed deferred geometry for restored history."""
+        self.after(max(0, int(delay_ms)), self._scroll_end)
 
     def _scroll_to_widget(self, widget) -> None:
         try:

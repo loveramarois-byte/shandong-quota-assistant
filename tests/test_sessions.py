@@ -100,6 +100,30 @@ class SessionStoreTests(unittest.TestCase):
         self.assertNotIn("metadata", slim["quotas"][0])
         self.assertNotIn("source_path", slim["quotas"][0])
 
+    def test_ai_validation_does_not_persist_machine_specific_source_paths(self):
+        session = self._create("证据路径测试")
+        turn = sessions.create_turn(session, "测试", quota_edition="2025", standard_edition="2024", discipline="building")
+        sessions.finish_ai_attempt(
+            session,
+            turn["turn_id"],
+            request_id=1,
+            status="completed",
+            response="回答 [R1]",
+            validation={
+                "evidence_verified": True,
+                "evidence_located": 1,
+                "evidence_total": 1,
+                "evidence": [{"reference": "R1", "source_path": r"D:\private\source.pdf", "pdf_page": 9}],
+                "located_references": [{"reference": "R1", "source_path": r"D:\private\source.pdf"}],
+            },
+        )
+
+        saved = turn["ai_attempts"][-1]["validation"]
+
+        self.assertEqual(saved["evidence_located"], 1)
+        self.assertNotIn("source_path", saved["evidence"][0])
+        self.assertNotIn("source_path", saved["located_references"][0])
+
     def test_v1_migration_preserves_original_backup_and_unpaired_messages(self):
         session_id = "legacy123"
         source_path = self.tmp_dir / f"{session_id}.json"

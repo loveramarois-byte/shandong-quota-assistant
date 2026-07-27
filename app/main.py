@@ -28,6 +28,7 @@ from utils.ai_providers import provider_config
 from utils.ai_validate import validate_ai_answer
 from utils.catalog import CatalogSearchCancelled, build_ai_prompt, library_stats, search_catalog, warm_search
 from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch
+from utils.evidence import hydrate_result_sources
 from utils.fonts import load_inter_fonts
 from utils.logging_setup import log_exception, setup_logging
 from utils.paths import APP_VERSION, catalog_manifest_path, database_path, exports_dir, logs_dir, resource_path
@@ -376,7 +377,8 @@ class QuotaApp(ctk.CTk):
             query = str(turn.get("query") or "")
             if query:
                 self.feed.add("user", query)
-            result = turn.get("retrieval_snapshot")
+            stored_result = turn.get("retrieval_snapshot")
+            result = hydrate_result_sources(stored_result) if isinstance(stored_result, dict) else stored_result
             panel = None
             if isinstance(result, dict):
                 panel = self.feed.add_result(
@@ -398,7 +400,8 @@ class QuotaApp(ctk.CTk):
             completed_attempt = next((attempt for attempt in reversed(attempts) if attempt.get("response")), None)
             if completed_attempt:
                 ai_text = str(completed_attempt.get("response") or "")
-                self.feed.add_ai_answer(ai_text, completed_attempt.get("validation"), on_copy=self._copy_text)
+                validation = validate_ai_answer(ai_text, result) if isinstance(result, dict) else completed_attempt.get("validation")
+                self.feed.add_ai_answer(ai_text, validation, on_copy=self._copy_text)
                 self._last_ai_text = ai_text
             self._active_turn_id = turn_id or self._active_turn_id
         latest_result = (turns[-1].get("retrieval_snapshot") if turns else None) or {}
@@ -408,6 +411,7 @@ class QuotaApp(ctk.CTk):
             self.standard_edition.set(str(latest_result["standard_edition"]))
         self._set_status("本地库就绪 · 历史分析已恢复")
         self.sidebar.mark_active(session_id)
+        self.feed.scroll_to_end(120)
         self._refresh_task_controls()
         return True
 
@@ -601,7 +605,7 @@ class QuotaApp(ctk.CTk):
             self._show_toast("该轮 AI 仍在运行", "info")
             return
         description = str(turn.get("query") or "")
-        result = turn["retrieval_snapshot"]
+        result = hydrate_result_sources(turn["retrieval_snapshot"]) or turn["retrieval_snapshot"]
         ai_enabled = bool(self.settings.get("ai_enabled", False))
         if not ai_enabled:
             self._show_toast("请先在设置中启用 AI", "info")

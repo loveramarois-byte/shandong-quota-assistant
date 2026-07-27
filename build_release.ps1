@@ -159,6 +159,32 @@ New-Item -ItemType Directory -Path (Join-Path $bundleRoot "manifests") -Force | 
 Copy-Item -LiteralPath $catalogManifestPath -Destination (Join-Path $bundleRoot "manifests\catalog-baseline.json")
 Copy-Item -LiteralPath (Join-Path $projectRoot "使用说明.txt") -Destination $bundleRoot
 
+$evidenceSourceCount = 0
+if ($AuthorizedInternalDistribution) {
+    $sourceListPath = Join-Path $workRoot "evidence-sources.json"
+    & $python -c 'import json,sqlite3,sys; c=sqlite3.connect(sys.argv[1]); p=[r[0] for r in c.execute("select distinct source_path from chunks where source_path is not null and length(source_path)>0 order by source_path")]; c.close(); open(sys.argv[2],"w",encoding="utf-8").write(json.dumps(p,ensure_ascii=False))' $database $sourceListPath
+    $registeredSources = @(Get-Content -LiteralPath $sourceListPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0 -or $registeredSources.Count -eq 0) {
+        throw "未能读取原书证据文件清单"
+    }
+    $sourceBundle = Join-Path $bundleRoot "sources"
+    New-Item -ItemType Directory -Path $sourceBundle -Force | Out-Null
+    $seenNames = @{}
+    foreach ($registeredSource in $registeredSources) {
+        $sourcePath = [string]$registeredSource
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "原书证据文件缺失: $sourcePath"
+        }
+        $name = Split-Path -Leaf $sourcePath
+        if ($seenNames.ContainsKey($name.ToLowerInvariant())) {
+            throw "原书证据文件重名，不能平铺打包: $name"
+        }
+        $seenNames[$name.ToLowerInvariant()] = $true
+        Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $sourceBundle $name)
+        $evidenceSourceCount += 1
+    }
+}
+
 $portableExe = Join-Path $bundleRoot "山东定额助手.exe"
 if (-not (Test-Path -LiteralPath $portableExe)) { throw "便携版 EXE 未生成" }
 if ($requiresSigning) { Invoke-CodeSigning $portableExe }
@@ -169,6 +195,7 @@ $releaseNote = @"
 启动：双击“山东定额助手.exe”。
 本地检索只可用于已获授权的资料范围内的受控核验。
 AI 辅助解释默认关闭；启用前须确认施工描述和本地候选摘要的发送权限。
+内部授权安装包包含已登记原书资料，可在候选和 AI 引用中打开对应 PDF 页。
 "@
 Set-Content -LiteralPath (Join-Path $bundleRoot "发布说明.txt") -Value $releaseNote -Encoding UTF8
 if ($InternalEvaluation) {
@@ -223,6 +250,7 @@ $releaseManifest = [ordered]@{
         database_sha256 = Get-FileSha256 $stagedDatabase
         source_database_sha256 = Get-FileSha256 $database
         hardlinks_forbidden = $true
+        evidence_source_files = $evidenceSourceCount
     }
     gates = [ordered]@{
         unit_tests = "passed"
