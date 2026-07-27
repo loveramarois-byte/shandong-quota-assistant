@@ -1,0 +1,25 @@
+{
+  "captured_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "app_version": "0.5.5",
+  "catalog_build_id": "YOUR_CATALOG_BUILD_ID",
+  "catalog_schema_version": 3,
+  "sqlite_application_id": 0,
+  "database": {
+    "relative_path": "data/shandong_quota.sqlite",
+    "bytes": 0,
+    "sha256": "REPLACE_WITH_SHA256",
+    "source_is_hardlink": false,
+    "distribution_authorized": false,
+    "distribution_scope": "local_only",
+    "authorization_id": null,
+    "authorization_recorded_at": null
+  },
+  "counts": {
+    "quota_items": 0,
+    "bill_items": 0,
+    "bill_quota_links": 0
+  },
+  "limitations": [
+    "Example manifest only; no catalogue data is included in the repository."
+  ]
+}

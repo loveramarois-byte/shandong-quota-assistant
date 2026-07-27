@@ -1,0 +1,23 @@
+name: Feature request
+description: 提出功能或交互改进
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 需要解决的问题
+      description: 从具体工作场景出发，而不是只描述按钮或页面。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: 数据与隐私影响
+      description: 说明是否涉及本地资料、远程 AI 或导出。

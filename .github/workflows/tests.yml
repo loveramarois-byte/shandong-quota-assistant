@@ -1,0 +1,51 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  code-only:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Check dependency health
+        run: python -m pip check
+
+      - name: Compile source
+        run: python -m compileall -q run.py app components controllers themes utils tests
+
+      - name: Run code-only tests
+        run: >-
+          python -m unittest
+          tests.test_ai_providers
+          tests.test_analysis_state
+          tests.test_ccswitch
+          tests.test_design_system
+          tests.test_formatting
+          tests.test_layout
+          tests.test_message_format
+          tests.test_query_parse
+          tests.test_scroll
+          tests.test_secrets
+          tests.test_sessions
+          tests.test_settings_dialog_logic
+          tests.test_smoke
+          -v

@@ -1,0 +1,66 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+credentials.json
+settings.json
+*.key
+*.pem
+*.pfx
+
+# Generated build and release output
+build/
+dist/
+release/
+install-test-*/
+*.spec
+*.exe
+*.msi
+*.7z
+*.zip
+
+# Licensed catalogue material is never part of the public source repository
+data/*
+!data/README.md
+manifests/catalog-baseline.json
+data/*.sqlite
+data/*.sqlite-*
+*.db
+*.pdf
+*.PDF
+
+# Downloaded third-party distributions; keep only source-owned build helpers
+tools/*.exe
+tools/7zip/
+tools/InnoSetup/
+assets/fonts/_inter-4.1/
+assets/fonts/Inter-4.1.zip
+
+# Internal product and legal review records
+COST_ENGINEER_PRODUCT_AUDIT.md
+SOFTWARE_AUDIT.md
+工程造价师审计意见_给Codex优化.md
+使用说明.txt
+docs/REMEDIATION_STATUS.md
+
+# Local user state and diagnostics
+userdata/
+logs/
+exports/
+sessions/
+*.log
+
+# Editor and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+import time
+
+import customtkinter as ctk
+
+from themes.tokens import ThemeTokens
+from .button import DSButton
+from .scrollable import PointerScrollableFrame
+
+
+class SessionRow(ctk.CTkFrame):
+    def __init__(self, master, *, tokens: ThemeTokens, session_id: str, title: str, updated_at: float, on_select, **kwargs):
+        self.tokens = tokens
+        self.session_id = session_id
+        self.on_select = on_select
+        self._active = False
+        super().__init__(master, fg_color="transparent", corner_radius=6, **kwargs)
+        self.grid_columnconfigure(0, weight=1)
+        c = tokens.colors
+        self.title_label = ctk.CTkLabel(self, text=title[:26], text_color=c.text_secondary, font=tokens.font(tokens.typography.meta, "medium"), anchor="w", justify="left")
+        self.title_label.grid(row=0, column=0, padx=(10, 6), pady=(7, 0), sticky="ew")
+        date_text = time.strftime("%m-%d %H:%M", time.localtime(updated_at)) if updated_at else ""
+        self.date_label = ctk.CTkLabel(self, text=date_text, text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
+        self.date_label.grid(row=1, column=0, padx=(10, 6), pady=(0, 7), sticky="ew")
+        for widget in (self, self.title_label, self.date_label):
+            widget.bind("<Button-1>", self._clicked, add="+")
+            widget.bind("<Enter>", self._hover_in, add="+")
+            widget.bind("<Leave>", self._hover_out, add="+")
+
+    def _clicked(self, _event=None) -> None:
+        self.on_select(self.session_id)
+
+    def _hover_in(self, _event=None) -> None:
+        if not self._active:
+            self.configure(fg_color=self.tokens.colors.subtle)
+
+    def _hover_out(self, _event=None) -> None:
+        if not self._active:
+            self.configure(fg_color="transparent")
+
+    def set_active(self, active: bool) -> None:
+        self._active = active
+        c = self.tokens.colors
+        self.configure(fg_color=c.accent_soft if active else "transparent")
+        self.title_label.configure(text_color=c.accent if active else c.text_secondary)
+
+    def apply_theme(self, tokens: ThemeTokens) -> None:
+        self.tokens = tokens
+        c = tokens.colors
+        self.configure(fg_color=c.accent_soft if self._active else "transparent")
+        self.title_label.configure(text_color=c.accent if self._active else c.text_secondary, font=tokens.font(tokens.typography.meta, "medium"))
+        self.date_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
+
+
+class Sidebar(ctk.CTkFrame):
+    def __init__(self, master, *, tokens: ThemeTokens, on_new, on_select_session=None, on_rename_session=None, on_delete_session=None, on_open_settings=None, on_open_about=None, library_stats: dict[str, int | None] | None = None, app_version: str = "", new_image=None, **kwargs):
+        self.tokens = tokens
+        self.on_new = on_new
+        self.on_select_session = on_select_session or (lambda _sid: None)
+        self.on_rename_session = on_rename_session or (lambda _sid: None)
+        self.on_delete_session = on_delete_session or (lambda _sid: None)
+        self.on_open_settings = on_open_settings or (lambda: None)
+        self.on_open_about = on_open_about or (lambda: None)
+        self.library_stats = library_stats or {}
+        self.app_version = app_version
+        self._session_rows: list[SessionRow] = []
+        self._active_session_id: str | None = None
+        self.new_image = new_image
+        super().__init__(master, width=232, fg_color=tokens.colors.sidebar, corner_radius=0, **kwargs)
+        self.grid_propagate(False)
+        self._build()
+
+    def _build(self) -> None:
+        c = self.tokens.colors
+        self.grid_rowconfigure(3, weight=1)
+        self.brand = ctk.CTkFrame(self, fg_color="transparent", height=68)
+        self.brand.grid(row=0, column=0, sticky="ew", padx=16, pady=(4, 0))
+        self.brand.grid_propagate(False)
+        self.mark = ctk.CTkLabel(self.brand, text="鲁", width=30, height=30, corner_radius=8, fg_color=c.accent_soft, text_color=c.accent, font=self.tokens.font(13, "bold"))
+        self.mark.pack(side="left", pady=18)
+        brand_text = ctk.CTkFrame(self.brand, fg_color="transparent")
+        brand_text.pack(side="left", padx=(9, 0), pady=18)
+        self.brand_title = ctk.CTkLabel(brand_text, text="山东定额", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+        self.brand_title.pack(anchor="w")
+        self.brand_subtitle = ctk.CTkLabel(brand_text, text="定额分析", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.brand_subtitle.pack(anchor="w", pady=(2, 0))
+        self.new_button = DSButton(self, tokens=self.tokens, text="新建分析", image=self.new_image, compound="left", command=self.on_new, width=184, anchor="w")
+        self.new_button.grid(row=1, column=0, padx=16, pady=(4, 14), sticky="ew")
+
+        self.section_row = ctk.CTkFrame(self, fg_color="transparent")
+        self.section_row.grid(row=2, column=0, padx=16, sticky="ew")
+        self.section_label = ctk.CTkLabel(self.section_row, text="历史分析", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        self.section_label.pack(side="left")
+        self.rename_button = DSButton(self.section_row, tokens=self.tokens, text="改名", variant="ghost", width=52, height=24, command=self._rename_active)
+        self.rename_button.pack(side="right", padx=(4, 0))
+        self.delete_button = DSButton(self.section_row, tokens=self.tokens, text="删除", variant="ghost", width=52, height=24, command=self._delete_active)
+        self.delete_button.pack(side="right")
+
+        self.session_list = PointerScrollableFrame(self, fg_color="transparent", corner_radius=0, scrollbar_button_color=c.border, scrollbar_button_hover_color=c.border_strong)
+        self.session_list.grid(row=3, column=0, padx=10, pady=(6, 0), sticky="nsew")
+        self.session_list.grid_columnconfigure(0, weight=1)
+        self.empty_label = ctk.CTkLabel(self.session_list, text="还没有历史分析，新建后自动保存", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=180)
+        self.empty_label.grid(row=0, column=0, padx=6, pady=8, sticky="w")
+
+        self.library_label = ctk.CTkLabel(self, text="资料库", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
+        self.library_label.grid(row=5, column=0, padx=16, pady=(14, 6), sticky="w")
+        self._build_library_card()
+
+        self.footer = ctk.CTkFrame(self, fg_color="transparent")
+        self.footer.grid(row=7, column=0, padx=16, pady=16, sticky="sew")
+        self.footer.grid_columnconfigure(0, weight=1)
+        version_text = f"v{self.app_version}" if self.app_version else ""
+        self.footer_title = ctk.CTkLabel(self.footer, text=f"山东 2016 / 2025 {version_text}".strip(), text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+        self.footer_title.grid(row=0, column=0, sticky="w")
+        footer_buttons = ctk.CTkFrame(self.footer, fg_color="transparent")
+        footer_buttons.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        self.settings_button = DSButton(footer_buttons, tokens=self.tokens, text="设置", variant="ghost", width=62, height=26, command=self.on_open_settings)
+        self.settings_button.pack(side="left")
+        self.about_button = DSButton(footer_buttons, tokens=self.tokens, text="关于", variant="ghost", width=62, height=26, command=self.on_open_about)
+        self.about_button.pack(side="left", padx=(6, 0))
+        self.footer_subtitle = ctk.CTkLabel(self.footer, text="只读资料 · 本地优先", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.footer_subtitle.grid(row=2, column=0, sticky="w", pady=(4, 0))
+
+    def _build_library_card(self) -> None:
+        c = self.tokens.colors
+        self.library_available = any(isinstance(value, int) for value in self.library_stats.values())
+        quotas = self.library_stats.get("quotas")
+        bills = self.library_stats.get("bills")
+        resources = self.library_stats.get("resources")
+        values = " · ".join(
+            value for value in (
+                f"{quotas:,} 定额" if isinstance(quotas, int) else "",
+                f"{bills:,} 清单" if isinstance(bills, int) else "",
+                f"{resources:,} 人材机" if isinstance(resources, int) else "",
+            ) if value
+        )
+        self.library_info = ctk.CTkLabel(
+            self,
+            text=("可用 · " + values) if self.library_available else "未连接",
+            text_color=c.success if self.library_available else c.text_muted,
+            font=self.tokens.font(self.tokens.typography.caption),
+            anchor="w",
+            justify="left",
+            wraplength=180,
+        )
+        self.library_info.grid(row=6, column=0, padx=16, sticky="nw")
+
+    def set_library_stats(self, stats: dict[str, int | None] | None) -> None:
+        """Apply asynchronously loaded counts without rebuilding the sidebar."""
+        self.library_stats = stats or {}
+        self.library_available = any(isinstance(value, int) for value in self.library_stats.values())
+        quotas = self.library_stats.get("quotas")
+        bills = self.library_stats.get("bills")
+        resources = self.library_stats.get("resources")
+        values = " · ".join(
+            value for value in (
+                f"{quotas:,} 定额" if isinstance(quotas, int) else "",
+                f"{bills:,} 清单" if isinstance(bills, int) else "",
+                f"{resources:,} 人材机" if isinstance(resources, int) else "",
+            ) if value
+        )
+        self.library_info.configure(
+            text=("可用 · " + values) if self.library_available else "未连接",
+            text_color=self.tokens.colors.success if self.library_available else self.tokens.colors.text_muted,
+        )
+
+    def refresh_sessions(self, sessions: list[dict], active_id: str | None = None) -> None:
+        for row in self._session_rows:
+            row.destroy()
+        self._session_rows = []
+        self._active_session_id = active_id
+        if not sessions:
+            self.empty_label.grid(row=0, column=0, padx=6, pady=8, sticky="w")
+            return
+        self.empty_label.grid_remove()
+        for index, session in enumerate(sessions):
+            row = SessionRow(self.session_list, tokens=self.tokens, session_id=session["id"], title=session["title"], updated_at=session.get("updated_at") or 0, on_select=self._select)
+            row.grid(row=index, column=0, sticky="ew", pady=(0, 2))
+            row.set_active(session["id"] == active_id)
+            self._session_rows.append(row)
+
+    def _select(self, session_id: str) -> None:
+        accepted = self.on_select_session(session_id)
+        if accepted is False:
+            return
+        self._active_session_id = session_id
+        for row in self._session_rows:
+            row.set_active(row.session_id == session_id)
+
+    def mark_active(self, session_id: str | None) -> None:
+        self._active_session_id = session_id
+        for row in self._session_rows:
+            row.set_active(row.session_id == session_id)
+
+    def _rename_active(self) -> None:
+        if self._active_session_id:
+            self.on_rename_session(self._active_session_id)
+
+    def _delete_active(self) -> None:
+        if self._active_session_id:
+            self.on_delete_session(self._active_session_id)
+
+    def set_busy(self, busy: bool) -> None:
+        self.new_button.set_enabled(not busy)
+        self.rename_button.set_enabled(not busy)
+        self.delete_button.set_enabled(not busy)
+
+    def set_new_image(self, image) -> None:
+        self.new_image = image
+        self.new_button.configure(image=image)
+        self.new_button._normal_image = image
+
+    def apply_theme(self, tokens: ThemeTokens) -> None:
+        self.tokens = tokens
+        c = tokens.colors
+        self.configure(fg_color=c.sidebar)
+        self.brand.configure(fg_color="transparent")
+        self.mark.configure(fg_color=c.accent_soft, text_color=c.accent)
+        self.brand_title.configure(text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"))
+        self.brand_subtitle.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
+        self.section_row.configure(fg_color="transparent")
+        self.section_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption, "semibold"))
+        self.library_label.configure(text_color=c.text_secondary, font=tokens.font(tokens.typography.meta, "semibold"))
+        self.footer.configure(fg_color="transparent")
+        self.footer_title.configure(text_color=c.text_secondary, font=tokens.font(tokens.typography.meta))
+        self.footer_subtitle.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
+        self.session_list.configure(fg_color="transparent", scrollbar_button_color=c.border, scrollbar_button_hover_color=c.border_strong)
+        self.empty_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
+        self.new_button.apply_theme(tokens)
+        self.rename_button.apply_theme(tokens)
+        self.delete_button.apply_theme(tokens)
+        self.settings_button.apply_theme(tokens)
+        self.about_button.apply_theme(tokens)
+        self.library_info.configure(text_color=c.success if self.library_available else c.text_muted, font=tokens.font(tokens.typography.caption))
+        for row in self._session_rows:
+            row.apply_theme(tokens)

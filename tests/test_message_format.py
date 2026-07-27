@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import unittest
+
+from components.message import ai_references, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections
+
+
+class AiMessageFormatTests(unittest.TestCase):
+    def test_markdown_sections_are_cleaned_for_card_rendering(self):
+        text = """## 结论
+需要补充工程专业和施工方法。 [R1][R2]
+
+## 建议候选
+建筑专业可优先复核 1-2-9。 [R2]
+
+## 工程量与换算
+按体积计算，单位差异需换算。 [R4]
+"""
+
+        sections = parse_ai_sections(text)
+
+        self.assertEqual([section[0] for section in sections], ["结论", "建议候选", "工程量与换算"])
+        self.assertNotIn("##", sections[0][1])
+        self.assertIn("[R1] [R2]", sections[0][1])
+        plain = format_ai_plain_text(sections)
+        self.assertIn("结论：", plain)
+        self.assertNotIn("##", plain)
+
+    def test_unstructured_answer_has_a_readable_fallback_section(self):
+        sections = parse_ai_sections("建议补充施工方法后复核 [R1]。")
+
+        self.assertEqual(sections, [("AI 分析", "建议补充施工方法后复核 [R1]。")])
+
+    def test_markdown_noise_is_removed_and_optional_empty_section_is_hidden(self):
+        sections = parse_ai_sections("""## 1. 结论
+- **可套**沟槽土方清单 [R2][R1]
+## 风险提示
+- 暂无
+本建议仅供专业造价人员复核参考。
+""")
+
+        self.assertEqual(sections, [("结论", "- 可套沟槽土方清单 [R2] [R1]")])
+        self.assertEqual(parse_ai_items(sections[0][1]), ["可套沟槽土方清单 [R2] [R1]"])
+        self.assertEqual(ai_references(sections[0][1]), ["R1", "R2"])
+
+    def test_sections_follow_decision_first_order_even_if_model_does_not(self):
+        sections = parse_ai_sections("""## 风险
+- 需确认运距。
+## 判断依据
+- 名称与条件匹配 [R3]。
+## 结论
+- 暂不能确定。
+""")
+
+        self.assertEqual([heading for heading, _body in sections], ["结论", "依据", "风险"])
+
+    def test_wrap_width_accounts_for_windows_dpi_scaling(self):
+        self.assertEqual(logical_wrap_width(932, 1.5), 600)
+        self.assertEqual(logical_wrap_width(932, 1.0), 896)
+
+
+if __name__ == "__main__":
+    unittest.main()

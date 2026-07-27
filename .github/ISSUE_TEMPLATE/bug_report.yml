@@ -1,0 +1,48 @@
+name: Bug report
+description: 报告可复现的软件问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请勿上传 API Key、数据库、定额/PDF 片段、项目敏感信息或完整日志。
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      placeholder: 0.5.5
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows 版本
+      options:
+        - Windows 11
+        - Windows 10
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 说明你看到的现象与预期结果。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 选择...
+        2. 输入...
+        3. 点击...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 只提供已脱敏的截图或最小日志片段。
