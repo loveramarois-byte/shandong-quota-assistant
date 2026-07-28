@@ -71,6 +71,7 @@ class ReleaseGateTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.script)
+        self.assertIn('Join-Path $releaseRoot "v$appVersion"', self.script)
         self.assertIn("正式发布需要代码签名证书", self.script)
 
     def test_internal_build_is_separated_from_release_directory(self):

@@ -85,6 +85,11 @@ foreach ($required in @($python, $pyinstaller, $database, $catalogManifestPath))
 
 $catalogManifest = Get-Content -LiteralPath $catalogManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $appVersion = [string]$catalogManifest.app_version
+if ($AuthorizedInternalDistribution) {
+    # Keep a running colleague build intact while preparing the next version.
+    $releaseRoot = Join-Path $releaseRoot "v$appVersion"
+    $bundleRoot = Join-Path $releaseRoot $bundleName
+}
 $sourceRevision = Get-SourceRevision
 if ($InternalEvaluation -and $AuthorizedInternalDistribution) {
     throw "InternalEvaluation 与 AuthorizedInternalDistribution 不能同时使用"
