@@ -14,7 +14,7 @@ from utils.svg import svg_image
 from .button import DSButton, IconButton
 
 DISCLAIMER = (
-    "AI 辅助解释仅用于检索复核，正式使用前应由专业造价人员结合当地现行定额及项目实际情况复核。"
+    "AI 结论须由专业造价人员结合当地现行定额、原书和项目实际情况复核。"
     "编码、单位、换算、工作内容及最终套项，请以现行标准、合同约定、现场条件及原书为准；"
     "无本地资料引用的结论不得直接用于报量结算。"
 )
@@ -162,8 +162,6 @@ class CandidateRow(ctk.CTkFrame):
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(2, weight=0)
         code = self.item.get("code") or "未确认"
-        if self.item.get("reference"):
-            code = f"[{self.item['reference']}]  {code}"
         self.code_label = self._label(self, text=code, text_color=c.accent, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
         self.code_label.grid(row=0, column=0, padx=(14, 12), pady=(11, 0), sticky="nw")
         title_row = ctk.CTkFrame(self, fg_color="transparent")
@@ -304,7 +302,6 @@ class CandidateRow(ctk.CTkFrame):
 
     def _copy_full(self) -> None:
         lines = [
-            f"引用：[{self.item.get('reference')}]" if self.item.get("reference") else "",
             f"编码：{self.item.get('code') or '未确认'}",
             f"名称：{self.item.get('title') or '未命名候选'}",
             f"单位：{_unit(self.item) or '未标注'}",
@@ -488,9 +485,9 @@ class CandidateSection(ctk.CTkFrame):
 
 
 class ResultPanel(ctk.CTkFrame):
-    """Local evidence block shown before the AI answer, with primary-selection workflow."""
+    """Supporting local evidence, collapsed when an AI conclusion is primary."""
 
-    def __init__(self, master, *, tokens: ThemeTokens, result: dict, on_primary_changed=None, on_export=None, **kwargs):
+    def __init__(self, master, *, tokens: ThemeTokens, result: dict, on_primary_changed=None, on_export=None, collapsed: bool = True, **kwargs):
         self.tokens = tokens
         self.result = result
         self.on_primary_changed = on_primary_changed
@@ -498,31 +495,34 @@ class ResultPanel(ctk.CTkFrame):
         self.sections: list[CandidateSection] = []
         self.primary: dict[str, dict] = {}
         self._wrap_width = 0
+        self._details_visible = not collapsed
         super().__init__(master, fg_color="transparent", border_width=0, corner_radius=0, **kwargs)
         self._build()
 
     def _build(self) -> None:
         c = self.tokens.colors
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=16, pady=(15, 4))
-        self.eyebrow_label = ctk.CTkLabel(header, text="本地候选", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        self.header = ctk.CTkFrame(self, fg_color="transparent")
+        self.header.pack(fill="x", padx=16, pady=(15, 4))
+        self.eyebrow_label = ctk.CTkLabel(self.header, text="资料依据", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
         self.eyebrow_label.pack(anchor="w")
-        title_row = ctk.CTkFrame(header, fg_color="transparent")
-        title_row.pack(fill="x", pady=(2, 0))
-        self.title_label = ctk.CTkLabel(title_row, text="候选清单与定额", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+        self.title_row = ctk.CTkFrame(self.header, fg_color="transparent")
+        self.title_row.pack(fill="x", pady=(2, 0))
+        self.title_label = ctk.CTkLabel(self.title_row, text="本地清单、定额与原书", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
         self.title_label.pack(side="left")
-        export_frame = ctk.CTkFrame(title_row, fg_color="transparent")
-        export_frame.pack(side="right")
-        self.export_md_button = DSButton(export_frame, tokens=self.tokens, text="导出记录", variant="ghost", width=88, height=28, command=lambda: self._export("markdown"))
+        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text="查看依据", variant="secondary", width=82, height=28, command=self._toggle_details)
+        self.toggle_button.pack(side="right")
+        self.export_frame = ctk.CTkFrame(self.title_row, fg_color="transparent")
+        self.export_frame.pack(side="right", padx=(0, 4))
+        self.export_md_button = DSButton(self.export_frame, tokens=self.tokens, text="导出记录", variant="ghost", width=88, height=28, command=lambda: self._export("markdown"))
         self.export_md_button.pack(side="left", padx=(4, 0))
-        self.export_excel_button = DSButton(export_frame, tokens=self.tokens, text="导出表格", variant="ghost", width=88, height=28, command=lambda: self._export("excel"))
+        self.export_excel_button = DSButton(self.export_frame, tokens=self.tokens, text="导出表格", variant="ghost", width=88, height=28, command=lambda: self._export("excel"))
         self.export_excel_button.pack(side="left", padx=(4, 0))
-        self.copy_pricing_button = DSButton(export_frame, tokens=self.tokens, text="复制候选", variant="ghost", width=88, height=28, command=lambda: self._export("candidate_copy"))
+        self.copy_pricing_button = DSButton(self.export_frame, tokens=self.tokens, text="复制候选", variant="ghost", width=88, height=28, command=lambda: self._export("candidate_copy"))
         self.copy_pricing_button.pack(side="left", padx=(4, 0))
         edition = self.result.get("quota_edition") or "-"
         standard = self.result.get("standard_edition") or "-"
         discipline = discipline_label(self.result.get("discipline")) if self.result.get("discipline") else "全部专业"
-        self.meta_label = ctk.CTkLabel(header, text=f"山东 {edition} 定额 / {standard} 清单 · {discipline}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+        self.meta_label = ctk.CTkLabel(self.header, text=f"山东 {edition} 定额 / {standard} 清单 · {discipline}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.meta_label.pack(fill="x", anchor="w", pady=(4, 0))
         self.summary_label = ctk.CTkLabel(self, text=self._count_summary(), text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.summary_label.pack(fill="x", padx=16, pady=(2, 7))
@@ -567,6 +567,40 @@ class ResultPanel(ctk.CTkFrame):
             self.sections.append(section)
         self.footnote = ctk.CTkLabel(self, text=UI_DISCLAIMER, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=440)
         self.footnote.pack(fill="x", padx=16, pady=(8, 14))
+        self._set_details_visible(self._details_visible)
+
+    def _detail_widgets(self) -> list[ctk.CTkWidget]:
+        widgets: list[ctk.CTkWidget] = [self.primary_bar]
+        if self.condition_bar is not None:
+            widgets.append(self.condition_bar)
+        if self.hints_label is not None:
+            widgets.append(self.hints_label)
+        widgets.extend(self.sections)
+        widgets.append(self.footnote)
+        return widgets
+
+    def _set_details_visible(self, visible: bool) -> None:
+        self._details_visible = bool(visible)
+        if self._details_visible:
+            if not self.export_frame.winfo_manager():
+                self.export_frame.pack(side="right", padx=(0, 4), before=self.toggle_button)
+            self.primary_bar.pack(fill="x", padx=12, pady=(0, 6))
+            if self.condition_bar is not None:
+                self.condition_bar.pack(fill="x", padx=12, pady=(0, 6))
+            if self.hints_label is not None:
+                self.hints_label.pack(fill="x", padx=16, pady=(0, 6))
+            for section in self.sections:
+                section.pack(fill="x")
+            self.footnote.pack(fill="x", padx=16, pady=(8, 14))
+            self.toggle_button.configure(text="收起依据")
+        else:
+            self.export_frame.pack_forget()
+            for widget in self._detail_widgets():
+                widget.pack_forget()
+            self.toggle_button.configure(text="查看依据")
+
+    def _toggle_details(self) -> None:
+        self._set_details_visible(not self._details_visible)
 
     def _export(self, fmt: str) -> None:
         if self.on_export:
@@ -700,6 +734,7 @@ class ResultPanel(ctk.CTkFrame):
         self.export_md_button.apply_theme(tokens)
         self.export_excel_button.apply_theme(tokens)
         self.copy_pricing_button.apply_theme(tokens)
+        self.toggle_button.apply_theme(tokens)
         self.footnote.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
         if self.hints_label is not None:
             self.hints_label.configure(text_color=c.warning, font=tokens.font(tokens.typography.meta))

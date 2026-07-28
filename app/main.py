@@ -15,7 +15,7 @@ import customtkinter as ctk
 
 from controllers.analysis import AnalysisTaskRegistry, TaskPhase, TaskToken
 from components.about_dialog import AboutDialog
-from components.button import IconButton
+from components.button import DSButton, IconButton
 from components.input import Composer, FilterSelect
 from components.message import MessageFeed
 from components.modal import ConfirmModal
@@ -27,7 +27,7 @@ from utils import sessions as session_store
 from utils.ai_providers import provider_config
 from utils.ai_validate import validate_ai_answer
 from utils.catalog import CatalogSearchCancelled, build_ai_prompt, library_stats, search_catalog, warm_search
-from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch
+from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch, is_complete_ai_text
 from utils.evidence import hydrate_result_sources
 from utils.fonts import load_inter_fonts
 from utils.logging_setup import log_exception, setup_logging
@@ -39,7 +39,7 @@ from utils.svg import svg_image
 from components.result import result_markdown
 
 def initial_window_bounds(screen_width: int, screen_height: int, window_scaling: float) -> tuple[int, int, int, int, int, int]:
-    """Return CTk logical size, physical center position, and logical minimum size."""
+    """Return stable Tk geometry bounds without double-applying Windows DPI scaling."""
     try:
         scaling = max(1.0, float(window_scaling))
     except (TypeError, ValueError):
@@ -48,13 +48,26 @@ def initial_window_bounds(screen_width: int, screen_height: int, window_scaling:
     min_physical_height = min(680, max(520, screen_height - 32))
     physical_width = max(min_physical_width, min(1360, screen_width - 96))
     physical_height = max(min_physical_height, min(860, screen_height - 96))
-    logical_width = max(640, round(physical_width / scaling))
-    logical_height = max(480, round(physical_height / scaling))
-    logical_min_width = max(600, round(min_physical_width / scaling))
-    logical_min_height = max(440, round(min_physical_height / scaling))
+    # Tk geometry already maps to the DPI-aware window coordinate space. Dividing
+    # again makes a 1360px work area open at about 907px on a 150% display.
+    _ = scaling
+    logical_width = physical_width
+    logical_height = physical_height
+    logical_min_width = min_physical_width
+    logical_min_height = min_physical_height
     left = max(16, (screen_width - physical_width) // 2)
     top = max(16, (screen_height - physical_height) // 2)
     return logical_width, logical_height, left, top, logical_min_width, logical_min_height
+
+
+def ai_connection_state(settings: dict) -> tuple[bool, str, str]:
+    """Return UI-ready AI state without performing a network request."""
+    enabled = bool(settings.get("ai_enabled", False))
+    config = provider_config(settings.get("ai_provider"))
+    model = str(settings.get("ai_model") or "").strip()
+    if enabled and model:
+        return True, f"{config.label} · {model}", "AI 已连接"
+    return False, "AI 未连接 · 可先使用本地资料", "连接 AI"
 
 
 class QuotaApp(ctk.CTk):
@@ -91,6 +104,7 @@ class QuotaApp(ctk.CTk):
         self._last_ai_text: str | None = None
         self._active_turn_id: str | None = None
         self._turn_panels: dict[str, object] = {}
+        self._turn_thinking: dict[str, object] = {}
         self.session: dict | None = None
         self._toast: Toast | None = None
         self._images: dict[str, ctk.CTkImage] = {}
@@ -101,6 +115,7 @@ class QuotaApp(ctk.CTk):
         self._content_padding = 30
         self._last_layout_size: tuple[int, int] | None = None
         self._build()
+        self._refresh_ai_presentation()
         # Keep keyboard submission reliable when Windows UIA focuses an outer CTk pane.
         self.bind("<Control-k>", self._focus_composer, add="+")
         self.bind("<Control-Return>", self._send_from_window, add="+")
@@ -110,7 +125,9 @@ class QuotaApp(ctk.CTk):
         threading.Thread(target=warm_search, name="catalog-prewarm", daemon=True).start()
         threading.Thread(target=self._load_library_stats, name="library-stats", daemon=True).start()
         self._poll_job = self.after(120, self._poll_events)
-        self.feed.add("assistant", "把施工做法、规格、深度、运距这些条件直接发过来。\n我会先从山东资料库找候选，再说明清单、定额和套项依据。AI 建议仅供复核参考。")
+        self.feed.add("assistant", "请描述工程内容、规格和施工条件。\n我会结合山东清单、定额和原书证据，直接给出套项结论。")
+        if not ai_connection_state(self.settings)[0]:
+            self.feed.add_warning("AI 尚未连接；当前仍可查询本地清单和定额。", action_text="连接 AI", command=self._open_settings)
         self.composer.textbox.focus_set()
         self.after(200, self._restore_latest_session)
         self.log.info("app started, version=%s", APP_VERSION)
@@ -172,36 +189,43 @@ class QuotaApp(ctk.CTk):
 
     def _build_header(self) -> None:
         c = self.colors
-        self.header = ctk.CTkFrame(self.main, fg_color=c.background, height=72, corner_radius=0)
+        self.header = ctk.CTkFrame(self.main, fg_color=c.background, height=112, corner_radius=0)
         self.header.grid(row=0, column=0, padx=self._content_padding, sticky="ew")
         self.header.grid_propagate(False)
         self.header.grid_columnconfigure(0, weight=1)
         self.heading = ctk.CTkFrame(self.header, fg_color="transparent")
         self.heading.grid(row=0, column=0, sticky="w", pady=(15, 10))
-        self.title_label = ctk.CTkLabel(self.heading, text="定额与清单检索", text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
+        self.title_label = ctk.CTkLabel(self.heading, text="AI 定额分析", text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
         self.title_label.pack(anchor="w")
-        self.subtitle_label = ctk.CTkLabel(self.heading, text="本地资料检索 · AI 辅助解释（默认关闭）", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+        self.subtitle_label = ctk.CTkLabel(self.heading, text="正在读取 AI 连接状态", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.subtitle_label.pack(anchor="w", pady=(4, 0))
         self.status = self.subtitle_label
         self.controls = ctk.CTkFrame(self.header, fg_color="transparent")
         self.controls.grid(row=0, column=1, sticky="e", pady=(16, 10))
-        self.edition_label = ctk.CTkLabel(self.controls, text="定额", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
+        self.ai_button = DSButton(self.controls, tokens=self.tokens, text="连接 AI", variant="primary", width=92, height=34, command=self._open_settings)
+        self.ai_button.pack(side="left", padx=(0, 8))
+        self.theme_button = IconButton(self.controls, tokens=self.tokens, image=self._icon("moon"), tooltip="切换深色模式", command=self._toggle_theme)
+        self.theme_button.pack(side="left")
+
+        self.context_controls = ctk.CTkFrame(self.header, fg_color="transparent")
+        self.context_controls.grid(row=1, column=0, sticky="w", pady=(0, 9))
+        self.context_label = ctk.CTkLabel(self.context_controls, text="分析口径", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
+        self.context_label.pack(side="left", padx=(0, 12))
+        self.edition_label = ctk.CTkLabel(self.context_controls, text="定额", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
         self.edition_label.pack(side="left", padx=(0, 6))
-        self.edition = FilterSelect(self.controls, tokens=self.tokens, values=["2025", "2016"], width=78)
+        self.edition = FilterSelect(self.context_controls, tokens=self.tokens, values=["2025", "2016"], width=78, height=32)
         self.edition.set(str(self.settings.get("quota_edition") or "2025"))
         self.edition.pack(side="left")
-        self.standard_edition_label = ctk.CTkLabel(self.controls, text="清单", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
+        self.standard_edition_label = ctk.CTkLabel(self.context_controls, text="清单", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
         self.standard_edition_label.pack(side="left", padx=(12, 6))
-        self.standard_edition = FilterSelect(self.controls, tokens=self.tokens, values=["2024", "2013"], width=78)
+        self.standard_edition = FilterSelect(self.context_controls, tokens=self.tokens, values=["2024", "2013"], width=78, height=32)
         self.standard_edition.set(str(self.settings.get("standard_edition") or "2024"))
         self.standard_edition.pack(side="left")
-        self.discipline_label = ctk.CTkLabel(self.controls, text="专业", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
+        self.discipline_label = ctk.CTkLabel(self.context_controls, text="专业", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
         self.discipline_label.pack(side="left", padx=(12, 6))
-        self.discipline = FilterSelect(self.controls, tokens=self.tokens, values=list(DISCIPLINE_OPTIONS), width=88)
+        self.discipline = FilterSelect(self.context_controls, tokens=self.tokens, values=list(DISCIPLINE_OPTIONS), width=88, height=32)
         self.discipline.set(str(self.settings.get("discipline") or "建筑"))
         self.discipline.pack(side="left")
-        self.theme_button = IconButton(self.controls, tokens=self.tokens, image=self._icon("moon"), tooltip="切换深色模式", command=self._toggle_theme)
-        self.theme_button.pack(side="left", padx=(12, 0))
         self.divider = ctk.CTkFrame(self.main, height=1, fg_color=c.border, corner_radius=0)
         self.divider.grid(row=1, column=0, padx=self._content_padding, sticky="ew")
 
@@ -222,6 +246,7 @@ class QuotaApp(ctk.CTk):
         self.header.configure(fg_color=c.background)
         self.heading.configure(fg_color="transparent")
         self.controls.configure(fg_color="transparent")
+        self.context_controls.configure(fg_color="transparent")
         self.divider.configure(fg_color=c.border)
         self.sidebar.apply_theme(self.tokens)
         self.feed.apply_theme(self.tokens)
@@ -232,18 +257,29 @@ class QuotaApp(ctk.CTk):
         self.theme_button.apply_theme(self.tokens)
         self.theme_button.tooltip = "切换浅色模式" if self.theme_name == "dark" else "切换深色模式"
         self.theme_button.configure(image=self._icon("sun" if self.theme_name == "dark" else "moon"))
+        self.ai_button.apply_theme(self.tokens)
         self.sidebar.set_new_image(self._icon("plus"))
         self.composer.set_send_image(self._icon("send"))
         for label, color, font in (
             (self.title_label, c.text, self.tokens.font(self.tokens.typography.title, "semibold")),
             (self.subtitle_label, c.text_secondary, self.tokens.font(self.tokens.typography.meta)),
+            (self.context_label, c.text_secondary, self.tokens.font(self.tokens.typography.caption, "semibold")),
             (self.edition_label, c.text_muted, self.tokens.font(self.tokens.typography.caption)),
             (self.standard_edition_label, c.text_muted, self.tokens.font(self.tokens.typography.caption)),
             (self.discipline_label, c.text_muted, self.tokens.font(self.tokens.typography.caption)),
             (self.status, c.text_secondary, self.tokens.font(self.tokens.typography.meta)),
         ):
             label.configure(text_color=color, font=font)
-        self._set_status("本地资料优先 · 主题已切换")
+        self._refresh_ai_presentation()
+
+    def _refresh_ai_presentation(self) -> None:
+        connected, subtitle, action = ai_connection_state(self.settings)
+        self.subtitle_label.configure(text=subtitle, text_color=self.colors.success if connected else self.colors.text_secondary)
+        self.ai_button.variant = "secondary" if connected else "primary"
+        self.ai_button._normal_text = action
+        self.ai_button.configure(text=action)
+        self.ai_button.set_enabled(True)
+        self.composer.set_ai_mode(connected)
 
     def _set_status(self, text: str, tone: str = "neutral") -> None:
         c = self.colors
@@ -312,7 +348,7 @@ class QuotaApp(ctk.CTk):
     def _ensure_session(self, title_hint: str = "") -> dict | None:
         if self.session is None:
             try:
-                self.session = session_store.create_session((title_hint or "新的定额分析")[:60])
+                self.session = session_store.create_session((title_hint or "新的 AI 分析")[:60])
             except (OSError, ValueError):
                 log_exception("session create failed")
                 self._set_status("记录保存失败", "error")
@@ -348,11 +384,14 @@ class QuotaApp(ctk.CTk):
         self._last_ai_text = None
         self._active_turn_id = None
         self._turn_panels.clear()
+        self._turn_thinking.clear()
         self.feed.clear()
         self.sidebar.mark_active(None)
         self.composer.clear()
-        self.feed.add("assistant", "新的分析开始了。把施工描述发过来，我先查山东库。")
-        self._set_status("本地库就绪 · 新分析")
+        self.feed.add("assistant", "请描述工程内容、规格和施工条件，我会给出新的 AI 套项结论。")
+        if not ai_connection_state(self.settings)[0]:
+            self.feed.add_warning("AI 尚未连接；当前仍可查询本地清单和定额。", action_text="连接 AI", command=self._open_settings)
+        self._refresh_ai_presentation()
         self._refresh_task_controls()
         self.composer.textbox.focus_set()
 
@@ -370,13 +409,17 @@ class QuotaApp(ctk.CTk):
         self._last_ai_text = None
         self._active_turn_id = None
         self._turn_panels.clear()
+        self._turn_thinking.clear()
         self.feed.clear()
         turns = session.get("turns") or []
+        latest_ai_card = None
         for turn in turns:
             turn_id = str(turn.get("turn_id") or "")
             query = str(turn.get("query") or "")
             if query:
                 self.feed.add("user", query)
+            attempts = turn.get("ai_attempts") or []
+            completed_attempt = next((attempt for attempt in reversed(attempts) if attempt.get("response")), None)
             stored_result = turn.get("retrieval_snapshot")
             result = hydrate_result_sources(stored_result) if isinstance(stored_result, dict) else stored_result
             panel = None
@@ -385,6 +428,7 @@ class QuotaApp(ctk.CTk):
                     result,
                     on_primary_changed=lambda kind, item, tid=turn_id: self._primary_changed(tid, kind, item),
                     on_export=self._export_result,
+                    collapsed=bool(completed_attempt or self.settings.get("ai_enabled", False)),
                 )
                 panel.restore_primary(turn.get("human_selections"))
                 self._turn_panels[turn_id] = panel
@@ -396,22 +440,31 @@ class QuotaApp(ctk.CTk):
                     result.get("discipline"),
                     result,
                 )
-            attempts = turn.get("ai_attempts") or []
-            completed_attempt = next((attempt for attempt in reversed(attempts) if attempt.get("response")), None)
             if completed_attempt:
                 ai_text = str(completed_attempt.get("response") or "")
-                validation = validate_ai_answer(ai_text, result) if isinstance(result, dict) else completed_attempt.get("validation")
-                self.feed.add_ai_answer(ai_text, validation, on_copy=self._copy_text)
-                self._last_ai_text = ai_text
+                if is_complete_ai_text(ai_text):
+                    validation = validate_ai_answer(ai_text, result) if isinstance(result, dict) else completed_attempt.get("validation")
+                    latest_ai_card = self.feed.add_ai_answer(ai_text, validation, on_copy=self._copy_text, before=panel)
+                    self._last_ai_text = ai_text
+                else:
+                    latest_ai_card = self.feed.add_warning(
+                        "这条 AI 回答未完整保存，请重新生成后再使用。",
+                        action_text="重新生成",
+                        command=lambda tid=turn_id: self._retry_ai(tid),
+                        before=panel,
+                    )
             self._active_turn_id = turn_id or self._active_turn_id
         latest_result = (turns[-1].get("retrieval_snapshot") if turns else None) or {}
         if latest_result.get("quota_edition"):
             self.edition.set(str(latest_result["quota_edition"]))
         if latest_result.get("standard_edition"):
             self.standard_edition.set(str(latest_result["standard_edition"]))
-        self._set_status("本地库就绪 · 历史分析已恢复")
+        self._set_status("AI 对话已恢复 · 本地依据就绪")
         self.sidebar.mark_active(session_id)
-        self.feed.scroll_to_end(120)
+        if latest_ai_card is not None:
+            self.feed.scroll_to_entry(latest_ai_card, 120)
+        else:
+            self.feed.scroll_to_end(120)
         self._refresh_task_controls()
         return True
 
@@ -636,6 +689,9 @@ class QuotaApp(ctk.CTk):
             phase=TaskPhase.AI_RUNNING,
         )
         self._active_turn_id = str(target_turn_id)
+        panel = self._turn_panels.get(str(target_turn_id))
+        self._clear_turn_thinking(str(target_turn_id))
+        self._turn_thinking[str(target_turn_id)] = self.feed.add_ai_thinking(before=panel)
         self._set_status("本地候选已保留 · AI 重试中", "busy")
         self._refresh_task_controls()
         threading.Thread(target=self._run_ai, args=(request_id, revision, cancel, session_id, str(target_turn_id), description, result, ai_enabled, ai_config), daemon=True).start()
@@ -661,6 +717,7 @@ class QuotaApp(ctk.CTk):
             self._show_toast("检索已取消", "info")
             self.feed.add_warning("本轮本地检索已取消，可修改条件后重新分析。")
         else:
+            self._clear_turn_thinking(task.token.turn_id)
             self._set_status("本地候选已返回 · AI 已取消")
             self._show_toast("AI 已取消，本地候选仍可用", "info")
             self.feed.add_warning(
@@ -756,7 +813,8 @@ class QuotaApp(ctk.CTk):
         self.standard_edition.set(str(self.settings.get("standard_edition") or "2024"))
         self.discipline.set(str(self.settings.get("discipline") or "建筑"))
         self.composer.set_enter_send(bool(self.settings.get("enter_send")))
-        self._show_toast("设置已保存", "info")
+        self._refresh_ai_presentation()
+        self._show_toast("AI 设置已保存", "info")
 
     def _open_about(self) -> None:
         try:
@@ -826,12 +884,10 @@ class QuotaApp(ctk.CTk):
             self._refresh_session_list()
         return True
 
-    def _entry_after_turn(self, turn_id: str):
-        panel = self._turn_panels.get(turn_id)
-        if panel not in self.feed.entries:
-            return None
-        index = self.feed.entries.index(panel)
-        return self.feed.entries[index + 1] if index + 1 < len(self.feed.entries) else None
+    def _clear_turn_thinking(self, turn_id: str) -> None:
+        thinking = self._turn_thinking.pop(str(turn_id), None)
+        if thinking is not None:
+            self.feed.remove_entry(thinking)
 
     def _poll_events(self) -> None:
         if self._closing:
@@ -891,13 +947,18 @@ class QuotaApp(ctk.CTk):
                             value["result"],
                             on_primary_changed=lambda selected_kind, item, tid=turn_id: self._primary_changed(tid, selected_kind, item),
                             on_export=self._export_result,
+                            collapsed=ai_enabled,
                         )
                         self._turn_panels[turn_id] = panel
                         self._last_panel = panel
                         self._active_turn_id = turn_id
+                        if ai_enabled:
+                            self._clear_turn_thinking(turn_id)
+                            self._turn_thinking[turn_id] = self.feed.add_ai_thinking(before=panel)
                     self._refresh_task_controls()
                     continue
                 if kind == "ai_error":
+                    self._clear_turn_thinking(turn_id)
                     session_store.finish_ai_attempt(event_session, turn_id, request_id=request_id, status="error")
                     self.tasks.finish(request_id, TaskPhase.ERROR)
                     if self._save_event_session(event_session, is_current=is_current) and is_current:
@@ -908,14 +969,16 @@ class QuotaApp(ctk.CTk):
                             str(value.get("message") or "AI 请求失败"),
                             action_text="重试 AI",
                             command=lambda tid=turn_id: self._retry_ai(tid),
-                            before=self._entry_after_turn(turn_id),
+                            before=self._turn_panels.get(turn_id),
                         )
                 elif kind == "ai_skipped":
+                    self._clear_turn_thinking(turn_id)
                     session_store.set_turn_status(event_session, turn_id, "local_ready")
                     self.tasks.finish(request_id, TaskPhase.LOCAL_READY)
                     if self._save_event_session(event_session, is_current=is_current) and is_foreground_turn:
                         self._set_status("分析完成 · 仅本地结果（AI 已在设置中关闭）")
                 elif kind == "error":
+                    self._clear_turn_thinking(turn_id)
                     session_store.set_turn_status(event_session, turn_id, "error")
                     self.tasks.finish(request_id, TaskPhase.ERROR)
                     if self._save_event_session(event_session, is_current=is_current) and is_current:
@@ -923,6 +986,7 @@ class QuotaApp(ctk.CTk):
                         self._show_toast(str(value.get("message") or "本地检索失败"), "error")
                         self.feed.add_warning(str(value.get("message") or "本地检索失败"))
                 else:
+                    self._clear_turn_thinking(turn_id)
                     ai_text = str(value.get("text") or "")
                     validation = value.get("validation") or {}
                     session_store.finish_ai_attempt(
@@ -936,13 +1000,13 @@ class QuotaApp(ctk.CTk):
                     self.tasks.finish(request_id, TaskPhase.LOCAL_READY)
                     if self._save_event_session(event_session, is_current=is_current) and is_current:
                         if is_foreground_turn:
-                            self._set_status("分析完成 · 本地库就绪")
+                            self._set_status("AI 分析完成 · 原书证据已校验")
                         self._last_ai_text = ai_text
                         self.feed.add_ai_answer(
                             ai_text,
                             validation,
                             on_copy=self._copy_text,
-                            before=self._entry_after_turn(turn_id),
+                            before=self._turn_panels.get(turn_id),
                         )
                 self._refresh_task_controls()
         except queue.Empty:

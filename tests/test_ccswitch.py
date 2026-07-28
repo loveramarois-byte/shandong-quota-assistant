@@ -9,7 +9,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request
 
-from utils.ccswitch import AIRequestConfig, EmptyModelListError, _api_key, _base_url, _call_openai, _read_max_tokens, _read_timeout, _request_text, build_ai_request_config, call_ccswitch, fetch_models, probe_ccswitch
+from utils.ccswitch import AIRequestConfig, EmptyModelListError, IncompleteAIResponseError, _api_key, _base_url, _call_openai, _looks_incomplete, _read_max_tokens, _read_timeout, _request_text, build_ai_request_config, call_ccswitch, fetch_models, is_complete_ai_text, probe_ccswitch
 
 
 class _Response:
@@ -137,7 +137,59 @@ class CCSwitchTests(unittest.TestCase):
 
     def test_invalid_max_tokens_uses_default(self):
         with patch.dict(os.environ, {"CCSWITCH_MAX_TOKENS": "not-a-number"}, clear=False):
-            self.assertEqual(_read_max_tokens(), 900)
+            self.assertEqual(_read_max_tokens("ccswitch", "gpt-5.6-sol"), 2400)
+
+    def test_deepseek_gets_a_larger_reasoning_output_budget(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_read_max_tokens("deepseek", "deepseek-v4-pro"), 3200)
+
+    def test_length_truncated_answer_is_regenerated_once(self):
+        truncated = _Response({
+            "choices": [{
+                "finish_reason": "length",
+                "message": {"content": "## 风险\n- 定额默认混凝土强度等级C20，与"},
+            }],
+        })
+        complete = _Response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": "## 结论\n- 可套混凝土垫层。\n\n## 风险\n- C20需换为C15后复核价差。"},
+            }],
+        })
+
+        with patch.dict(os.environ, {}, clear=True), patch("utils.ccswitch.urlopen", side_effect=[truncated, complete]) as mocked:
+            answer = _call_openai("测试", "deepseek-v4-pro", provider="deepseek", api_key="sk-test")
+
+        self.assertTrue(answer.endswith("。"))
+        self.assertNotIn("等级C20，与", answer)
+        self.assertEqual(mocked.call_count, 2)
+        first_payload = json.loads(mocked.call_args_list[0].args[0].data)
+        retry_payload = json.loads(mocked.call_args_list[1].args[0].data)
+        self.assertEqual(first_payload["max_tokens"], 3200)
+        self.assertGreaterEqual(retry_payload["max_tokens"], 4096)
+        self.assertEqual(retry_payload["messages"][-2]["role"], "assistant")
+        self.assertIn("重新输出一份完整答案", retry_payload["messages"][-1]["content"])
+
+    def test_obviously_incomplete_tail_retries_even_without_length_reason(self):
+        truncated = _Response({"choices": [{"finish_reason": "stop", "message": {"content": "## 风险\n- 强度等级C20，与"}}]})
+        complete = _Response({"choices": [{"finish_reason": "stop", "message": {"content": "## 风险\n- 强度等级C20，与设计C15不一致，需换算。"}}]})
+
+        with patch("utils.ccswitch.urlopen", side_effect=[truncated, complete]) as mocked:
+            answer = _call_openai("测试", "test-model", provider="ccswitch")
+
+        self.assertEqual(mocked.call_count, 2)
+        self.assertFalse(_looks_incomplete(answer))
+
+    def test_second_truncated_answer_is_not_accepted_as_completed(self):
+        truncated = _Response({"choices": [{"finish_reason": "length", "message": {"content": "## 风险\n- 仍需确认与"}}]})
+
+        with patch("utils.ccswitch.urlopen", side_effect=[truncated, truncated]):
+            with self.assertRaisesRegex(IncompleteAIResponseError, "连续两次"):
+                _call_openai("测试", "test-model", provider="ccswitch")
+
+    def test_saved_answer_with_dangling_conjunction_is_not_complete(self):
+        self.assertFalse(is_complete_ai_text("## 风险\n- 定额默认混凝土强度等级C20，与"))
+        self.assertTrue(is_complete_ai_text("## 风险\n- C20与设计C15不一致，需调整材料单价。"))
 
     def test_http_error_body_is_not_propagated(self):
         request = Request("http://127.0.0.1:15721/v1/chat/completions")

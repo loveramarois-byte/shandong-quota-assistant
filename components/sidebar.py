@@ -81,16 +81,16 @@ class Sidebar(ctk.CTkFrame):
         self.mark.pack(side="left", pady=18)
         brand_text = ctk.CTkFrame(self.brand, fg_color="transparent")
         brand_text.pack(side="left", padx=(9, 0), pady=18)
-        self.brand_title = ctk.CTkLabel(brand_text, text="山东定额", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+        self.brand_title = ctk.CTkLabel(brand_text, text="山东定额 AI", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
         self.brand_title.pack(anchor="w")
-        self.brand_subtitle = ctk.CTkLabel(brand_text, text="定额分析", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.brand_subtitle = ctk.CTkLabel(brand_text, text="AI 套项助手", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
         self.brand_subtitle.pack(anchor="w", pady=(2, 0))
-        self.new_button = DSButton(self, tokens=self.tokens, text="新建分析", image=self.new_image, compound="left", command=self.on_new, width=184, anchor="w")
+        self.new_button = DSButton(self, tokens=self.tokens, text="新对话", image=self.new_image, compound="left", command=self.on_new, width=184, anchor="w")
         self.new_button.grid(row=1, column=0, padx=16, pady=(4, 14), sticky="ew")
 
         self.section_row = ctk.CTkFrame(self, fg_color="transparent")
         self.section_row.grid(row=2, column=0, padx=16, sticky="ew")
-        self.section_label = ctk.CTkLabel(self.section_row, text="历史分析", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        self.section_label = ctk.CTkLabel(self.section_row, text="历史对话", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
         self.section_label.pack(side="left")
         self.rename_button = DSButton(self.section_row, tokens=self.tokens, text="改名", variant="ghost", width=52, height=24, command=self._rename_active)
         self.rename_button.pack(side="right", padx=(4, 0))
@@ -100,7 +100,7 @@ class Sidebar(ctk.CTkFrame):
         self.session_list = PointerScrollableFrame(self, fg_color="transparent", corner_radius=0, scrollbar_button_color=c.border, scrollbar_button_hover_color=c.border_strong)
         self.session_list.grid(row=3, column=0, padx=10, pady=(6, 0), sticky="nsew")
         self.session_list.grid_columnconfigure(0, weight=1)
-        self.empty_label = ctk.CTkLabel(self.session_list, text="还没有历史分析，新建后自动保存", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=180)
+        self.empty_label = ctk.CTkLabel(self.session_list, text="还没有历史对话", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=180)
         self.empty_label.grid(row=0, column=0, padx=6, pady=8, sticky="w")
 
         self.library_label = ctk.CTkLabel(self, text="资料库", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
@@ -119,7 +119,7 @@ class Sidebar(ctk.CTkFrame):
         self.settings_button.pack(side="left")
         self.about_button = DSButton(footer_buttons, tokens=self.tokens, text="关于", variant="ghost", width=62, height=26, command=self.on_open_about)
         self.about_button.pack(side="left", padx=(6, 0))
-        self.footer_subtitle = ctk.CTkLabel(self.footer, text="只读资料 · 本地优先", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.footer_subtitle = ctk.CTkLabel(self.footer, text="AI 判断 · 原书可追溯", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
         self.footer_subtitle.grid(row=2, column=0, sticky="w", pady=(4, 0))
 
     def _build_library_card(self) -> None:

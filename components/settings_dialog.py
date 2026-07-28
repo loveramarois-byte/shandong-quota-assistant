@@ -138,10 +138,10 @@ class SettingsDialog(ctk.CTkToplevel):
         c = self.tokens.colors
         label_font = self.tokens.font(self.tokens.typography.meta)
         caption_font = self.tokens.font(self.tokens.typography.caption)
-        self._section_title(body, "AI 服务", pad)
+        self._section_title(body, "AI 连接", pad)
         ctk.CTkLabel(
             body,
-            text="选服务商  →  填 API Key  →  获取模型  →  测试连接并保存",
+            text="选择服务商并连接模型",
             text_color=c.text_muted,
             font=caption_font,
             anchor="w",
@@ -194,7 +194,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.models_button.grid(row=row, column=2, padx=(6, 0), pady=7)
         row += 1
 
-        self.ai_enabled = ctk.CTkSwitch(form, text="启用 AI 辅助解释", text_color=c.text, font=label_font, progress_color=c.accent)
+        self.ai_enabled = ctk.CTkSwitch(form, text="启用 AI 定额分析", text_color=c.text, font=label_font, progress_color=c.accent)
         if settings.get("ai_enabled", False):
             self.ai_enabled.select()
         self.ai_enabled.grid(row=row, column=0, columnspan=3, sticky="w", pady=(12, 6))

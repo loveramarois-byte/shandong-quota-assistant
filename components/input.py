@@ -97,7 +97,8 @@ class Composer(ctk.CTkFrame):
         self.on_send = on_send
         self.on_cancel = on_cancel
         self.on_limit = on_limit
-        self.placeholder = "例：人工挖沟槽，三类土，槽深 2.5m，弃土装车；或直接输入编码 010102002"
+        self._ai_mode = True
+        self.placeholder = "描述工程内容、规格和施工条件，AI 将结合山东定额给出套项建议"
         self._placeholder_active = True
         self._error_job = None
         self._enter_send = False
@@ -133,7 +134,7 @@ class Composer(ctk.CTkFrame):
         self.textbox.bind("<KeyRelease>", self._update_char_count, add="+")
         self.textbox.bind("<Up>", self._restore_last_sent)
         self.cancel_button = DSButton(self.shell, tokens=self.tokens, text="停止", variant="secondary", width=68, command=self.on_cancel or (lambda: None))
-        self.send_button = DSButton(self.shell, tokens=self.tokens, text="分析", variant="primary", image=send_image, compound="left", width=88, command=self.on_send)
+        self.send_button = DSButton(self.shell, tokens=self.tokens, text="问 AI", variant="primary", image=send_image, compound="left", width=96, command=self.on_send)
         self.send_button.pack(side="right", padx=12, pady=12, anchor="s")
         self.textbox.bind("<FocusIn>", lambda _e: self.shell.configure(border_color=self.tokens.colors.accent), add="+")
         self.textbox.bind("<FocusOut>", lambda _e: self.shell.configure(border_color=self.tokens.colors.border), add="+")
@@ -165,6 +166,23 @@ class Composer(ctk.CTkFrame):
         else:
             self.textbox.unbind("<Return>")
             self.textbox.bind("<Control-Return>", self._send_event)
+
+    def set_ai_mode(self, enabled: bool) -> None:
+        """Keep AI as the primary action while retaining an honest offline fallback."""
+        self._ai_mode = bool(enabled)
+        next_placeholder = (
+            "描述工程内容、规格和施工条件，AI 将结合山东定额给出套项建议"
+            if self._ai_mode
+            else "描述工程内容、规格和施工条件，先从本地资料库查找依据"
+        )
+        if self._placeholder_active:
+            self.textbox.delete("1.0", "end")
+            self.textbox.insert("1.0", next_placeholder)
+        self.placeholder = next_placeholder
+        action_text = "问 AI" if self._ai_mode else "查本地"
+        self.send_button._normal_text = action_text
+        if str(self.send_button.cget("state")) != "disabled":
+            self.send_button.configure(text=action_text)
 
     def _enter_send_event(self, _event=None) -> str | None:
         if _event is not None and (_event.state & 0x1):  # Shift held -> newline
@@ -252,7 +270,7 @@ class Composer(ctk.CTkFrame):
         self.shell.configure(border_color=color)
 
     def set_busy(self, busy: bool) -> None:
-        self.send_button.set_loading(busy, "查库中…")
+        self.send_button.set_loading(busy, "准备依据…" if self._ai_mode else "查资料中…")
         self.textbox.configure(state="disabled" if busy else "normal")
         if not busy:
             self.cancel_button.pack_forget()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import re
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -21,6 +22,10 @@ class EmptyModelListError(RuntimeError):
     """The provider answered successfully but exposed no model IDs."""
 
 
+class IncompleteAIResponseError(RuntimeError):
+    """The provider exhausted its output budget before completing the answer."""
+
+
 @dataclass(frozen=True)
 class AIRequestConfig:
     provider: str
@@ -29,6 +34,12 @@ class AIRequestConfig:
     timeout: int
     api_key: str
     api_format: str = "openai"
+
+
+@dataclass(frozen=True)
+class _AITextResponse:
+    text: str
+    finish_reason: str = ""
 
 
 def build_ai_request_config(settings: Mapping[str, Any]) -> AIRequestConfig:
@@ -263,20 +274,27 @@ def _call_anthropic(
     api_key: str = "",
     timeout: int | None = None,
 ) -> str:
+    max_tokens = _read_max_tokens(provider, model)
     payload = {
         "model": model,
-        "max_tokens": _read_max_tokens(),
+        "max_tokens": max_tokens,
         "temperature": 0.1,
         "system": "你是一个严谨的山东工程造价定额助手。",
         "messages": [{"role": "user", "content": prompt}],
     }
-    request = Request(
-        endpoint_url(_base_url(provider, base_url), "/v1/messages"),
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=_headers(provider, api_key),
-        method="POST",
-    )
-    return _request_text(request, protocol="Anthropic", timeout=timeout, provider_label=provider_config(provider).label)
+    target = endpoint_url(_base_url(provider, base_url), "/v1/messages")
+    label = provider_config(provider).label
+    response = _send_completion(target, payload, protocol="Anthropic", provider=provider, api_key=api_key, timeout=timeout, provider_label=label)
+    if not _response_is_incomplete(response):
+        return response.text
+
+    retry_payload = dict(payload)
+    retry_payload["max_tokens"] = _retry_max_tokens(max_tokens)
+    retry_payload["messages"] = _complete_retry_messages(payload["messages"], response.text)
+    retry = _send_completion(target, retry_payload, protocol="Anthropic", provider=provider, api_key=api_key, timeout=timeout, provider_label=label)
+    if _response_is_incomplete(retry):
+        raise IncompleteAIResponseError(f"{label} 连续两次返回了不完整内容")
+    return retry.text
 
 
 def _call_openai(
@@ -290,9 +308,10 @@ def _call_openai(
 ) -> str:
     selected_provider = _provider(provider)
     config = provider_config(selected_provider)
+    max_tokens = _read_max_tokens(selected_provider, model)
     payload = {
         "model": model,
-        "max_tokens": _read_max_tokens(),
+        "max_tokens": max_tokens,
         "messages": [
             {"role": "system", "content": "你是一个严谨的山东工程造价定额助手。"},
             {"role": "user", "content": prompt},
@@ -300,21 +319,94 @@ def _call_openai(
     }
     if selected_provider != "deepseek" and "reasoner" not in model.lower():
         payload["temperature"] = 0.1
+    target = endpoint_url(_base_url(selected_provider, base_url), config.chat_path)
+    response = _send_completion(target, payload, protocol="OpenAI", provider=selected_provider, api_key=api_key, timeout=timeout, provider_label=config.label)
+    if not _response_is_incomplete(response):
+        return response.text
+
+    retry_payload = dict(payload)
+    retry_payload["max_tokens"] = _retry_max_tokens(max_tokens)
+    retry_payload["messages"] = _complete_retry_messages(payload["messages"], response.text)
+    retry = _send_completion(target, retry_payload, protocol="OpenAI", provider=selected_provider, api_key=api_key, timeout=timeout, provider_label=config.label)
+    if _response_is_incomplete(retry):
+        raise IncompleteAIResponseError(f"{config.label} 连续两次返回了不完整内容")
+    return retry.text
+
+
+def _read_max_tokens(provider: str = "", model: str = "") -> int:
+    selected_provider = _provider(provider)
+    reasoning_model = selected_provider == "deepseek" or any(marker in str(model).lower() for marker in ("deepseek", "reasoner"))
+    default = 3200 if reasoning_model else 2400
+    try:
+        configured = int(os.environ.get("AI_MAX_TOKENS") or os.environ.get("CCSWITCH_MAX_TOKENS") or default)
+    except ValueError:
+        configured = default
+    return max(600, min(configured, 8192))
+
+
+def _retry_max_tokens(initial: int) -> int:
+    return min(8192, max(4096, int(initial) * 2))
+
+
+def _complete_retry_messages(messages: list[dict[str, str]], partial: str) -> list[dict[str, str]]:
+    return [
+        *messages,
+        {"role": "assistant", "content": partial},
+        {
+            "role": "user",
+            "content": (
+                "上一版回答在结尾处被截断。请重新输出一份完整答案，不要续写半句；"
+                "严格保留原要求的标题和引用格式，压缩到 450 字以内，确保最后一节和最后一句完整结束。"
+            ),
+        },
+    ]
+
+
+def _looks_incomplete(text: str) -> bool:
+    """Catch obvious cut-offs even when a compatible API omits finish_reason."""
+    stripped = str(text or "").strip()
+    if not stripped:
+        return True
+    if stripped.count("```") % 2:
+        return True
+    tail = re.sub(r"(?:\s*\[R\d+\])+\s*$", "", stripped, flags=re.IGNORECASE).rstrip()
+    if not tail:
+        return False
+    if tail.endswith(("，", "、", "：", "；", "（", "(", "[", "【", "/")):
+        return True
+    last_line = tail.splitlines()[-1].strip()
+    if re.fullmatch(r"#{1,6}\s*[^#]+", last_line):
+        return True
+    return bool(re.search(r"(?:与|和|及|或|但|且|而|因为|由于|如果|若|则|需|应|按|由|将|对|为)$", tail))
+
+
+def is_complete_ai_text(text: str) -> bool:
+    """Return whether saved/displayed model text has an obviously complete ending."""
+    return not _looks_incomplete(text)
+
+
+def _response_is_incomplete(response: _AITextResponse) -> bool:
+    finish_reason = str(response.finish_reason or "").strip().lower()
+    return finish_reason in {"length", "max_tokens", "max_output_tokens", "model_length"} or _looks_incomplete(response.text)
+
+
+def _send_completion(
+    target: str,
+    payload: dict,
+    *,
+    protocol: str,
+    provider: str,
+    api_key: str,
+    timeout: int | None,
+    provider_label: str,
+) -> _AITextResponse:
     request = Request(
-        endpoint_url(_base_url(selected_provider, base_url), config.chat_path),
+        target,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=_headers(selected_provider, api_key),
+        headers=_headers(provider, api_key),
         method="POST",
     )
-    return _request_text(request, protocol="OpenAI", timeout=timeout, provider_label=config.label)
-
-
-def _read_max_tokens() -> int:
-    try:
-        configured = int(os.environ.get("CCSWITCH_MAX_TOKENS", "900"))
-    except ValueError:
-        configured = 900
-    return max(300, min(configured, 1600))
+    return _request_completion(request, protocol=protocol, timeout=timeout, provider_label=provider_label)
 
 
 def _request_json(request: Request, *, timeout: int, provider_label: str) -> dict:
@@ -337,16 +429,35 @@ def _request_text(
     timeout: int | None = None,
     provider_label: str = "AI 服务",
 ) -> str:
+    return _request_completion(
+        request,
+        protocol=protocol,
+        timeout=timeout,
+        provider_label=provider_label,
+    ).text
+
+
+def _request_completion(
+    request: Request,
+    *,
+    protocol: str,
+    timeout: int | None = None,
+    provider_label: str = "AI 服务",
+) -> _AITextResponse:
     body = _request_json(request, timeout=timeout or _read_timeout(), provider_label=provider_label)
+    finish_reason = ""
     if protocol == "OpenAI":
         choices = body.get("choices") or []
-        message = choices[0].get("message") if choices and isinstance(choices[0], dict) else {}
+        first_choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+        message = first_choice.get("message") if isinstance(first_choice, dict) else {}
+        finish_reason = str(first_choice.get("finish_reason") or body.get("finish_reason") or "")
         content = message.get("content") if isinstance(message, dict) else ""
         if isinstance(content, list):
             text = "\n".join(str(block.get("text", "")) for block in content if isinstance(block, dict))
         else:
             text = str(content or body.get("output_text") or body.get("text") or "")
     else:
+        finish_reason = str(body.get("stop_reason") or body.get("finish_reason") or "")
         content = body.get("content")
         if isinstance(content, list):
             text = "\n".join(str(block.get("text", "")) for block in content if isinstance(block, dict))
@@ -354,4 +465,4 @@ def _request_text(
             text = str(body.get("output_text") or body.get("text") or "")
     if not text.strip():
         raise RuntimeError(f"{provider_label} 返回了空内容")
-    return text.strip()
+    return _AITextResponse(text.strip(), finish_reason)

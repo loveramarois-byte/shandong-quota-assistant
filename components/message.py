@@ -6,6 +6,8 @@ import customtkinter as ctk
 
 from themes.tokens import ThemeTokens
 from utils.evidence import open_source_page
+from utils.lottie import LottiePulse
+from utils.paths import resource_path
 from .button import DSButton
 from .result import ResultPanel, WarningStrip
 from .scrollable import PointerScrollableFrame
@@ -18,7 +20,8 @@ _AI_INLINE_HEADING_RE = re.compile(
     r"\s*[：:]?\s*(.*)$"
 )
 _AI_BULLET_RE = re.compile(r"^\s*(?:[-*•▪◦]|\d{1,2}[.、)])\s*")
-_AI_REFERENCE_RE = re.compile(r"\[R(\d+)\]", re.IGNORECASE)
+_AI_REFERENCE_RE = re.compile(r"\bR(\d+)\b", re.IGNORECASE)
+_AI_REFERENCE_GROUP_RE = re.compile(r"\[\s*R\d+(?:\s*[,，、/]\s*R?\d+)*\s*\]", re.IGNORECASE)
 _AI_DISCLAIMER_RE = re.compile(r"^本(?:建议|分析|结果).{0,30}(?:仅供|复核参考).*$")
 _AI_SECTION_ALIASES = {
     "推荐方案": "建议候选",
@@ -114,6 +117,29 @@ def ai_references(text: str) -> list[str]:
     return [f"R{number}" for number in numbers]
 
 
+def strip_ai_reference_markers(text: str) -> str:
+    """Hide internal evidence IDs from user-facing prose without changing stored text."""
+    cleaned = _AI_REFERENCE_GROUP_RE.sub("", str(text or ""))
+    cleaned = re.sub(r"\[\s*\]", "", cleaned)
+    cleaned = re.sub(r"\bR\d+\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[ \t]+([，。；：！？,.!?])", r"\1", cleaned)
+    cleaned = re.sub(r"([：:])\s*([。；;])", r"\2", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def evidence_button_text(item: dict) -> str:
+    record_type = str(item.get("record_id") or "").partition(":")[0].lower()
+    source_label = {
+        "bill": "清单原书",
+        "quota": "定额原书",
+        "link": "关联原书",
+        "guidance": "计价规则",
+    }.get(record_type, "打开原书")
+    page = item.get("pdf_page")
+    return f"{source_label} · 第 {page} 页" if page else source_label
+
+
 def logical_wrap_width(physical_width: int, widget_scaling: float = 1.0) -> int:
     """Convert Tk's physical Configure width back to CTk logical pixels."""
     try:
@@ -188,6 +214,10 @@ class AiAnswerCard(ctk.CTkFrame):
         self.tokens = tokens
         self.text = text
         self.sections = parse_ai_sections(text)
+        self.display_sections = [
+            (heading, strip_ai_reference_markers(body))
+            for heading, body in self.sections
+        ]
         self.validation = validation or {}
         self.on_copy = on_copy
         self._wraplength = 400
@@ -205,13 +235,13 @@ class AiAnswerCard(ctk.CTkFrame):
         self.header.pack(fill="x", padx=18, pady=(15, 10))
         heading_group = ctk.CTkFrame(self.header, fg_color="transparent")
         heading_group.pack(side="left", fill="x", expand=True)
-        self.heading = ctk.CTkLabel(heading_group, text="AI 辅助解释", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+        self.heading = ctk.CTkLabel(heading_group, text="AI 定额结论", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
         self.heading.pack(anchor="w")
-        self.subheading = ctk.CTkLabel(heading_group, text="用于解释本轮候选，不替代原书核验", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.subheading = ctk.CTkLabel(heading_group, text="已结合本地候选，并校验原书页", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
         self.subheading.pack(anchor="w", pady=(3, 0))
         self.copy_button = DSButton(self.header, tokens=self.tokens, text="复制全部", variant="ghost", width=78, height=30, command=self._copy)
         self.copy_button.pack(side="right")
-        for index, (section_heading, section_body) in enumerate(self.sections):
+        for index, (section_heading, section_body) in enumerate(self.display_sections):
             is_summary = section_heading == "结论"
             tone, surface = _ai_section_tone(section_heading, self.tokens)
             section = ctk.CTkFrame(
@@ -253,7 +283,7 @@ class AiAnswerCard(ctk.CTkFrame):
             warning_title = ctk.CTkLabel(self.warning_frame, text="复核提醒", text_color=c.warning, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
             warning_title.pack(fill="x", padx=12, pady=(9, 2))
             for warning in warnings:
-                warning_label = ctk.CTkLabel(self.warning_frame, text=warning, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), justify="left", anchor="w", wraplength=self._wraplength - 48)
+                warning_label = ctk.CTkLabel(self.warning_frame, text=strip_ai_reference_markers(warning), text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), justify="left", anchor="w", wraplength=self._wraplength - 48)
                 warning_label.pack(fill="x", padx=12, pady=(1, 8))
                 self._warning_records.append((warning_title, warning_label))
         else:
@@ -276,20 +306,23 @@ class AiAnswerCard(ctk.CTkFrame):
         self.evidence_actions = ctk.CTkFrame(self.footer, fg_color="transparent")
         self.evidence_buttons: list[DSButton] = []
         action_row = None
+        visible_sources: set[tuple[str, object]] = set()
         for item in self.validation.get("evidence") or []:
             if not item.get("located"):
                 continue
+            source_key = (str(item.get("source_path") or item.get("source_name") or ""), item.get("pdf_page"))
+            if source_key in visible_sources:
+                continue
+            visible_sources.add(source_key)
             if action_row is None or len(self.evidence_buttons) % 3 == 0:
                 action_row = ctk.CTkFrame(self.evidence_actions, fg_color="transparent")
                 action_row.pack(fill="x")
-            reference = str(item.get("reference") or "")
-            page = item.get("pdf_page")
             button = DSButton(
                 action_row,
                 tokens=self.tokens,
-                text=f"[{reference}] 第 {page} 页",
+                text=evidence_button_text(item),
                 variant="ghost",
-                width=104,
+                width=156,
                 height=28,
                 command=lambda current=item: open_source_page(current.get("source_path"), current.get("pdf_page")),
             )
@@ -302,7 +335,7 @@ class AiAnswerCard(ctk.CTkFrame):
 
     def _copy(self) -> None:
         if self.on_copy:
-            self.on_copy(format_ai_plain_text(self.sections))
+            self.on_copy(format_ai_plain_text(self.display_sections))
 
     def set_wraplength(self, width: int) -> None:
         self._wraplength = max(360, min(900, width))
@@ -349,6 +382,51 @@ class AiAnswerCard(ctk.CTkFrame):
         self.copy_button.apply_theme(tokens)
 
 
+class AiThinkingCard(ctk.CTkFrame):
+    """Prominent in-feed state while AI turns local evidence into a conclusion."""
+
+    def __init__(self, master, *, tokens: ThemeTokens, **kwargs):
+        self.tokens = tokens
+        self._wraplength = 400
+        super().__init__(master, fg_color="transparent", **kwargs)
+        c = tokens.colors
+        self.shell = ctk.CTkFrame(self, fg_color=c.surface, border_color=c.border, border_width=1, corner_radius=tokens.radius_md)
+        self.shell.pack(fill="x", padx=2, pady=(0, 18))
+        self.row = ctk.CTkFrame(self.shell, fg_color="transparent")
+        self.row.pack(fill="x", padx=18, pady=15)
+        self.pulse = LottiePulse(
+            self.row,
+            asset=resource_path("assets", "animations", "analysis-pulse.json"),
+            color=c.accent,
+            background=c.surface,
+        )
+        self.pulse.pack(side="left", padx=(0, 10))
+        copy = ctk.CTkFrame(self.row, fg_color="transparent")
+        copy.pack(side="left", fill="x", expand=True)
+        self.heading = ctk.CTkLabel(copy, text="AI 正在分析", text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"), anchor="w")
+        self.heading.pack(anchor="w")
+        self.detail = ctk.CTkLabel(copy, text="正在核对清单、定额、关联项和原书证据", text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
+        self.detail.pack(anchor="w", pady=(3, 0))
+        self.pulse.start()
+
+    def set_wraplength(self, width: int) -> None:
+        self._wraplength = max(320, width)
+        self.detail.configure(wraplength=max(280, self._wraplength - 80))
+
+    def apply_theme(self, tokens: ThemeTokens) -> None:
+        self.tokens = tokens
+        c = tokens.colors
+        self.shell.configure(fg_color=c.surface, border_color=c.border)
+        self.row.configure(fg_color="transparent")
+        self.pulse.apply_theme(c.accent, c.surface)
+        self.heading.configure(text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"))
+        self.detail.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
+
+    def destroy(self) -> None:
+        self.pulse.stop()
+        super().destroy()
+
+
 class MessageFeed(PointerScrollableFrame):
     def __init__(self, master, *, tokens: ThemeTokens, **kwargs):
         self.tokens = tokens
@@ -369,13 +447,37 @@ class MessageFeed(PointerScrollableFrame):
         self.after_idle(self._scroll_end)
         return bubble
 
-    def add_result(self, result: dict, on_primary_changed=None, on_export=None) -> ResultPanel:
-        panel = ResultPanel(self, tokens=self.tokens, result=result, on_primary_changed=on_primary_changed, on_export=on_export)
+    def add_result(self, result: dict, on_primary_changed=None, on_export=None, *, collapsed: bool = True) -> ResultPanel:
+        panel = ResultPanel(self, tokens=self.tokens, result=result, on_primary_changed=on_primary_changed, on_export=on_export, collapsed=collapsed)
         panel.pack(fill="x", padx=5, pady=(0, 16))
         self.entries.append(panel)
         self._apply_wrap_to_entry(panel)
         self.after_idle(lambda: self._scroll_to_widget(panel))
         return panel
+
+    def add_ai_thinking(self, *, before=None) -> AiThinkingCard:
+        card = AiThinkingCard(self, tokens=self.tokens)
+        if before is not None and before in self.entries and before.winfo_exists():
+            card.pack(fill="x", padx=5, pady=(0, 16), before=before)
+            self.entries.insert(self.entries.index(before), card)
+        else:
+            card.pack(fill="x", padx=5, pady=(0, 16))
+            self.entries.append(card)
+        self._apply_wrap_to_entry(card)
+        self.after_idle(lambda: self._scroll_to_widget(card))
+        return card
+
+    def remove_entry(self, entry) -> None:
+        if entry is None:
+            return
+        if entry in self.entries:
+            self.entries.remove(entry)
+        if entry in self.messages:
+            self.messages.remove(entry)
+        try:
+            entry.destroy()
+        except Exception:
+            pass
 
     def add_ai_answer(self, text: str, validation: dict | None = None, on_copy=None, before=None) -> AiAnswerCard:
         card = AiAnswerCard(self, tokens=self.tokens, text=text, validation=validation, on_copy=on_copy)
@@ -438,6 +540,10 @@ class MessageFeed(PointerScrollableFrame):
     def scroll_to_end(self, delay_ms: int = 0) -> None:
         """Scroll after Tk has completed deferred geometry for restored history."""
         self.after(max(0, int(delay_ms)), self._scroll_end)
+
+    def scroll_to_entry(self, entry, delay_ms: int = 0) -> None:
+        if entry in self.entries:
+            self.after(max(0, int(delay_ms)), lambda: self._scroll_to_widget(entry))
 
     def _scroll_to_widget(self, widget) -> None:
         try:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from components.message import ai_references, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections
+from components.message import ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers
 
 
 class AiMessageFormatTests(unittest.TestCase):
@@ -57,6 +57,22 @@ class AiMessageFormatTests(unittest.TestCase):
     def test_wrap_width_accounts_for_windows_dpi_scaling(self):
         self.assertEqual(logical_wrap_width(932, 1.5), 600)
         self.assertEqual(logical_wrap_width(932, 1.0), 896)
+
+    def test_internal_reference_ids_are_hidden_from_user_facing_text(self):
+        text = "可套基础垫层 [R1][R7]，并复核关联项 [R15]。"
+
+        self.assertEqual(strip_ai_reference_markers(text), "可套基础垫层，并复核关联项。")
+        self.assertEqual(ai_references(text), ["R1", "R7", "R15"])
+
+    def test_combined_reference_syntax_is_hidden_and_still_discovered(self):
+        text = "结论依据 [R1,R7]。"
+
+        self.assertEqual(strip_ai_reference_markers(text), "结论依据。")
+        self.assertEqual(ai_references(text), ["R1", "R7"])
+
+    def test_evidence_buttons_use_readable_source_names(self):
+        self.assertEqual(evidence_button_text({"record_id": "bill:2024:76", "pdf_page": 35}), "清单原书 · 第 35 页")
+        self.assertEqual(evidence_button_text({"record_id": "quota:171:173", "pdf_page": 42}), "定额原书 · 第 42 页")
 
 
 if __name__ == "__main__":

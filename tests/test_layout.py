@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from app.main import QuotaApp, initial_window_bounds
+from app.main import QuotaApp, ai_connection_state, initial_window_bounds
 from components.sidebar import Sidebar
 
 
@@ -31,9 +31,9 @@ class LayoutRefreshTests(unittest.TestCase):
     def test_initial_window_uses_physical_size_at_150_percent_dpi(self):
         width, height, left, top, min_width, min_height = initial_window_bounds(2560, 1440, 1.5)
 
-        self.assertEqual((width, height), (907, 573))
+        self.assertEqual((width, height), (1360, 860))
         self.assertEqual((left, top), (600, 290))
-        self.assertEqual((min_width, min_height), (653, 453))
+        self.assertEqual((min_width, min_height), (980, 680))
 
     def test_initial_window_stays_inside_a_small_desktop(self):
         width, height, left, top, min_width, min_height = initial_window_bounds(1366, 768, 1.0)
@@ -60,6 +60,26 @@ class LayoutRefreshTests(unittest.TestCase):
 
         self.assertEqual(probe._last_layout_size, (1100, 820))
         self.assertEqual(len(probe.scheduled), 1)
+
+
+class AiPrimaryPresentationTests(unittest.TestCase):
+    def test_connected_provider_is_the_primary_header_state(self):
+        connected, subtitle, action = ai_connection_state({
+            "ai_enabled": True,
+            "ai_provider": "deepseek",
+            "ai_model": "deepseek-chat",
+        })
+
+        self.assertTrue(connected)
+        self.assertIn("DeepSeek", subtitle)
+        self.assertEqual(action, "AI 已连接")
+
+    def test_offline_fallback_prompts_for_ai_connection(self):
+        connected, subtitle, action = ai_connection_state({"ai_enabled": False})
+
+        self.assertFalse(connected)
+        self.assertIn("本地资料", subtitle)
+        self.assertEqual(action, "连接 AI")
 
 
 class SidebarStateTests(unittest.TestCase):
