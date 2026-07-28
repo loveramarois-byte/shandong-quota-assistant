@@ -70,6 +70,12 @@ class AiMessageFormatTests(unittest.TestCase):
         self.assertEqual(strip_ai_reference_markers(text), "结论依据。")
         self.assertEqual(ai_references(text), ["R1", "R7"])
 
+    def test_reference_id_touching_chinese_text_is_hidden(self):
+        text = "清单定额关联R15确认可对应2-1-28。"
+
+        self.assertEqual(strip_ai_reference_markers(text), "清单定额关联确认可对应2-1-28。")
+        self.assertEqual(ai_references(text), ["R15"])
+
     def test_evidence_buttons_use_readable_source_names(self):
         self.assertEqual(evidence_button_text({"record_id": "bill:2024:76", "pdf_page": 35}), "清单原书 · 第 35 页")
         self.assertEqual(evidence_button_text({"record_id": "quota:171:173", "pdf_page": 42}), "定额原书 · 第 42 页")

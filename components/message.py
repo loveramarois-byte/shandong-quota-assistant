@@ -20,7 +20,7 @@ _AI_INLINE_HEADING_RE = re.compile(
     r"\s*[：:]?\s*(.*)$"
 )
 _AI_BULLET_RE = re.compile(r"^\s*(?:[-*•▪◦]|\d{1,2}[.、)])\s*")
-_AI_REFERENCE_RE = re.compile(r"\bR(\d+)\b", re.IGNORECASE)
+_AI_REFERENCE_RE = re.compile(r"R(\d+)", re.IGNORECASE)
 _AI_REFERENCE_GROUP_RE = re.compile(r"\[\s*R\d+(?:\s*[,，、/]\s*R?\d+)*\s*\]", re.IGNORECASE)
 _AI_DISCLAIMER_RE = re.compile(r"^本(?:建议|分析|结果).{0,30}(?:仅供|复核参考).*$")
 _AI_SECTION_ALIASES = {
@@ -121,7 +121,7 @@ def strip_ai_reference_markers(text: str) -> str:
     """Hide internal evidence IDs from user-facing prose without changing stored text."""
     cleaned = _AI_REFERENCE_GROUP_RE.sub("", str(text or ""))
     cleaned = re.sub(r"\[\s*\]", "", cleaned)
-    cleaned = re.sub(r"\bR\d+\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"R\d+", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"[ \t]+([，。；：！？,.!?])", r"\1", cleaned)
     cleaned = re.sub(r"([：:])\s*([。；;])", r"\2", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
