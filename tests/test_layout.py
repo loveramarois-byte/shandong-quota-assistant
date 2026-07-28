@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from app.main import QuotaApp, ai_connection_state, initial_window_bounds
+from app.main import QuotaApp, ai_connection_state, clean_structured_validation, initial_window_bounds
 from components.sidebar import Sidebar
 
 
@@ -80,6 +80,15 @@ class AiPrimaryPresentationTests(unittest.TestCase):
         self.assertFalse(connected)
         self.assertIn("本地资料", subtitle)
         self.assertEqual(action, "连接 AI")
+
+    def test_structured_validation_hides_only_legacy_uncited_noise(self):
+        cleaned = clean_structured_validation({
+            "warnings": ["AI 部分关键结论未标注本地候选编号，属于模型推断，不可直接作为套项依据。", "保留的业务提醒"],
+            "uncited_lines": ["已形成方案"],
+        })
+
+        self.assertEqual(cleaned["warnings"], ["保留的业务提醒"])
+        self.assertEqual(cleaned["uncited_lines"], [])
 
 
 class SidebarStateTests(unittest.TestCase):

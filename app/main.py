@@ -40,6 +40,19 @@ from utils.single_instance import SingleInstanceGuard
 from utils.svg import svg_image
 from components.result import result_markdown
 
+DISCIPLINE_CODE_TO_LABEL = {code: label for label, code in DISCIPLINE_LABEL_TO_CODE.items()}
+
+
+def clean_structured_validation(validation: dict) -> dict:
+    """Hide legacy free-text citation noise after the JSON proposal passes local gates."""
+    cleaned = dict(validation or {})
+    cleaned["warnings"] = [
+        value for value in cleaned.get("warnings") or []
+        if "部分关键结论未标注本地候选编号" not in str(value)
+    ]
+    cleaned["uncited_lines"] = []
+    return cleaned
+
 def initial_window_bounds(screen_width: int, screen_height: int, window_scaling: float) -> tuple[int, int, int, int, int, int]:
     """Return stable Tk geometry bounds without double-applying Windows DPI scaling."""
     try:
@@ -451,6 +464,7 @@ class QuotaApp(ctk.CTk):
                     if stored_validation.get("structured_valid"):
                         validation["structured_valid"] = True
                         validation["structured"] = stored_validation.get("structured")
+                        validation = clean_structured_validation(validation)
                         if panel is not None:
                             panel.apply_ai_proposals(stored_validation.get("structured"))
                     latest_ai_card = self.feed.add_ai_answer(ai_text, validation, on_copy=self._copy_text, before=panel)
@@ -673,6 +687,7 @@ class QuotaApp(ctk.CTk):
             validation = validate_ai_answer(ai_text, result)
             validation["structured_valid"] = True
             validation["structured"] = structured
+            validation = clean_structured_validation(validation)
             if not cancel.is_set():
                 self.events.put(("answer", (request_id, cancel, {"session_id": session_id, "turn_id": turn_id, "revision": revision, "text": ai_text, "validation": validation})))
         except Exception as exc:
@@ -968,10 +983,26 @@ class QuotaApp(ctk.CTk):
                 is_foreground_turn = bool(is_current and self._active_turn_id == turn_id)
                 if kind == "local":
                     ai_enabled = bool(value.get("ai_enabled", False))
+                    result = value["result"]
+                    if result.get("discipline_auto_switched"):
+                        turn = session_store.find_turn(event_session, turn_id)
+                        if turn is not None:
+                            turn["requested_discipline"] = result.get("requested_discipline")
+                            turn["discipline"] = result.get("discipline")
+                        if is_current:
+                            label = DISCIPLINE_CODE_TO_LABEL.get(str(result.get("discipline") or ""), "")
+                            if label:
+                                self.discipline.set(label)
+                                self.settings["discipline"] = label
+                                try:
+                                    save_settings(self.settings)
+                                except OSError:
+                                    log_exception("auto discipline setting save failed")
+                                self._show_toast(f"已自动切换到{label}专业", "info")
                     session_store.set_turn_local_result(
                         event_session,
                         turn_id,
-                        value["result"],
+                        result,
                         ai_enabled=ai_enabled,
                     )
                     if ai_enabled:
@@ -991,13 +1022,13 @@ class QuotaApp(ctk.CTk):
                             value["description"],
                             value["edition"],
                             value["standard_edition"],
-                            value["discipline"],
-                            value["result"],
+                            result.get("discipline") or value["discipline"],
+                            result,
                         )
                         status = "本地套价草案已返回 · AI 分析中，可能需要几十秒" if ai_enabled else "本地套价草案已返回"
                         self._set_status(status, "busy" if ai_enabled else "neutral")
                         panel = self.feed.add_result(
-                            value["result"],
+                            result,
                             on_primary_changed=lambda selected_kind, item, tid=turn_id: self._primary_changed(tid, selected_kind, item),
                             on_export=self._export_result,
                             on_clarify=self._clarification_selected,

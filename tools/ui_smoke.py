@@ -15,7 +15,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.main import QuotaApp
 
 
-QUERY = "地下室外墙外侧做4mm SBS防水两道，20厚水泥砂浆保护层，外侧回填三七灰土，机械夯实。"
+DEFAULT_QUERY = "地下室外墙外侧做4mm SBS防水两道，20厚水泥砂浆保护层，外侧回填三七灰土，机械夯实。"
+QUERY = os.environ.get("UI_SMOKE_QUERY", DEFAULT_QUERY).strip() or DEFAULT_QUERY
 
 
 def _capture(app: QuotaApp, path: Path) -> None:
@@ -31,9 +32,13 @@ def main() -> int:
     app = QuotaApp()
     app._request_id = 1  # prevent deferred history restoration during the smoke run
     app._new_session()
+    requested_discipline = os.environ.get("UI_SMOKE_DISCIPLINE", "").strip()
+    if requested_discipline:
+        app.discipline.set(requested_discipline)
     started = time.monotonic()
     local_saved = False
     final_saved = False
+    finish_scheduled = False
     ai_expected = bool(app.settings.get("ai_enabled", False))
 
     def finish() -> None:
@@ -51,6 +56,8 @@ def main() -> int:
             "structured_valid": (latest_attempt.get("validation") or {}).get("structured_valid"),
             "decision_status": ((latest_turn.get("retrieval_snapshot") or {}).get("decision_status")),
             "proposal_count": len((latest_turn.get("retrieval_snapshot") or {}).get("proposals") or []),
+            "result_discipline": (latest_turn.get("retrieval_snapshot") or {}).get("discipline"),
+            "discipline_auto_switched": (latest_turn.get("retrieval_snapshot") or {}).get("discipline_auto_switched"),
             "active_ai_task": bool(app.tasks.latest_ai((app.session or {}).get("id"))),
             "cancel_button_manager": app.composer.cancel_button.winfo_manager(),
             "send_button_manager": app.composer.send_button.winfo_manager(),
@@ -60,7 +67,7 @@ def main() -> int:
         app.after(200, app._on_close)
 
     def poll() -> None:
-        nonlocal local_saved
+        nonlocal local_saved, finish_scheduled
         elapsed = time.monotonic() - started
         if app._last_panel is not None and not local_saved:
             local_saved = True
@@ -68,7 +75,9 @@ def main() -> int:
             app.after(500, lambda: _capture(app, output / "local-proposal.png"))
         active_ai = app.tasks.latest_ai((app.session or {}).get("id")) if app.session else None
         if local_saved and (app._last_ai_text or (not ai_expected and active_ai is None) or (elapsed > 8 and active_ai is None)):
-            finish()
+            if not finish_scheduled:
+                finish_scheduled = True
+                app.after(600, finish)
             return
         if elapsed >= 120:
             finish()

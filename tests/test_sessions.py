@@ -100,6 +100,31 @@ class SessionStoreTests(unittest.TestCase):
         self.assertNotIn("metadata", slim["quotas"][0])
         self.assertNotIn("source_path", slim["quotas"][0])
 
+    def test_auto_discipline_switch_survives_save_and_load(self):
+        session = self._create("自动识别专业")
+        turn = sessions.create_turn(
+            session,
+            "C15混凝土垫层，厚度100mm",
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="installation",
+        )
+        result = _result("C15混凝土垫层，厚度100mm", "2-1-28", "quota:building:28")
+        result.update({
+            "requested_discipline": "installation",
+            "discipline_auto_switched": True,
+            "discipline_switch_reason": "安装专业没有可靠清单，已按施工描述切换到建筑专业。",
+        })
+        sessions.set_turn_local_result(session, turn["turn_id"], result, ai_enabled=False)
+        sessions.save_session(session)
+
+        loaded = sessions.load_session(session["id"])
+        snapshot = loaded["turns"][0]["retrieval_snapshot"]
+
+        self.assertEqual(snapshot["requested_discipline"], "installation")
+        self.assertTrue(snapshot["discipline_auto_switched"])
+        self.assertEqual(snapshot["discipline_switch_reason"], result["discipline_switch_reason"])
+
     def test_ai_validation_does_not_persist_machine_specific_source_paths(self):
         session = self._create("证据路径测试")
         turn = sessions.create_turn(session, "测试", quota_edition="2025", standard_edition="2024", discipline="building")

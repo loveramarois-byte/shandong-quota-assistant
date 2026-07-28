@@ -58,6 +58,11 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         if not str(question.get("question") or "").strip():
             schema_errors.append("澄清问题缺少可读问题")
     normalized_proposals: list[dict[str, Any]] = []
+    local_proposals = {
+        str(value.get("work_item_id") or ""): value
+        for value in result.get("proposals") or []
+        if isinstance(value, dict)
+    }
     pending_work_ids = {
         str(value.get("work_item_id") or "")
         for value in result.get("clarification_questions") or []
@@ -83,6 +88,14 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
             schema_errors.append(f"方案状态不合法：{status or '空'}")
         if str(normalized.get("work_item_id") or "") in pending_work_ids and status == "ready_for_review":
             schema_errors.append(f"{normalized.get('work_item_id')} 仍有本地关键缺失条件，AI 不得标记为可确认")
+        local_proposal = local_proposals.get(str(normalized.get("work_item_id") or ""), {})
+        if (
+            local_proposal.get("bill_record_id")
+            and local_proposal.get("quota_lines")
+            and not normalized.get("bill_record_id")
+            and not normalized.get("quota_lines")
+        ):
+            schema_errors.append(f"{normalized.get('work_item_id')} 已有通过本地关联组装的方案，AI 不得清空为无匹配")
         for line in normalized.get("quota_lines") or []:
             if not isinstance(line, dict):
                 schema_errors.append("定额行必须是对象")
@@ -150,7 +163,7 @@ USER_DESCRIPTION
 2. 只能使用 allowed_bill_record_ids 与 allowed_quota_record_ids 中的 ID，禁止编造、改写或猜测 ID/编号。
 3. 清单和定额必须由 evidence 中 bill_record_id + quota_record_id 的关系验证；不得把两个 Top-1 直接拼接。
 4. 一项可有一条清单和多条定额，role 只能是 main/supplement/adjustment/transport/conversion/alternative。
-5. 有会改变套项的缺失条件时，status 必须是 needs_clarification；没有可靠关系时必须是 no_reliable_match。
+5. 有会改变套项的缺失条件时，status 必须是 needs_clarification；没有可靠关系时必须是 no_reliable_match。不得把本地草案中已有清单和定额的事项清空为无匹配。
 6. 每个方案只能有一个 main；互斥或有 conflicts 的条目不得进入主方案。
 7. 只问会改变候选选择的问题，每次最多三个；允许 options 含“不确定”。
 8. 保留本地 work_item ID 和 source_span，不新增施工事项。

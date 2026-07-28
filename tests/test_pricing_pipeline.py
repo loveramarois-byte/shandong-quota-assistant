@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from utils.pricing_pipeline import assemble_pricing_result, merge_clarification_context, validate_pricing_result
+from utils.pricing_pipeline import analyze_pricing_description, assemble_pricing_result, infer_discipline, merge_clarification_context, validate_pricing_result
 from utils.work_items import extract_work_item
 
 
@@ -82,6 +82,89 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertEqual(analysis["proposals"][0]["status"], "needs_clarification")
         self.assertLessEqual(len(analysis["clarification_questions"]), 3)
         self.assertEqual(analysis["clarification_questions"][0]["work_item_id"], "W1")
+
+    def test_plain_concrete_cushion_prefers_unreinforced_and_uses_thickness_conversion(self):
+        item = extract_work_item("C15混凝土垫层，厚度100mm", item_id="W1", discipline="building")
+        bill = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
+        light_aggregate = _candidate(
+            "link:2024:982", "2-1-26", "混凝土垫层 轻骨料", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:171", bill_code=bill["code"], unit="10m3", factor=1.0,
+        )
+        unreinforced = _candidate(
+            "link:2024:984", "2-1-28", "混凝土垫层 无筋", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:173", bill_code=bill["code"], unit="10m2", factor=1.0,
+        )
+
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [bill], "quotas": [], "links": [light_aggregate, unreinforced], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        proposal = analysis["proposals"][0]
+        self.assertEqual(proposal["quota_lines"][0]["code"], "2-1-28")
+        self.assertEqual(proposal["quota_lines"][0]["factor"], 1.0)
+        self.assertEqual(proposal["status"], "ready_for_review")
+        self.assertTrue(analysis["validation"]["valid"])
+        self.assertTrue(any("100mm" in value for value in proposal["assumptions"]))
+
+    def test_missing_conversion_thickness_becomes_a_clarification(self):
+        item = extract_work_item("C15混凝土垫层", item_id="W1", discipline="building")
+        bill = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
+        main = _candidate(
+            "link:2024:984", "2-1-28", "混凝土垫层 无筋", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:173", bill_code=bill["code"], unit="10m2", factor=1.0,
+        )
+
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [bill], "quotas": [], "links": [main], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        self.assertEqual(analysis["proposals"][0]["status"], "needs_clarification")
+        self.assertEqual(analysis["clarification_questions"][0]["field"], "thickness")
+        self.assertTrue(analysis["validation"]["valid"])
+
+    def test_empty_selected_discipline_retries_one_high_confidence_discipline(self):
+        calls: list[str | None] = []
+        bill = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
+        main = _candidate(
+            "link:2024:984", "2-1-28", "混凝土垫层 无筋", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:173", bill_code=bill["code"], unit="10m2", factor=1.0,
+        )
+
+        def search(_query, *, discipline=None, **_kwargs):
+            calls.append(discipline)
+            return {
+                "bills": [bill] if discipline == "building" else [],
+                "quotas": [],
+                "links": [main] if discipline == "building" else [],
+                "guidance": [],
+                "hints": [],
+            }
+
+        analysis = analyze_pricing_description(
+            "C15混凝土垫层，厚度100mm",
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="installation",
+            search_fn=search,
+        )
+
+        self.assertEqual(infer_discipline("C15混凝土垫层，厚度100mm"), "building")
+        self.assertEqual(calls, ["installation", "building"])
+        self.assertEqual(analysis["discipline"], "building")
+        self.assertTrue(analysis["discipline_auto_switched"])
+        self.assertEqual(analysis["decision_status"], "ready_for_review")
 
     def test_short_follow_up_is_merged_into_original_work_item(self):
         previous = {

@@ -33,6 +33,45 @@ _STATUS_LABELS = {
     "multiple_valid_options": "有多个方案",
     "no_reliable_match": "暂无可靠组合",
 }
+_DISCIPLINE_LABELS = {
+    "building": "建筑",
+    "installation": "安装",
+    "municipal": "市政",
+    "landscape": "园林",
+}
+_DISCIPLINE_SIGNALS = {
+    "building": (
+        (r"混凝土垫层|基础垫层", 9),
+        (r"防水|砌筑|抹灰|模板|钢筋|屋面|楼地面|墙面|土方", 5),
+        (r"\bC\s*\d{2,3}\b", 2),
+    ),
+    "installation": (
+        (r"电缆|电线|桥架|配管|风管|通风|消防|设备安装|管道安装", 8),
+        (r"给排水|采暖|燃气|弱电|照明|配电", 6),
+        (r"\bDN\s*\d+\b", 3),
+    ),
+    "municipal": (
+        (r"市政|道路|路基|路面|桥涵|隧道|检查井|雨水井|污水井|路灯", 10),
+        (r"雨水管|污水管|市政管网", 8),
+    ),
+    "landscape": (
+        (r"园林|绿化|苗木|乔木|灌木|草坪|栽植|假山|园路", 10),
+    ),
+}
+
+
+def infer_discipline(description: str) -> str | None:
+    """Return one high-confidence discipline; ambiguous wording stays explicit."""
+    text = str(description or "")
+    scores = {
+        discipline: sum(weight for pattern, weight in signals if re.search(pattern, text, re.I))
+        for discipline, signals in _DISCIPLINE_SIGNALS.items()
+    }
+    ranked = sorted(scores.items(), key=lambda value: (-value[1], value[0]))
+    if not ranked or ranked[0][1] < 5:
+        return None
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0
+    return ranked[0][0] if ranked[0][1] - runner_up >= 2 else None
 
 
 def quota_role(title: str) -> str:
@@ -123,6 +162,15 @@ def _link_relevance(link: dict[str, Any], work_item: WorkItem) -> float:
     for specialization in ("防爆", "钢结构", "热缩管", "矿物绝缘", "耐火", "阻燃"):
         if specialization in text and specialization not in source:
             score -= 36
+    for specialization, aliases in {
+        "轻骨料": ("轻骨料", "陶粒"),
+        "毛石": ("毛石",),
+        "沥青": ("沥青",),
+    }.items():
+        if specialization in text:
+            score += 24 if any(value in source for value in aliases) else -90
+    if "无筋" in text:
+        score += 36 if not re.search(r"钢筋|有筋", source) else -60
     condition_score, reasons, missing, conflicts = rank_conditions(link, parse_query_conditions(work_item.search_text()))
     link["match_reasons"] = list(dict.fromkeys([*(link.get("match_reasons") or []), *reasons])) or ["清单关联规则召回"]
     link["missing_conditions"] = list(dict.fromkeys([*(link.get("missing_conditions") or []), *missing]))
@@ -256,6 +304,9 @@ def _assemble_proposal(
         if not any(material in _normalized_trade_text(str(link.get("title") or "")) for link in selected):
             extra_hints.append(f"本地关联定额未明确体现“{work_item.material}”，请确认材料处理口径")
             selected = []
+    selected_main = next((value for value in selected if quota_role(str(value.get("title") or "")) == "main"), None)
+    if selected_main and _requires_thickness_conversion(bill.get("unit"), selected_main.get("unit")) and _thickness_mm(work_item) is None:
+        extra_hints.append("清单与定额计量维度需按厚度换算，请补充设计厚度")
     question_source = {**search_result, "hints": [*extra_hints, *(search_result.get("hints") or [])]}
     questions = _questions_for_item(work_item, question_source, selected or viable_links[:1], question_start)
     lines: list[QuotaSelection] = []
@@ -263,13 +314,17 @@ def _assemble_proposal(
         role = quota_role(str(link.get("title") or ""))
         reasons = link.get("match_reasons") or ["由所选清单的本地关联表召回"]
         evidence = tuple(value for value in (references.get(str(link.get("record_id") or "")),) if value)
+        factor = float(link["factor"]) if isinstance(link.get("factor"), (int, float)) else None
+        converted_factor = _thickness_conversion_factor(bill.get("unit"), link.get("unit"), work_item) if role == "main" else None
+        if converted_factor is not None:
+            factor = converted_factor
         lines.append(QuotaSelection(
             record_id=str(link.get("quota_record_id") or ""),
             code=str(link.get("code") or ""),
             title=str(link.get("title") or ""),
             unit=str(link.get("unit") or ""),
             role=role,
-            factor=float(link["factor"]) if isinstance(link.get("factor"), (int, float)) else None,
+            factor=factor,
             reason="；".join(str(value) for value in reasons[:2]),
             evidence_refs=evidence,
             source_link_record_id=str(link.get("record_id") or ""),
@@ -284,7 +339,15 @@ def _assemble_proposal(
         status = "no_reliable_match"
     match_level = "high" if status == "ready_for_review" and lines else "medium" if lines else "low"
     evidence_refs = [references.get(bill_id)] + [value for line in lines for value in line.evidence_refs]
-    assumptions = () if links else ("本地关联表没有可验证定额组合，未将全文候选直接拼入方案。",)
+    assumptions: list[str] = [] if links else ["本地关联表没有可验证定额组合，未将全文候选直接拼入方案。"]
+    if selected_main and _requires_thickness_conversion(bill.get("unit"), selected_main.get("unit")):
+        thickness = _thickness_mm(work_item)
+        factor = _thickness_conversion_factor(bill.get("unit"), selected_main.get("unit"), work_item)
+        if thickness is not None and factor is not None:
+            assumptions.append(
+                f"清单按{bill.get('unit') or '-'}、定额按{selected_main.get('unit') or '-'}计量，"
+                f"已按{thickness:g}mm厚度换算，定额系数为{factor:g}。"
+            )
     return PricingProposal(
         work_item_id=work_item.id,
         bill_record_id=bill_id,
@@ -292,7 +355,7 @@ def _assemble_proposal(
         bill_title=str(bill.get("title") or ""),
         bill_unit=str(bill.get("unit") or ""),
         quota_lines=tuple(lines),
-        assumptions=assumptions,
+        assumptions=tuple(assumptions),
         unresolved_question_ids=tuple(value.id for value in questions),
         evidence_refs=tuple(dict.fromkeys(value for value in evidence_refs if value)),
         match_level=match_level,
@@ -371,9 +434,12 @@ def _lookup_tables(result: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], d
     return bills, quotas, links
 
 
-def _unit_dimension(value: object) -> str:
+def _unit_measure(value: object) -> tuple[str, float]:
     unit = str(value or "").strip().lower().replace("㎡", "m2").replace("m²", "m2").replace("m³", "m3")
-    unit = re.sub(r"^[\d.]+", "", unit).replace(" ", "")
+    unit = unit.replace(" ", "")
+    match = re.match(r"^(?P<scale>[\d.]+)?(?P<unit>.*)$", unit)
+    scale = float(match.group("scale") or 1) if match else 1.0
+    base_unit = match.group("unit") if match else unit
     for dimension, aliases in {
         "area": ("m2", "平方米"),
         "volume": ("m3", "立方米"),
@@ -381,9 +447,59 @@ def _unit_dimension(value: object) -> str:
         "mass": ("t", "吨", "kg", "千克"),
         "count": ("个", "套", "台", "组", "樘", "株", "根"),
     }.items():
-        if unit in aliases:
-            return dimension
-    return unit
+        if base_unit in aliases:
+            return dimension, scale
+    return base_unit, scale
+
+
+def _unit_dimension(value: object) -> str:
+    return _unit_measure(value)[0]
+
+
+def _thickness_mm(work_item: WorkItem) -> float | None:
+    value = _attribute_values(work_item).get("thickness")
+    try:
+        thickness = float(value)
+    except (TypeError, ValueError):
+        return None
+    return thickness if thickness > 0 else None
+
+
+def _requires_thickness_conversion(bill_unit: object, quota_unit: object) -> bool:
+    return {_unit_dimension(bill_unit), _unit_dimension(quota_unit)} == {"area", "volume"}
+
+
+def _thickness_conversion_factor(bill_unit: object, quota_unit: object, work_item: WorkItem) -> float | None:
+    thickness = _thickness_mm(work_item)
+    if thickness is None or not _requires_thickness_conversion(bill_unit, quota_unit):
+        return None
+    bill_dimension, bill_scale = _unit_measure(bill_unit)
+    quota_dimension, quota_scale = _unit_measure(quota_unit)
+    thickness_m = thickness / 1000
+    if bill_dimension == "volume" and quota_dimension == "area":
+        factor = bill_scale / thickness_m / quota_scale
+    else:
+        factor = bill_scale * thickness_m / quota_scale
+    return round(factor, 6)
+
+
+def _result_thickness_mm(result: dict[str, Any], work_item_id: str) -> float | None:
+    item = next((value for value in result.get("work_items") or [] if str(value.get("id") or "") == work_item_id), None)
+    if not isinstance(item, dict):
+        return None
+    attribute = next((value for value in item.get("attributes") or [] if value.get("key") == "thickness"), None)
+    if not isinstance(attribute, dict):
+        return None
+    try:
+        thickness = float(attribute.get("value"))
+    except (TypeError, ValueError):
+        return None
+    unit = str(attribute.get("unit") or "mm").lower()
+    if unit in {"cm", "厘米"}:
+        thickness *= 10
+    elif unit in {"m", "米"}:
+        thickness *= 1000
+    return thickness if thickness > 0 else None
 
 
 def validate_pricing_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -441,7 +557,21 @@ def validate_pricing_result(result: dict[str, Any]) -> dict[str, Any]:
                 bill_dimension = _unit_dimension(bill.get("unit")) if bill else ""
                 quota_dimension = _unit_dimension(link.get("unit"))
                 if role == "main" and bill_dimension and quota_dimension and bill_dimension != quota_dimension:
-                    errors.append(f"{work_item_id} 的清单与主定额单位维度不一致")
+                    if {bill_dimension, quota_dimension} == {"area", "volume"}:
+                        thickness = _result_thickness_mm(result, work_item_id)
+                        pending_thickness = any(
+                            value.get("work_item_id") == work_item_id and value.get("field") == "thickness"
+                            for value in result.get("clarification_questions") or []
+                            if isinstance(value, dict)
+                        )
+                        if thickness is not None:
+                            warnings.append(f"{work_item_id} 的清单与主定额已按{thickness:g}mm厚度换算")
+                        elif pending_thickness:
+                            warnings.append(f"{work_item_id} 的清单与主定额需在补充厚度后换算")
+                        else:
+                            errors.append(f"{work_item_id} 的清单与主定额单位维度不一致，且缺少厚度换算依据")
+                    else:
+                        errors.append(f"{work_item_id} 的清单与主定额单位维度不一致")
         if proposal.get("quota_lines") and main_count != 1:
             errors.append(f"{work_item_id} 的定额组合必须且只能有一个主项")
         if status == "ready_for_review" and (not bill_id or not proposal.get("quota_lines")):
@@ -465,46 +595,61 @@ def analyze_pricing_description(
         from .catalog import search_catalog
 
         search_fn = search_catalog
-    work_items = segment_description(description, discipline=discipline)
-    if not work_items:
+    if not segment_description(description, discipline=discipline):
         raise ValueError("施工描述不能为空")
     started = time.perf_counter()
-    item_results: list[tuple[WorkItem, dict[str, Any]]] = []
-    for work_item in work_items:
-        if cancel_event is not None and cancel_event.is_set():
-            from .catalog import CatalogSearchCancelled
 
-            raise CatalogSearchCancelled("catalogue search cancelled")
-        result = search_fn(
-            work_item.search_text(),
-            quota_edition=quota_edition,
-            standard_edition=standard_edition,
-            discipline=discipline,
-            limit=limit,
-            cancel_event=cancel_event,
-        )
-        # The first retrieval only finds candidate bills. Once a bill passes
-        # the semantic gate, relation-driven retrieval loads its complete
-        # quota set so database row order cannot hide a valid combination.
-        selected_bill = select_bill_candidate(work_item, list(result.get("bills") or []))
-        if selected_bill is not None and getattr(search_fn, "__module__", "") == "utils.catalog":
-            from .catalog import load_bill_links
+    def analyze_for(current_discipline: str | None) -> dict[str, Any]:
+        item_results: list[tuple[WorkItem, dict[str, Any]]] = []
+        for work_item in segment_description(description, discipline=current_discipline):
+            if cancel_event is not None and cancel_event.is_set():
+                from .catalog import CatalogSearchCancelled
 
-            result["links"] = load_bill_links(
-                [selected_bill],
+                raise CatalogSearchCancelled("catalogue search cancelled")
+            search_result = search_fn(
+                work_item.search_text(),
                 quota_edition=quota_edition,
                 standard_edition=standard_edition,
-                discipline=discipline,
+                discipline=current_discipline,
+                limit=limit,
+                cancel_event=cancel_event,
             )
-        item_results.append((work_item, result))
-    return assemble_pricing_result(
-        description,
-        item_results,
-        quota_edition=quota_edition,
-        standard_edition=standard_edition,
-        discipline=discipline,
-        elapsed_ms=(time.perf_counter() - started) * 1000,
-    )
+            # The first retrieval only finds candidate bills. Once a bill passes
+            # the semantic gate, relation-driven retrieval loads its complete
+            # quota set so database row order cannot hide a valid combination.
+            selected_bill = select_bill_candidate(work_item, list(search_result.get("bills") or []))
+            if selected_bill is not None and getattr(search_fn, "__module__", "") == "utils.catalog":
+                from .catalog import load_bill_links
+
+                search_result["links"] = load_bill_links(
+                    [selected_bill],
+                    quota_edition=quota_edition,
+                    standard_edition=standard_edition,
+                    discipline=current_discipline,
+                )
+            item_results.append((work_item, search_result))
+        return assemble_pricing_result(
+            description,
+            item_results,
+            quota_edition=quota_edition,
+            standard_edition=standard_edition,
+            discipline=current_discipline,
+        )
+
+    analysis = analyze_for(discipline)
+    inferred_discipline = infer_discipline(description)
+    if analysis.get("decision_status") == "no_reliable_match" and inferred_discipline and inferred_discipline != discipline:
+        fallback = analyze_for(inferred_discipline)
+        if fallback.get("decision_status") != "no_reliable_match" and any(value.get("bill_record_id") for value in fallback.get("proposals") or []):
+            fallback["requested_discipline"] = discipline
+            fallback["discipline_auto_switched"] = True
+            fallback["discipline_switch_reason"] = (
+                f"当前{_DISCIPLINE_LABELS.get(discipline, discipline or '所选')}专业没有可靠清单，"
+                f"已按施工描述切换到{_DISCIPLINE_LABELS.get(inferred_discipline, inferred_discipline)}专业。"
+            )
+            analysis = fallback
+    analysis["timing"] = {"local_ms": round((time.perf_counter() - started) * 1000, 1)}
+    return analysis
 
 
 def proposal_plain_text(result: dict[str, Any], *, confirmed_only: bool = False) -> str:

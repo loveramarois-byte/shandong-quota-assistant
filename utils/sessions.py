@@ -115,7 +115,27 @@ def serialize_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
     if not result:
         return None
     keep: dict[str, Any] = {}
-    for key in ("analysis_version", "query", "quota_edition", "standard_edition", "discipline", "conditions", "timing", "search_backend", "hints", "confidence", "match_level", "decision_status", "work_items", "clarification_questions", "proposals", "validation"):
+    for key in (
+        "analysis_version",
+        "query",
+        "quota_edition",
+        "standard_edition",
+        "discipline",
+        "requested_discipline",
+        "discipline_auto_switched",
+        "discipline_switch_reason",
+        "conditions",
+        "timing",
+        "search_backend",
+        "hints",
+        "confidence",
+        "match_level",
+        "decision_status",
+        "work_items",
+        "clarification_questions",
+        "proposals",
+        "validation",
+    ):
         if key in result:
             keep[key] = result[key]
     for group in ("bills", "quotas", "links", "guidance"):

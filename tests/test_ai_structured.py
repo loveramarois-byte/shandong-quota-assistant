@@ -50,6 +50,31 @@ class StructuredAiTests(unittest.TestCase):
         self.assertFalse(validation["valid"])
         self.assertTrue(any("W2" in value for value in validation["errors"]))
 
+    def test_ai_cannot_clear_a_locally_assembled_proposal(self):
+        result = {
+            "discipline": "building", "quota_edition": "2025", "standard_edition": "2024",
+            "work_items": [{"id": "W1"}], "clarification_questions": [],
+            "bills": [{"record_id": "bill:2024:1", "discipline": "building", "edition": "2024", "unit": "m2"}],
+            "quotas": [],
+            "links": [{
+                "record_id": "link:2024:1", "quota_record_id": "quota:1:1", "bill_record_id": "bill:2024:1",
+                "discipline": "building", "quota_edition": "2025", "standard_edition": "2024", "unit": "10m2",
+            }],
+            "proposals": [{
+                "work_item_id": "W1", "bill_record_id": "bill:2024:1",
+                "quota_lines": [{"record_id": "quota:1:1", "role": "main"}], "status": "ready_for_review",
+            }],
+        }
+        payload = {
+            "analysis_version": "1", "work_items": [{"id": "W1"}], "clarification_questions": [],
+            "proposals": [{"work_item_id": "W1", "bill_record_id": None, "quota_lines": [], "status": "no_reliable_match"}],
+        }
+
+        validation = validate_structured_ai_response(payload, result)
+
+        self.assertFalse(validation["valid"])
+        self.assertTrue(any("不得清空" in value for value in validation["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()

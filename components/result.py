@@ -694,7 +694,8 @@ class ResultPanel(ctk.CTkFrame):
         edition = self.result.get("quota_edition") or "-"
         standard = self.result.get("standard_edition") or "-"
         discipline = discipline_label(self.result.get("discipline")) if self.result.get("discipline") else "全部专业"
-        self.meta_label = ctk.CTkLabel(self.header, text=f"山东 {edition} 定额 / {standard} 清单 · {discipline}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+        auto_note = " · 已自动识别专业" if self.result.get("discipline_auto_switched") else ""
+        self.meta_label = ctk.CTkLabel(self.header, text=f"山东 {edition} 定额 / {standard} 清单 · {discipline}{auto_note}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.meta_label.pack(fill="x", anchor="w", pady=(4, 0))
         self.summary_label = ctk.CTkLabel(self, text=self._count_summary(), text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.summary_label.pack(fill="x", padx=16, pady=(2, 7))
