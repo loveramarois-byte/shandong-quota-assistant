@@ -235,9 +235,9 @@ class AiAnswerCard(ctk.CTkFrame):
         self.header.pack(fill="x", padx=18, pady=(15, 10))
         heading_group = ctk.CTkFrame(self.header, fg_color="transparent")
         heading_group.pack(side="left", fill="x", expand=True)
-        self.heading = ctk.CTkLabel(heading_group, text="AI 定额结论", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+        self.heading = ctk.CTkLabel(heading_group, text="AI 套价结论", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
         self.heading.pack(anchor="w")
-        self.subheading = ctk.CTkLabel(heading_group, text="已结合本地候选，并校验原书页", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.subheading = ctk.CTkLabel(heading_group, text="结构化方案已通过本地资料校验", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
         self.subheading.pack(anchor="w", pady=(3, 0))
         self.copy_button = DSButton(self.header, tokens=self.tokens, text="复制全部", variant="ghost", width=78, height=30, command=self._copy)
         self.copy_button.pack(side="right")
@@ -447,8 +447,8 @@ class MessageFeed(PointerScrollableFrame):
         self.after_idle(self._scroll_end)
         return bubble
 
-    def add_result(self, result: dict, on_primary_changed=None, on_export=None, *, collapsed: bool = True) -> ResultPanel:
-        panel = ResultPanel(self, tokens=self.tokens, result=result, on_primary_changed=on_primary_changed, on_export=on_export, collapsed=collapsed)
+    def add_result(self, result: dict, on_primary_changed=None, on_export=None, on_clarify=None, *, collapsed: bool = True) -> ResultPanel:
+        panel = ResultPanel(self, tokens=self.tokens, result=result, on_primary_changed=on_primary_changed, on_export=on_export, on_clarify=on_clarify, collapsed=collapsed)
         panel.pack(fill="x", padx=5, pady=(0, 16))
         self.entries.append(panel)
         self._apply_wrap_to_entry(panel)

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/images/app.ico" width="82" alt="山东定额助手图标">
   <h1>山东定额助手</h1>
-  <p>面向山东工程造价工作的 Windows 本地检索与 AI 辅助分析工具</p>
+  <p>把自然语言施工描述转成可核验“清单 + 多定额组合”的 Windows AI 辅助套价工具</p>
 
   [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
   [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-5B6573)](#运行要求)
@@ -14,15 +14,20 @@
 
 ## 为什么做这个项目
 
-工程造价人员经常需要在大量定额、清单和规则说明中快速缩小候选范围。本项目把“本地查找”与“AI 解释”分开：先用可追溯的本地数据检索候选，再由用户决定是否将有限摘要交给 AI 分析。
+工程造价人员经常需要把一段施工做法拆成多个事项，再逐项核对清单、主定额、调整项和运输项。本项目先用可追溯的本地资料形成结构化草案，再让 AI 只在本轮候选白名单中补充判断，最终由本地校验器和人工确认把关。
 
 ## 核心能力
 
 - **专业隔离**：建筑、安装、市政、园林按当前选择硬过滤，避免宽泛关键词混入其他专业。
+- **施工事项拆分**：把一段复合描述拆成独立事项，保留每项原文片段、数值属性和否定条件。
+- **多定额方案**：一条清单可组合主项、增补、调整、运输、换算和备选定额，不再只展示四组候选。
+- **关键条件澄清**：只追问会改变方案的条件；用户的短回答会合并回原事项并局部重算语义上下文。
+- **确定性校验**：AI 只能返回 JSON 和本轮 record ID；专业、版本、白名单及清单定额关联不通过时不会进入可确认方案。
 - **本地优先**：SQLite FTS5 全文检索，本地候选不依赖网络或 AI。
 - **条件排序**：根据施工方式、土类、深度、材料和部位等条件调整候选顺序。
 - **原书证据链**：候选项使用稳定记录 ID 和 `[R#]` 引用，逐条显示 PDF 文件、页码与定位状态，可从 AI 回答直接打开原书页。
-- **可选 AI**：支持本机 OpenAI/Anthropic 兼容端点，以及 DeepSeek 和智谱 AI 的 OpenAI 兼容接口。
+- **可选 AI**：支持本机兼容端点、DeepSeek 和智谱 AI；AI 结果通过本地校验后回填到可编辑方案卡。
+- **确认后导出**：只有人工确认的方案可复制或导出 CSV / JSON，候选池不会被命名为套价成果。
 - **隐私边界**：AI 默认关闭；远程分析需要分别确认施工描述和候选摘要的发送权限。
 - **Windows 凭据保护**：API Key 使用 DPAPI 绑定当前 Windows 用户，不写入普通设置文件。
 - **现代桌面交互**：CustomTkinter 自定义设计系统、Inter 字体、SVG 图标、浅色/深色主题与非阻塞分析流程。
@@ -31,14 +36,15 @@
 
 ```mermaid
 flowchart LR
-    A["输入施工做法"] --> B["选择版本与专业"]
-    B --> C["本地 FTS5 检索"]
-    C --> D["清单 / 定额 / 规则候选"]
-    D --> E{"是否启用 AI"}
-    E -->|"否"| F["人工复核与导出"]
-    E -->|"是"| G["有限摘要发送"]
-    G --> H["引用与编号校验"]
-    H --> F
+    A["输入施工做法"] --> B["拆分施工事项与属性"]
+    B --> C["逐项检索清单"]
+    C --> D["按本地关联组装多定额"]
+    D --> E["提出关键澄清问题"]
+    E --> F{"是否启用 AI"}
+    F -->|"否"| G["本地方案校验"]
+    F -->|"是"| H["AI JSON 方案"]
+    H --> G
+    G --> I["人工确认后复制 / 导出"]
 ```
 
 ## 运行要求
@@ -86,6 +92,7 @@ themes/              浅色/深色 design tokens
 utils/               检索、AI、凭据、会话与资源工具
 assets/              字体、图标、动画和应用图标
 tests/               单元与数据库集成测试
+evaluation/          不含受限资料的合成评测集与基线报告
 packaging/           Windows 安装包配置
 data/                仅保留接入说明，不跟踪真实资料
 ```
@@ -100,7 +107,8 @@ data/                仅保留接入说明，不跟踪真实资料
   tests.test_design_system tests.test_formatting tests.test_layout `
   tests.test_message_format tests.test_query_parse tests.test_scroll `
   tests.test_secrets tests.test_sessions tests.test_settings_dialog_logic `
-  tests.test_smoke -v
+  tests.test_smoke tests.test_work_items tests.test_pricing_pipeline `
+  tests.test_ai_structured tests.test_evaluation -v
 ```
 
 配置兼容资料库后，运行全量集成测试：
@@ -108,6 +116,14 @@ data/                仅保留接入说明，不跟踪真实资料
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
+
+合成解析基线：
+
+```powershell
+.\.venv\Scripts\python.exe .\evaluation\run.py
+```
+
+该基线只验证合成描述的事项边界、原文保留和确定性属性，不代表真实套价准确率。
 
 ## 安全与隐私
 

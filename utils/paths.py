@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 APP_NAME = "山东定额助手"
 APP_DIR_NAME = "ShandongQuotaAssistant"
 CATALOG_SCHEMA_VERSION = 3

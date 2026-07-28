@@ -26,13 +26,15 @@ from themes.tokens import ThemeTokens, get_theme
 from utils import sessions as session_store
 from utils.ai_providers import provider_config
 from utils.ai_validate import validate_ai_answer
-from utils.catalog import CatalogSearchCancelled, build_ai_prompt, library_stats, search_catalog, warm_search
+from utils.catalog import CatalogSearchCancelled, library_stats, warm_search
 from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch, is_complete_ai_text
 from utils.evidence import hydrate_result_sources
 from utils.fonts import load_inter_fonts
 from utils.logging_setup import log_exception, setup_logging
 from utils.paths import APP_VERSION, catalog_manifest_path, database_path, exports_dir, logs_dir, resource_path
-from utils.result_export import result_csv
+from utils.result_export import confirmed_proposal_payload, proposal_csv, result_csv
+from utils.ai_structured import build_structured_ai_prompt, parse_structured_ai_response, render_structured_ai_response, validate_structured_ai_response
+from utils.pricing_pipeline import analyze_pricing_description, merge_clarification_context
 from utils.settings import DISCIPLINE_LABEL_TO_CODE, DISCIPLINE_OPTIONS, load_settings, sanitize_settings, save_settings
 from utils.single_instance import SingleInstanceGuard
 from utils.svg import svg_image
@@ -428,6 +430,7 @@ class QuotaApp(ctk.CTk):
                     result,
                     on_primary_changed=lambda kind, item, tid=turn_id: self._primary_changed(tid, kind, item),
                     on_export=self._export_result,
+                    on_clarify=self._clarification_selected,
                     collapsed=bool(completed_attempt or self.settings.get("ai_enabled", False)),
                 )
                 panel.restore_primary(turn.get("human_selections"))
@@ -443,7 +446,13 @@ class QuotaApp(ctk.CTk):
             if completed_attempt:
                 ai_text = str(completed_attempt.get("response") or "")
                 if is_complete_ai_text(ai_text):
-                    validation = validate_ai_answer(ai_text, result) if isinstance(result, dict) else completed_attempt.get("validation")
+                    stored_validation = completed_attempt.get("validation") if isinstance(completed_attempt.get("validation"), dict) else {}
+                    validation = validate_ai_answer(ai_text, result) if isinstance(result, dict) else dict(stored_validation)
+                    if stored_validation.get("structured_valid"):
+                        validation["structured_valid"] = True
+                        validation["structured"] = stored_validation.get("structured")
+                        if panel is not None:
+                            panel.apply_ai_proposals(stored_validation.get("structured"))
                     latest_ai_card = self.feed.add_ai_answer(ai_text, validation, on_copy=self._copy_text, before=panel)
                     self._last_ai_text = ai_text
                 else:
@@ -508,8 +517,15 @@ class QuotaApp(ctk.CTk):
         session = self._ensure_session()
         if session is None:
             return
-        session_store.set_turn_selection(session, turn_id, kind, item)
+        if kind == "proposals":
+            session_store.set_turn_proposals(session, turn_id, list(item.get("proposals") or []))
+        else:
+            session_store.set_turn_selection(session, turn_id, kind, item)
         self._save_current_session()
+
+    def _clarification_selected(self, _question: dict, option: str) -> None:
+        self.composer.set_text(option)
+        self._show_toast("已填入补充条件，可直接发送", "info")
 
     # ------------------------------------------------------------------ sending
 
@@ -525,6 +541,14 @@ class QuotaApp(ctk.CTk):
             self.composer.show_error()
             self._show_toast(f"输入过长，请控制在 {Composer.MAX_CHARS} 字以内", "error")
             return
+        effective_description = description
+        clarification_parent_turn_id = None
+        if self.session and self.session.get("turns"):
+            previous_turn = self.session["turns"][-1]
+            merged = merge_clarification_context(previous_turn.get("retrieval_snapshot"), description)
+            if merged:
+                effective_description, _answered_question_id = merged
+                clarification_parent_turn_id = str(previous_turn.get("turn_id") or "")
         self.composer.remember_sent(description)
         self.composer.clear()
         session = self._ensure_session(description.replace("\n", " ").strip()[:28])
@@ -548,6 +572,9 @@ class QuotaApp(ctk.CTk):
             request_id=request_id,
         )
         turn_id = turn["turn_id"]
+        if clarification_parent_turn_id:
+            turn["context_parent_turn_id"] = clarification_parent_turn_id
+            turn["effective_query"] = effective_description
         session_id = session["id"]
         self._active_turn_id = turn_id
         self.feed.add("user", description)
@@ -574,7 +601,7 @@ class QuotaApp(ctk.CTk):
         self._last_ai_text = None
         self._set_status("查库中…", "busy")
         self._refresh_task_controls()
-        threading.Thread(target=self._worker, args=(request_id, revision, cancel, session_id, turn_id, description, edition, standard_edition, discipline, ai_enabled, ai_config), daemon=True).start()
+        threading.Thread(target=self._worker, args=(request_id, revision, cancel, session_id, turn_id, effective_description, edition, standard_edition, discipline, ai_enabled, ai_config), daemon=True).start()
 
     def _worker(
         self,
@@ -591,7 +618,7 @@ class QuotaApp(ctk.CTk):
         ai_config: AIRequestConfig,
     ) -> None:
         try:
-            result = search_catalog(
+            result = analyze_pricing_description(
                 description,
                 quota_edition=edition,
                 standard_edition=standard_edition,
@@ -632,12 +659,20 @@ class QuotaApp(ctk.CTk):
             return
         try:
             started = time.perf_counter()
-            ai_text = call_ccswitch(
-                build_ai_prompt(description, result),
+            raw_response = call_ccswitch(
+                build_structured_ai_prompt(description, result),
                 config=ai_config,
             )
             self.log.info("ai done ai_ms=%s", round((time.perf_counter() - started) * 1000, 1))
+            structured = parse_structured_ai_response(raw_response)
+            structured_validation = validate_structured_ai_response(structured, result)
+            if not structured_validation.get("valid"):
+                detail = "；".join(structured_validation.get("errors") or [])
+                raise ValueError("AI 结构化方案未通过本地校验：" + (detail or "结果不合法"))
+            ai_text = render_structured_ai_response(structured, result)
             validation = validate_ai_answer(ai_text, result)
+            validation["structured_valid"] = True
+            validation["structured"] = structured
             if not cancel.is_set():
                 self.events.put(("answer", (request_id, cancel, {"session_id": session_id, "turn_id": turn_id, "revision": revision, "text": ai_text, "validation": validation})))
         except Exception as exc:
@@ -651,7 +686,7 @@ class QuotaApp(ctk.CTk):
         target_turn_id = turn_id or self._active_turn_id
         turn = session_store.find_turn(self.session, target_turn_id)
         if turn is None or not isinstance(turn.get("retrieval_snapshot"), dict):
-            self._show_toast("该轮没有可重试的本地候选", "error")
+            self._show_toast("该轮没有可重试的本地方案", "error")
             return
         session_id = str(self.session["id"])
         if self.tasks.for_turn(session_id, str(target_turn_id)) is not None:
@@ -692,7 +727,7 @@ class QuotaApp(ctk.CTk):
         panel = self._turn_panels.get(str(target_turn_id))
         self._clear_turn_thinking(str(target_turn_id))
         self._turn_thinking[str(target_turn_id)] = self.feed.add_ai_thinking(before=panel)
-        self._set_status("本地候选已保留 · AI 重试中", "busy")
+        self._set_status("本地套价草案已保留 · AI 重试中", "busy")
         self._refresh_task_controls()
         threading.Thread(target=self._run_ai, args=(request_id, revision, cancel, session_id, str(target_turn_id), description, result, ai_enabled, ai_config), daemon=True).start()
 
@@ -718,10 +753,10 @@ class QuotaApp(ctk.CTk):
             self.feed.add_warning("本轮本地检索已取消，可修改条件后重新分析。")
         else:
             self._clear_turn_thinking(task.token.turn_id)
-            self._set_status("本地候选已返回 · AI 已取消")
-            self._show_toast("AI 已取消，本地候选仍可用", "info")
+            self._set_status("本地套价草案已返回 · AI 已取消")
+            self._show_toast("AI 已取消，本地方案与依据仍可用", "info")
             self.feed.add_warning(
-                "AI 分析已取消；本地候选仍可直接核验和复制。",
+                "AI 分析已取消；本地方案与资料依据仍可继续复核。",
                 action_text="重试 AI",
                 command=lambda tid=task.token.turn_id: self._retry_ai(tid),
             )
@@ -736,18 +771,18 @@ class QuotaApp(ctk.CTk):
                 action = "请在 ccSwitch 切换可用渠道后重试"
             else:
                 action = f"请到 {label} 控制台检查余额或额度后重试"
-            return f"AI 暂不可用：{label} 额度不足。{action}；本地候选仍可直接使用。"
+            return f"AI 暂不可用：{label} 额度不足。{action}；本地方案与依据仍可使用。"
         if "熔断" in detail or "circuit" in lowered or "no available" in lowered:
             if provider == "ccswitch":
                 action = "请恢复或切换 ccSwitch 渠道后重试"
             else:
                 action = "请稍后重试，或在设置中重新获取模型"
-            return f"AI 暂不可用：{label} 当前没有可用模型。{action}；本地候选仍可直接使用。"
+            return f"AI 暂不可用：{label} 当前没有可用模型。{action}；本地方案与依据仍可使用。"
         if "403" in detail or "401" in detail:
-            return f"AI 暂不可用：{label} 拒绝了请求。请检查 API Key 和账号权限后重试；本地候选仍可直接使用。"
+            return f"AI 暂不可用：{label} 拒绝了请求。请检查 API Key 和账号权限后重试；本地方案与依据仍可使用。"
         if "timed out" in lowered or "timeout" in lowered or "超时" in detail:
-            return f"AI 暂不可用：{label} 请求超时。请稍后重试；本地候选仍可直接使用。"
-        return f"AI 暂不可用：{label} 请求未完成。请在设置中测试连接后重试；本地候选仍可直接使用。"
+            return f"AI 暂不可用：{label} 请求超时。请稍后重试；本地方案与依据仍可使用。"
+        return f"AI 暂不可用：{label} 请求未完成。请在设置中测试连接后重试；本地方案与依据仍可使用。"
 
     @staticmethod
     def _friendly_search_error(detail: str) -> str:
@@ -768,26 +803,44 @@ class QuotaApp(ctk.CTk):
             pass
 
     def _export_result(self, fmt: str, panel) -> None:
-        result = panel.result
+        result = panel.current_result()
         selections = {"primary": {kind: entry.get("item") for kind, entry in panel.primary.items()}}
         if fmt == "candidate_copy":
             text = panel.pricing_text()
             if not text.strip():
-                self._show_toast("没有可复制的候选", "error")
+                self._show_toast("请先确认至少一个套价方案", "error")
                 return
             self._copy_text(text)
             return
         default_dir = exports_dir()
         if fmt == "excel":
-            path = filedialog.asksaveasfilename(parent=self, title="导出表格", defaultextension=".csv", initialdir=str(default_dir), initialfile="定额候选.csv", filetypes=(("CSV 表格", "*.csv"),))
+            rows = proposal_csv(result, confirmed_only=True) if result.get("proposals") else result_csv(result)
+            if len(rows) <= 1:
+                self._show_toast("请先确认至少一个套价方案", "error")
+                return
+            path = filedialog.asksaveasfilename(parent=self, title="导出套价方案", defaultextension=".csv", initialdir=str(default_dir), initialfile="已确认套价方案.csv", filetypes=(("CSV 表格", "*.csv"),))
             if not path:
                 return
             try:
                 with open(path, "w", newline="", encoding="utf-8-sig") as handle:
                     writer = csv.writer(handle)
-                    for row in result_csv(result):
+                    for row in rows:
                         writer.writerow(row)
                 self._show_toast(f"表格已导出：{Path(path).name}", "info")
+            except OSError:
+                self._show_toast("导出失败，请检查目录权限", "error")
+            return
+        if fmt == "json":
+            payload = confirmed_proposal_payload(result)
+            if not payload["proposals"]:
+                self._show_toast("请先确认至少一个套价方案", "error")
+                return
+            path = filedialog.asksaveasfilename(parent=self, title="导出套价方案", defaultextension=".json", initialdir=str(default_dir), initialfile="已确认套价方案.json", filetypes=(("JSON", "*.json"),))
+            if not path:
+                return
+            try:
+                Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+                self._show_toast(f"方案已导出：{Path(path).name}", "info")
             except OSError:
                 self._show_toast("导出失败，请检查目录权限", "error")
             return
@@ -941,12 +994,13 @@ class QuotaApp(ctk.CTk):
                             value["discipline"],
                             value["result"],
                         )
-                        status = "本地候选已返回 · AI 分析中，可能需要几十秒" if ai_enabled else "本地候选已返回"
+                        status = "本地套价草案已返回 · AI 分析中，可能需要几十秒" if ai_enabled else "本地套价草案已返回"
                         self._set_status(status, "busy" if ai_enabled else "neutral")
                         panel = self.feed.add_result(
                             value["result"],
                             on_primary_changed=lambda selected_kind, item, tid=turn_id: self._primary_changed(tid, selected_kind, item),
                             on_export=self._export_result,
+                            on_clarify=self._clarification_selected,
                             collapsed=ai_enabled,
                         )
                         self._turn_panels[turn_id] = panel
@@ -963,8 +1017,8 @@ class QuotaApp(ctk.CTk):
                     self.tasks.finish(request_id, TaskPhase.ERROR)
                     if self._save_event_session(event_session, is_current=is_current) and is_current:
                         if is_foreground_turn:
-                            self._set_status("本地候选已返回 · AI 未连接", "error")
-                            self._show_toast("AI 暂不可用，已保留本地候选", "info")
+                            self._set_status("本地套价草案已返回 · AI 未连接", "error")
+                            self._show_toast("AI 暂不可用，已保留本地方案与依据", "info")
                         self.feed.add_warning(
                             str(value.get("message") or "AI 请求失败"),
                             action_text="重试 AI",
@@ -1002,11 +1056,14 @@ class QuotaApp(ctk.CTk):
                         if is_foreground_turn:
                             self._set_status("AI 分析完成 · 原书证据已校验")
                         self._last_ai_text = ai_text
+                        panel = self._turn_panels.get(turn_id)
+                        if panel is not None and validation.get("structured_valid"):
+                            panel.apply_ai_proposals(validation.get("structured"))
                         self.feed.add_ai_answer(
                             ai_text,
                             validation,
                             on_copy=self._copy_text,
-                            before=self._turn_panels.get(turn_id),
+                            before=panel,
                         )
                 self._refresh_task_controls()
         except queue.Empty:

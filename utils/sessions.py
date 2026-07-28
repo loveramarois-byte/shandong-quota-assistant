@@ -11,11 +11,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .paths import sessions_dir
+from .paths import catalog_manifest_path, sessions_dir
 
 SESSION_SCHEMA_VERSION = 2
-CATALOG_BUILD_ID = "evidence-v4-84fe8cb58323"
-PROMPT_VERSION = "quota-assistant-v2"
+CATALOG_BUILD_ID = "unregistered-catalog"
+PROMPT_VERSION = "pricing-json-v1"
 _LAST_UPDATED_AT = 0.0
 _WRITE_LOCK = threading.RLock()
 
@@ -56,6 +56,18 @@ def new_session_id() -> str:
 
 def new_turn_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def current_catalog_build_id() -> str:
+    path = catalog_manifest_path()
+    if path is None:
+        return CATALOG_BUILD_ID
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        value = str(data.get("catalog_build_id") or "").strip()
+        return value or CATALOG_BUILD_ID
+    except (OSError, json.JSONDecodeError):
+        return CATALOG_BUILD_ID
 
 
 def _new_session_data(title: str, *, session_id: str | None = None, created_at: float | None = None) -> dict[str, Any]:
@@ -103,7 +115,7 @@ def serialize_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
     if not result:
         return None
     keep: dict[str, Any] = {}
-    for key in ("query", "quota_edition", "standard_edition", "discipline", "conditions", "timing", "search_backend", "hints", "confidence", "decision_status"):
+    for key in ("analysis_version", "query", "quota_edition", "standard_edition", "discipline", "conditions", "timing", "search_backend", "hints", "confidence", "match_level", "decision_status", "work_items", "clarification_questions", "proposals", "validation"):
         if key in result:
             keep[key] = result[key]
     for group in ("bills", "quotas", "links", "guidance"):
@@ -136,7 +148,7 @@ def create_turn(
             "discipline": discipline,
         },
         "parsed_conditions": {},
-        "catalog_build_id": CATALOG_BUILD_ID,
+        "catalog_build_id": current_catalog_build_id(),
         "retrieval_snapshot": None,
         "retrieval_snapshot_sha256": None,
         "ai_attempts": [],
@@ -245,6 +257,19 @@ def set_turn_selection(session: dict[str, Any], turn_id: str, kind: str, item: d
         "discipline": item.get("discipline"),
         "kind_label": "清单" if kind == "bill" else "定额",
     }
+
+
+def set_turn_proposals(session: dict[str, Any], turn_id: str, proposals: list[dict[str, Any]]) -> None:
+    turn = find_turn(session, turn_id)
+    if turn is None:
+        raise KeyError(f"turn not found: {turn_id}")
+    cleaned = [_json_safe_item(value) for value in proposals if isinstance(value, dict)]
+    turn.setdefault("human_selections", {})["proposals"] = cleaned
+    turn.setdefault("human_edits", []).append({
+        "type": "proposal_update",
+        "created_at": _next_updated_at(),
+        "proposals": cleaned,
+    })
 
 
 def _validate_session(data: Any) -> bool:

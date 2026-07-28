@@ -1,0 +1,13 @@
+{
+  "dataset": "synthetic_v1.jsonl",
+  "case_count": 30,
+  "synthetic_only": true,
+  "scope_note": "仅验证合成描述的事项边界、原文保留和确定性属性，不代表真实套价准确率。",
+  "metrics": {
+    "item_count_accuracy": 1.0,
+    "source_term_recall": 1.0,
+    "typed_attribute_accuracy": 1.0,
+    "negative_constraint_recall": 1.0
+  },
+  "failures": []
+}

@@ -67,7 +67,7 @@ def parse_query_conditions(query: str) -> QueryConditions:
     diameter_match = re.search(r"(?<![A-Za-z])DN\s*(\d+(?:\.\d+)?)", text, re.I)
     if diameter_mm is None and diameter_match:
         diameter_mm = float(diameter_match.group(1))
-    strength_match = re.search(r"(?<![A-Za-z])((?:C|M|HRB)\s*\d{2,3})(?!\d)", text, re.I)
+    strength_match = re.search(r"(?<![A-Za-z])((?:C\s*\d{2,3}|M\s*\d{1,3}|HRB\s*\d{3}))(?!\d)", text, re.I)
     strength_grade = re.sub(r"\s+", "", strength_match.group(1)).upper() if strength_match else None
     return QueryConditions(object_type=object_type, soil_type=soil_type, depth_m=depth_m, distance_m=distance_m, method=method, thickness_mm=thickness_mm, diameter_mm=diameter_mm, strength_grade=strength_grade)
 
@@ -198,7 +198,7 @@ def rank_conditions(item: dict[str, Any], conditions: QueryConditions) -> tuple[
             missing.append(f"子目未标直径分档，需核对 DN{conditions.diameter_mm:g} 适用规格")
 
     if conditions.strength_grade:
-        title_grades = {value.upper() for value in re.findall(r"(?:C|M|HRB)\s*\d{2,3}", title, re.I)}
+        title_grades = {re.sub(r"\s+", "", value).upper() for value in re.findall(r"(?:C\s*\d{2,3}|M\s*\d{1,3}|HRB\s*\d{3})", title, re.I)}
         if conditions.strength_grade in title_grades:
             score += 22
             reasons.append(f"强度等级命中“{conditions.strength_grade}”")

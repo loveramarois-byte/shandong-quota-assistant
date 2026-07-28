@@ -133,9 +133,20 @@ class Composer(ctk.CTkFrame):
         self.textbox.bind("<Control-Return>", self._send_event)
         self.textbox.bind("<KeyRelease>", self._update_char_count, add="+")
         self.textbox.bind("<Up>", self._restore_last_sent)
-        self.cancel_button = DSButton(self.shell, tokens=self.tokens, text="停止", variant="secondary", width=68, command=self.on_cancel or (lambda: None))
-        self.send_button = DSButton(self.shell, tokens=self.tokens, text="问 AI", variant="primary", image=send_image, compound="left", width=96, command=self.on_send)
-        self.send_button.pack(side="right", padx=12, pady=12, anchor="s")
+        # Keep both actions in fixed slots so asynchronous state changes never
+        # move the send button or leave a stale CustomTkinter canvas behind.
+        self.action_frame = ctk.CTkFrame(
+            self.shell,
+            width=172,
+            height=self.tokens.control_height,
+            fg_color=c.elevated,
+            corner_radius=0,
+        )
+        self.action_frame.pack(side="right", padx=(4, 12), pady=12, anchor="s")
+        self.action_frame.pack_propagate(False)
+        self.cancel_button = DSButton(self.action_frame, tokens=self.tokens, text="停止", variant="secondary", width=68, command=self.on_cancel or (lambda: None))
+        self.send_button = DSButton(self.action_frame, tokens=self.tokens, text="问 AI", variant="primary", image=send_image, compound="left", width=96, command=self.on_send)
+        self.send_button.place(x=76, y=0)
         self.textbox.bind("<FocusIn>", lambda _e: self.shell.configure(border_color=self.tokens.colors.accent), add="+")
         self.textbox.bind("<FocusOut>", lambda _e: self.shell.configure(border_color=self.tokens.colors.border), add="+")
 
@@ -212,6 +223,14 @@ class Composer(ctk.CTkFrame):
     def remember_sent(self, text: str) -> None:
         self._last_sent = text.strip()
 
+    def set_text(self, text: str) -> None:
+        self.textbox.delete("1.0", "end")
+        self.textbox.insert("1.0", str(text or ""))
+        self._placeholder_active = False
+        self.textbox.configure(text_color=self.tokens.colors.text)
+        self._update_char_count()
+        self.textbox.focus_set()
+
     def _clear_placeholder(self, _event=None) -> None:
         if self._placeholder_active:
             self.textbox.delete("1.0", "end")
@@ -273,20 +292,20 @@ class Composer(ctk.CTkFrame):
         self.send_button.set_loading(busy, "准备依据…" if self._ai_mode else "查资料中…")
         self.textbox.configure(state="disabled" if busy else "normal")
         if not busy:
-            self.cancel_button.pack_forget()
+            self.cancel_button.place_forget()
 
     def set_ai_cancel_available(self, available: bool, *, search_running: bool = False) -> None:
         if available:
             self.cancel_button.configure(text="停止检索" if search_running else "停止 AI")
             if not self.cancel_button.winfo_manager():
-                self.cancel_button.pack(side="right", padx=(0, 0), pady=12, anchor="s", before=self.send_button)
+                self.cancel_button.place(x=0, y=0)
             if not search_running:
                 # AI is a per-turn background task. A returned local result
                 # must not block the next query or session navigation.
                 self.send_button.set_loading(False)
                 self.send_button.set_enabled(True)
         else:
-            self.cancel_button.pack_forget()
+            self.cancel_button.place_forget()
             if str(self.textbox.cget("state")) != "disabled":
                 self.send_button.set_loading(False)
 
@@ -296,6 +315,7 @@ class Composer(ctk.CTkFrame):
         self.configure(fg_color="transparent")
         self.chips_frame.configure(fg_color="transparent")
         self.shell.configure(fg_color=c.elevated, border_color=c.border)
+        self.action_frame.configure(fg_color=c.elevated)
         self.textbox.configure(text_color=c.text_muted if self._placeholder_active else c.text, font=tokens.font(tokens.typography.body))
         self.char_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
         self.condition_toggle.apply_theme(tokens)

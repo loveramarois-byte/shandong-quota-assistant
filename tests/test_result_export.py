@@ -4,7 +4,7 @@ import unittest
 
 from components.result import candidate_copy_lines, result_markdown
 from utils.catalog import search_catalog
-from utils.result_export import result_csv
+from utils.result_export import confirmed_proposal_payload, proposal_csv, result_csv
 
 
 class ExportTests(unittest.TestCase):
@@ -39,6 +39,23 @@ class ExportTests(unittest.TestCase):
     def test_markdown_without_ai_is_still_valid(self):
         text = result_markdown(self.result)
         self.assertIn("定额候选", text)
+
+    def test_proposal_export_only_contains_confirmed_rows(self):
+        proposal_result = {
+            "analysis_version": "1",
+            "query": "测试",
+            "work_items": [{"id": "W1", "source_span": "测试事项"}],
+            "proposals": [{
+                "work_item_id": "W1", "confirmed": False, "status": "ready_for_review",
+                "bill_record_id": "bill:1", "bill_code": "0101", "bill_title": "测试清单", "bill_unit": "m2",
+                "quota_lines": [{"role": "main", "code": "1-1", "title": "测试定额", "unit": "10m2"}],
+            }],
+        }
+        self.assertEqual(len(proposal_csv(proposal_result)), 1)
+        self.assertEqual(confirmed_proposal_payload(proposal_result)["proposals"], [])
+        proposal_result["proposals"][0]["confirmed"] = True
+        self.assertEqual(len(proposal_csv(proposal_result)), 3)
+        self.assertEqual(len(confirmed_proposal_payload(proposal_result)["proposals"]), 1)
 
 
 if __name__ == "__main__":

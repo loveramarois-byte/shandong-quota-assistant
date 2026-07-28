@@ -415,6 +415,31 @@ def _load_links(
     return links
 
 
+def load_bill_links(
+    bills: list[dict],
+    *,
+    quota_edition: str,
+    standard_edition: str,
+    discipline: str | None,
+    limit: int = 200,
+) -> list[dict]:
+    """Load the full relation set after the proposal pipeline selects a bill."""
+    if not bills:
+        return []
+    connection = connect_database()
+    try:
+        return _load_links(
+            connection,
+            bills,
+            quota_edition,
+            standard_edition,
+            discipline,
+            limit=max(1, min(int(limit), 500)),
+        )
+    finally:
+        connection.close()
+
+
 def _direct_code_lookup(
     connection: sqlite3.Connection,
     query: str,
@@ -568,6 +593,7 @@ def _attach_references(result: dict) -> dict:
                 if item.get("conflicts"):
                     confidence = min(confidence, 0.34)
             item["confidence"] = round(confidence, 3)
+            item["match_level"] = "high" if confidence >= 0.72 else "medium" if confidence >= 0.5 else "low"
             reference += 1
     primary_candidates = [
         item
@@ -580,6 +606,7 @@ def _attach_references(result: dict) -> dict:
     if result.get("hints"):
         result_confidence = min(result_confidence, 0.64)
     result["confidence"] = round(result_confidence, 3)
+    result["match_level"] = "high" if result_confidence >= 0.72 else "medium" if result_confidence >= 0.5 else "low"
     if not primary_candidates:
         result["decision_status"] = "no_reliable_candidate"
     elif result.get("search_backend") == "code" and result_confidence >= 0.95:
@@ -697,7 +724,7 @@ USER_DESCRIPTION
 目标定额版本：山东 {result['quota_edition']}；工程量清单计价依据：山东 {result['standard_edition']}；专业筛选：{result.get('discipline') or '全部专业'}
 版本口径：定额版本和清单计价依据由用户分别选定，不得把年份相邻或历史默认映射当成适用依据；只有候选偏离当前所选口径时才提示版本风险。
 结构化条件解析：{json.dumps(result.get('conditions') or {}, ensure_ascii=False)}
-本轮可信状态：{result.get('decision_status') or 'needs_more_conditions'}；本地候选置信度：{result.get('confidence') or 0:.0%}
+本轮可信状态：{result.get('decision_status') or 'needs_more_conditions'}；匹配等级：{result.get('match_level') or 'low'}（不是正确率）
 
 检索资料：
 {context or '没有找到足够的资料，请明确告诉用户需要补充什么。'}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import re
 import tkinter as tk
 from pathlib import PureWindowsPath
@@ -10,6 +11,7 @@ from themes.tokens import ThemeTokens
 from utils.evidence import open_source_page, resolve_source_path
 from utils.formatting import discipline_label, normalize_unit
 from utils.paths import resource_path
+from utils.pricing_pipeline import proposal_plain_text
 from utils.svg import svg_image
 from .button import DSButton, IconButton
 
@@ -170,9 +172,8 @@ class CandidateRow(ctk.CTkFrame):
         self.title_label = self._label(title_row, text=self.item.get("title") or "未命名候选", text_color=c.text, font=self.tokens.font(self.tokens.typography.body, "medium"), anchor="w", justify="left", wraplength=400)
         self.title_label.grid(row=0, column=0, sticky="ew")
         self.primary_badge = self._label(title_row, text="已暂存", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "bold"), anchor="e")
-        confidence = self.item.get("confidence")
-        confidence_text = f"置信度 {float(confidence):.0%}" if isinstance(confidence, (int, float)) else ""
-        details = [x for x in (_edition(self.item), discipline_label(self.item.get("discipline")), _unit(self.item), confidence_text, f"第 {self.item.get('pdf_page')} 页" if self.item.get("pdf_page") else "来源页未挂载") if x]
+        level_text = {"high": "匹配高", "medium": "匹配中", "low": "匹配低"}.get(str(self.item.get("match_level") or ""), "")
+        details = [x for x in (_edition(self.item), discipline_label(self.item.get("discipline")), _unit(self.item), level_text, f"第 {self.item.get('pdf_page')} 页" if self.item.get("pdf_page") else "来源页未挂载") if x]
         if self.kind == "link" and self.item.get("factor") is not None:
             details.append(f"系数 {self.item.get('factor')}")
         state_text, _state_color, _state_surface = _candidate_state(self.item, self.tokens)
@@ -484,15 +485,176 @@ class CandidateSection(ctk.CTkFrame):
             row.set_wraplength(width)
 
 
+_PROPOSAL_STATUS = {
+    "ready_for_review": ("待人工确认", "success"),
+    "needs_clarification": ("待补条件", "warning"),
+    "multiple_valid_options": ("请选择方案", "warning"),
+    "no_reliable_match": ("暂无可靠组合", "danger"),
+}
+_ROLE_LABELS = {
+    "main": "主项",
+    "supplement": "增补",
+    "adjustment": "调整",
+    "transport": "运输",
+    "conversion": "换算",
+    "alternative": "备选",
+}
+
+
+class ProposalCard(ctk.CTkFrame):
+    """One work item, one bill and zero-to-many locally validated quota lines."""
+
+    def __init__(self, master, *, tokens: ThemeTokens, work_item: dict, proposal: dict, questions: list[dict], on_change=None, on_clarify=None, **kwargs):
+        self.tokens = tokens
+        self.work_item = work_item
+        self.proposal = proposal
+        self.questions = questions
+        self.on_change = on_change
+        self.on_clarify = on_clarify
+        self._wrap_width = 440
+        self._labels: list[ctk.CTkLabel] = []
+        self._buttons: list[DSButton] = []
+        super().__init__(master, fg_color=tokens.colors.surface, border_color=tokens.colors.border, border_width=1, corner_radius=tokens.radius_sm, **kwargs)
+        self._build()
+
+    def _label(self, master, **kwargs) -> ctk.CTkLabel:
+        value = ctk.CTkLabel(master, **kwargs)
+        self._labels.append(value)
+        return value
+
+    def _build(self) -> None:
+        c = self.tokens.colors
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 10))
+        title_group = ctk.CTkFrame(header, fg_color="transparent")
+        title_group.pack(side="left", fill="x", expand=True)
+        item_id = str(self.work_item.get("id") or "")
+        self.item_caption = self._label(title_group, text=f"施工事项 {item_id.removeprefix('W') or item_id}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        self.item_caption.pack(anchor="w")
+        self.item_title = self._label(title_group, text=str(self.work_item.get("source_span") or "未识别施工事项"), text_color=c.text, font=self.tokens.font(self.tokens.typography.body, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width)
+        self.item_title.pack(fill="x", pady=(3, 0))
+        status_text, tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("待复核", "warning"))
+        tone_color = getattr(c, tone)
+        tone_surface = getattr(c, f"{tone}_soft")
+        self.status_label = self._label(header, text=status_text, text_color=tone_color, fg_color=tone_surface, corner_radius=6, padx=9, pady=4, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
+        self.status_label.pack(side="right", padx=(10, 0), anchor="n")
+
+        self.content = ctk.CTkFrame(self, fg_color="transparent")
+        self.content.pack(fill="x", padx=16)
+        bill_id = self.proposal.get("bill_record_id")
+        self._selection_row(
+            "清单",
+            str(self.proposal.get("bill_code") or "未匹配"),
+            str(self.proposal.get("bill_title") or "本地资料未形成可靠清单"),
+            str(self.proposal.get("bill_unit") or ""),
+            c.accent if bill_id else c.text_muted,
+        )
+        quota_lines = self.proposal.get("quota_lines") or []
+        if quota_lines:
+            for line in quota_lines:
+                self._selection_row(
+                    _ROLE_LABELS.get(str(line.get("role") or ""), "定额"),
+                    str(line.get("code") or "未确认"),
+                    str(line.get("title") or "未命名定额"),
+                    str(line.get("unit") or ""),
+                    c.success if line.get("role") == "main" else c.text_secondary,
+                    removable=True,
+                    record_id=str(line.get("record_id") or ""),
+                )
+        else:
+            self.empty_quota = self._label(self.content, text="尚无通过清单关联校验的定额组合", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+            self.empty_quota.pack(fill="x", pady=(2, 8))
+
+        if self.questions:
+            self.question_area = ctk.CTkFrame(self, fg_color=c.warning_soft, corner_radius=self.tokens.radius_sm)
+            self.question_area.pack(fill="x", padx=12, pady=(8, 6))
+            for index, question in enumerate(self.questions):
+                question_label = self._label(self.question_area, text=str(question.get("question") or "请补充关键条件"), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width)
+                question_label.pack(fill="x", padx=12, pady=(9 if index == 0 else 6, 5))
+                options = ctk.CTkFrame(self.question_area, fg_color="transparent")
+                options.pack(fill="x", padx=9, pady=(0, 8))
+                for option in (question.get("options") or [])[:4]:
+                    button = DSButton(options, tokens=self.tokens, text=str(option), variant="secondary", width=88, height=28, command=lambda q=question, value=str(option): self._clarify(q, value))
+                    button.pack(side="left", padx=3)
+                    self._buttons.append(button)
+        else:
+            self.question_area = None
+
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=16, pady=(8, 13))
+        level = {"high": "高", "medium": "中", "low": "低"}.get(str(self.proposal.get("match_level") or ""), "低")
+        self.level_label = self._label(footer, text=f"匹配等级 {level} · 以本地清单定额关联为准", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.level_label.pack(side="left")
+        ready = self.proposal.get("status") == "ready_for_review"
+        self.confirm_button = DSButton(footer, tokens=self.tokens, text="已确认" if self.proposal.get("confirmed") else "确认方案", variant="primary", width=84, height=30, command=self._toggle_confirm)
+        self.confirm_button.pack(side="right")
+        self.confirm_button.set_enabled(bool(ready))
+        self._buttons.append(self.confirm_button)
+
+    def _selection_row(self, role: str, code: str, title: str, unit: str, role_color: str, *, removable: bool = False, record_id: str = "") -> None:
+        c = self.tokens.colors
+        row = ctk.CTkFrame(self.content, fg_color="transparent")
+        row.pack(fill="x", pady=(1, 7))
+        role_label = self._label(row, text=role, width=48, text_color=role_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        role_label.pack(side="left", anchor="n", pady=2)
+        copy = ctk.CTkFrame(row, fg_color="transparent")
+        copy.pack(side="left", fill="x", expand=True)
+        code_label = self._label(copy, text=code, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
+        code_label.pack(anchor="w")
+        title_label = self._label(copy, text=title + (f" · {unit}" if unit else ""), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta), anchor="w", justify="left", wraplength=self._wrap_width)
+        title_label.pack(fill="x", pady=(2, 0))
+        if removable:
+            button = DSButton(row, tokens=self.tokens, text="移除", variant="ghost", width=52, height=28, command=lambda: self._remove(record_id))
+            button.pack(side="right", padx=(8, 0), anchor="n")
+            self._buttons.append(button)
+
+    def _remove(self, record_id: str) -> None:
+        self.proposal["quota_lines"] = [value for value in self.proposal.get("quota_lines") or [] if str(value.get("record_id") or "") != record_id]
+        self.proposal["confirmed"] = False
+        if not any(value.get("role") == "main" for value in self.proposal["quota_lines"]):
+            self.proposal["status"] = "no_reliable_match"
+            self.proposal["match_level"] = "low"
+        if self.on_change:
+            self.on_change()
+
+    def _toggle_confirm(self) -> None:
+        self.proposal["confirmed"] = not bool(self.proposal.get("confirmed"))
+        self.confirm_button.configure(text="已确认" if self.proposal["confirmed"] else "确认方案")
+        if self.on_change:
+            self.on_change()
+
+    def _clarify(self, question: dict, value: str) -> None:
+        if self.on_clarify:
+            self.on_clarify(question, value)
+
+    def set_wraplength(self, width: int) -> None:
+        self._wrap_width = max(280, width - 72)
+        for label in self._labels:
+            try:
+                if int(label.cget("wraplength") or 0) > 0:
+                    label.configure(wraplength=self._wrap_width)
+            except (TypeError, ValueError):
+                pass
+
+    def apply_theme(self, tokens: ThemeTokens) -> None:
+        self.tokens = tokens
+        self.configure(fg_color=tokens.colors.surface, border_color=tokens.colors.border)
+        for button in self._buttons:
+            button.apply_theme(tokens)
+
+
 class ResultPanel(ctk.CTkFrame):
     """Supporting local evidence, collapsed when an AI conclusion is primary."""
 
-    def __init__(self, master, *, tokens: ThemeTokens, result: dict, on_primary_changed=None, on_export=None, collapsed: bool = True, **kwargs):
+    def __init__(self, master, *, tokens: ThemeTokens, result: dict, on_primary_changed=None, on_export=None, on_clarify=None, collapsed: bool = True, **kwargs):
         self.tokens = tokens
         self.result = result
         self.on_primary_changed = on_primary_changed
         self.on_export = on_export
+        self.on_clarify = on_clarify
         self.sections: list[CandidateSection] = []
+        self.proposals: list[dict] = deepcopy(result.get("proposals") or [])
+        self.proposal_cards: list[ProposalCard] = []
         self.primary: dict[str, dict] = {}
         self._wrap_width = 0
         self._details_visible = not collapsed
@@ -501,6 +663,16 @@ class ResultPanel(ctk.CTkFrame):
 
     def _build(self) -> None:
         c = self.tokens.colors
+        if self.proposals:
+            self.proposal_area = ctk.CTkFrame(self, fg_color="transparent")
+            self.proposal_area.pack(fill="x", padx=2, pady=(2, 8))
+            self.proposal_eyebrow = ctk.CTkLabel(self.proposal_area, text="套价草案", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+            self.proposal_eyebrow.pack(fill="x", padx=14)
+            self.proposal_title = ctk.CTkLabel(self.proposal_area, text="按施工事项生成的清单与定额组合", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+            self.proposal_title.pack(fill="x", padx=14, pady=(2, 10))
+            self._render_proposals()
+        else:
+            self.proposal_area = None
         self.header = ctk.CTkFrame(self, fg_color="transparent")
         self.header.pack(fill="x", padx=16, pady=(15, 4))
         self.eyebrow_label = ctk.CTkLabel(self.header, text="资料依据", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
@@ -513,11 +685,11 @@ class ResultPanel(ctk.CTkFrame):
         self.toggle_button.pack(side="right")
         self.export_frame = ctk.CTkFrame(self.title_row, fg_color="transparent")
         self.export_frame.pack(side="right", padx=(0, 4))
-        self.export_md_button = DSButton(self.export_frame, tokens=self.tokens, text="导出记录", variant="ghost", width=88, height=28, command=lambda: self._export("markdown"))
+        self.export_md_button = DSButton(self.export_frame, tokens=self.tokens, text="导出 JSON", variant="ghost", width=88, height=28, command=lambda: self._export("json"))
         self.export_md_button.pack(side="left", padx=(4, 0))
-        self.export_excel_button = DSButton(self.export_frame, tokens=self.tokens, text="导出表格", variant="ghost", width=88, height=28, command=lambda: self._export("excel"))
+        self.export_excel_button = DSButton(self.export_frame, tokens=self.tokens, text="导出方案", variant="ghost", width=88, height=28, command=lambda: self._export("excel"))
         self.export_excel_button.pack(side="left", padx=(4, 0))
-        self.copy_pricing_button = DSButton(self.export_frame, tokens=self.tokens, text="复制候选", variant="ghost", width=88, height=28, command=lambda: self._export("candidate_copy"))
+        self.copy_pricing_button = DSButton(self.export_frame, tokens=self.tokens, text="复制方案", variant="ghost", width=88, height=28, command=lambda: self._export("candidate_copy"))
         self.copy_pricing_button.pack(side="left", padx=(4, 0))
         edition = self.result.get("quota_edition") or "-"
         standard = self.result.get("standard_edition") or "-"
@@ -568,6 +740,88 @@ class ResultPanel(ctk.CTkFrame):
         self.footnote = ctk.CTkLabel(self, text=UI_DISCLAIMER, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=440)
         self.footnote.pack(fill="x", padx=16, pady=(8, 14))
         self._set_details_visible(self._details_visible)
+
+    def _render_proposals(self) -> None:
+        if self.proposal_area is None:
+            return
+        for card in self.proposal_cards:
+            card.destroy()
+        self.proposal_cards.clear()
+        work_items = {str(value.get("id") or ""): value for value in self.result.get("work_items") or []}
+        questions = self.result.get("clarification_questions") or []
+        for proposal in self.proposals:
+            item_id = str(proposal.get("work_item_id") or "")
+            card = ProposalCard(
+                self.proposal_area,
+                tokens=self.tokens,
+                work_item=work_items.get(item_id, {"id": item_id, "source_span": item_id}),
+                proposal=proposal,
+                questions=[value for value in questions if value.get("work_item_id") == item_id],
+                on_change=self._proposal_changed,
+                on_clarify=self.on_clarify,
+            )
+            card.pack(fill="x", padx=10, pady=(0, 8))
+            self.proposal_cards.append(card)
+            if self._wrap_width:
+                card.set_wraplength(self._wrap_width)
+
+    def _proposal_changed(self) -> None:
+        self._render_proposals()
+        if self.on_primary_changed:
+            self.on_primary_changed("proposals", {"proposals": deepcopy(self.proposals)})
+
+    def apply_ai_proposals(self, structured: dict | None) -> None:
+        """Promote only an already validated AI JSON proposal into editable cards."""
+        if not isinstance(structured, dict) or not isinstance(structured.get("proposals"), list):
+            return
+        if any(value.get("confirmed") for value in self.proposals):
+            return
+        items: dict[str, dict] = {}
+        for group in ("bills", "quotas", "links"):
+            for item in self.result.get(group) or []:
+                record_id = str(item.get("record_id") or "")
+                quota_id = str(item.get("quota_record_id") or "")
+                if record_id:
+                    items[record_id] = item
+                if quota_id:
+                    items[quota_id] = item
+        proposals: list[dict] = []
+        questions = [value for value in structured.get("clarification_questions") or [] if isinstance(value, dict)]
+        for raw in structured.get("proposals") or []:
+            if not isinstance(raw, dict):
+                continue
+            proposal = deepcopy(raw)
+            bill = items.get(str(proposal.get("bill_record_id") or ""), {})
+            proposal.setdefault("bill_code", bill.get("code") or "")
+            proposal.setdefault("bill_title", bill.get("title") or "")
+            proposal.setdefault("bill_unit", bill.get("unit") or "")
+            proposal.setdefault("match_level", "medium")
+            proposal.setdefault("confirmed", False)
+            proposal.setdefault("unresolved_question_ids", [
+                str(value.get("id") or "")
+                for value in questions
+                if value.get("work_item_id") == proposal.get("work_item_id")
+            ])
+            lines = []
+            for raw_line in proposal.get("quota_lines") or []:
+                if not isinstance(raw_line, dict):
+                    continue
+                line = deepcopy(raw_line)
+                item = items.get(str(line.get("record_id") or ""), {})
+                line.setdefault("code", item.get("code") or "")
+                line.setdefault("title", item.get("title") or "")
+                line.setdefault("unit", item.get("unit") or "")
+                line.setdefault("source_link_record_id", item.get("record_id") if item.get("type") == "bill_quota_link" else None)
+                lines.append(line)
+            proposal["quota_lines"] = lines
+            proposals.append(proposal)
+        if not proposals:
+            return
+        self.proposals = proposals
+        self.result["clarification_questions"] = questions
+        if self.proposal_area is not None:
+            self.proposal_title.configure(text="AI 生成并通过本地校验的套价组合")
+        self._render_proposals()
 
     def _detail_widgets(self) -> list[ctk.CTkWidget]:
         widgets: list[ctk.CTkWidget] = [self.primary_bar]
@@ -655,7 +909,12 @@ class ResultPanel(ctk.CTkFrame):
 
     def restore_primary(self, selections: dict | None) -> None:
         """Re-apply persisted primary selections after a session is reloaded."""
-        primary = (selections or {}).get("primary") or {}
+        selections = selections or {}
+        saved_proposals = selections.get("proposals")
+        if isinstance(saved_proposals, list) and saved_proposals:
+            self.proposals = deepcopy(saved_proposals)
+            self._render_proposals()
+        primary = selections.get("primary") or {}
         for kind in ("bill", "quota"):
             saved = primary.get(kind)
             if not saved:
@@ -676,6 +935,8 @@ class ResultPanel(ctk.CTkFrame):
         self.primary_label.configure(text=self._primary_text())
 
     def pricing_text(self) -> str:
+        if self.proposals:
+            return proposal_plain_text(self.current_result(), confirmed_only=True)
         selected = self.selected_items()
         pool = selected or [*(self.result.get("bills") or [])[:1], *(self.result.get("quotas") or [])[:3], *(self.result.get("links") or [])[:4]]
         return candidate_copy_lines(pool)
@@ -689,16 +950,26 @@ class ResultPanel(ctk.CTkFrame):
         timing = self.result.get("timing") or {}
         if timing.get("local_ms") is not None:
             counts.append(f"本地 {timing['local_ms']:g}ms")
-        confidence = self.result.get("confidence")
+        match_level = self.result.get("match_level")
         status_labels = {
             "exact_match": "精确编码命中",
             "candidate_review": "候选可复核",
             "needs_more_conditions": "需补条件",
             "no_reliable_candidate": "无可靠候选",
+            "ready_for_review": "方案待复核",
+            "needs_clarification": "方案需补条件",
+            "multiple_valid_options": "多个有效方案",
+            "no_reliable_match": "暂无可靠组合",
         }
-        if isinstance(confidence, (int, float)):
-            counts.append(f"{status_labels.get(self.result.get('decision_status'), '候选状态')} {confidence:.0%}")
+        if match_level:
+            counts.append(f"{status_labels.get(self.result.get('decision_status'), '候选状态')} · 匹配等级 { {'high': '高', 'medium': '中', 'low': '低'}.get(str(match_level), '低') }")
         return " · ".join(counts) if counts else "没有找到可靠候选，建议补充规格、深度、土类或运距。"
+
+    def current_result(self) -> dict:
+        value = deepcopy(self.result)
+        if self.proposals:
+            value["proposals"] = deepcopy(self.proposals)
+        return value
 
     def _condition_labels(self) -> list[str]:
         conditions = self.result.get("conditions") or {}
@@ -744,6 +1015,8 @@ class ResultPanel(ctk.CTkFrame):
             self.condition_text.configure(text_color=c.text, font=tokens.font(tokens.typography.meta))
         for section in self.sections:
             section.apply_theme(tokens)
+        for card in self.proposal_cards:
+            card.apply_theme(tokens)
 
     def set_wraplength(self, width: int) -> None:
         width = max(360, width)
@@ -758,6 +1031,8 @@ class ResultPanel(ctk.CTkFrame):
             self.condition_text.configure(wraplength=max(220, width - 150))
         for section in self.sections:
             section.set_wraplength(width)
+        for card in self.proposal_cards:
+            card.set_wraplength(width)
 
 
 class WarningStrip(ctk.CTkFrame):
