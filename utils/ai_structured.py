@@ -46,6 +46,16 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         return {"valid": False, "errors": schema_errors, "warnings": [], "structured": payload}
 
     local_work_ids = {str(value.get("id") or "") for value in result.get("work_items") or []}
+    local_questions = [
+        dict(value)
+        for value in result.get("clarification_questions") or []
+        if isinstance(value, dict)
+    ]
+    local_question_keys = {
+        (str(value.get("work_item_id") or ""), str(value.get("field") or ""))
+        for value in local_questions
+    }
+    ai_question_keys: list[tuple[str, str]] = []
     for work_item in payload.get("work_items") or []:
         if not isinstance(work_item, dict) or str(work_item.get("id") or "") not in local_work_ids:
             schema_errors.append(f"AI 引用了不存在的施工事项：{str((work_item or {}).get('id') if isinstance(work_item, dict) else '') or '空'}")
@@ -55,8 +65,21 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
             continue
         if str(question.get("work_item_id") or "") not in local_work_ids:
             schema_errors.append("澄清问题引用了不存在的施工事项")
+        field = str(question.get("field") or "").strip()
+        if not field:
+            schema_errors.append("澄清问题缺少字段标识")
+        ai_question_keys.append((str(question.get("work_item_id") or ""), field))
         if not str(question.get("question") or "").strip():
             schema_errors.append("澄清问题缺少可读问题")
+    ai_question_key_set = set(ai_question_keys)
+    if len(ai_question_keys) != len(ai_question_key_set):
+        schema_errors.append("AI 重复生成了同一澄清字段")
+    added_questions = sorted(ai_question_key_set - local_question_keys)
+    removed_questions = sorted(local_question_keys - ai_question_key_set)
+    if added_questions:
+        schema_errors.append("AI 不得新增本地未提出的澄清字段：" + "、".join(field or "空" for _item, field in added_questions))
+    if removed_questions:
+        schema_errors.append("AI 不得删除本地确定的澄清字段：" + "、".join(field or "空" for _item, field in removed_questions))
     normalized_proposals: list[dict[str, Any]] = []
     local_proposals = {
         str(value.get("work_item_id") or ""): value
@@ -78,17 +101,19 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         normalized.setdefault("bill_unit", "")
         normalized.setdefault("match_level", "medium")
         normalized.setdefault("confirmed", False)
-        normalized.setdefault("unresolved_question_ids", [
+        normalized["unresolved_question_ids"] = [
             str(value.get("id") or "")
-            for value in payload.get("clarification_questions") or []
+            for value in local_questions
             if isinstance(value, dict) and value.get("work_item_id") == proposal.get("work_item_id")
-        ])
+        ]
         status = str(normalized.get("status") or "")
         if status not in VALID_PROPOSAL_STATUSES:
             schema_errors.append(f"方案状态不合法：{status or '空'}")
         if str(normalized.get("work_item_id") or "") in pending_work_ids and status == "ready_for_review":
             schema_errors.append(f"{normalized.get('work_item_id')} 仍有本地关键缺失条件，AI 不得标记为可确认")
         local_proposal = local_proposals.get(str(normalized.get("work_item_id") or ""), {})
+        if local_proposal.get("status") == "ready_for_review" and status != "ready_for_review":
+            schema_errors.append(f"{normalized.get('work_item_id')} 的本地方案已可复核，AI 不得随机降级")
         if (
             local_proposal.get("bill_record_id")
             and local_proposal.get("quota_lines")
@@ -117,7 +142,12 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
     deterministic = validate_pricing_result(shadow)
     errors = [*schema_errors, *(deterministic.get("errors") or [])]
     warnings = deterministic.get("warnings") or []
-    return {"valid": not errors, "errors": list(dict.fromkeys(errors)), "warnings": warnings, "structured": payload}
+    normalized_payload = {
+        **payload,
+        "clarification_questions": local_questions,
+        "proposals": normalized_proposals,
+    }
+    return {"valid": not errors, "errors": list(dict.fromkeys(errors)), "warnings": warnings, "structured": normalized_payload}
 
 
 def build_structured_ai_prompt(description: str, result: dict[str, Any]) -> str:
@@ -163,9 +193,9 @@ USER_DESCRIPTION
 2. 只能使用 allowed_bill_record_ids 与 allowed_quota_record_ids 中的 ID，禁止编造、改写或猜测 ID/编号。
 3. 清单和定额必须由 evidence 中 bill_record_id + quota_record_id 的关系验证；不得把两个 Top-1 直接拼接。
 4. 一项可有一条清单和多条定额，role 只能是 main/supplement/adjustment/transport/conversion/alternative。
-5. 有会改变套项的缺失条件时，status 必须是 needs_clarification；没有可靠关系时必须是 no_reliable_match。不得把本地草案中已有清单和定额的事项清空为无匹配。
+5. 本地澄清问题是确定性边界：不得新增、删除或改写字段；本地已有问题时 status 必须是 needs_clarification；本地 ready_for_review 时不得降级。
 6. 每个方案只能有一个 main；互斥或有 conflicts 的条目不得进入主方案。
-7. 只问会改变候选选择的问题，每次最多三个；允许 options 含“不确定”。
+7. 原样返回本地澄清问题；没有本地问题时 clarification_questions 必须为空。
 8. 保留本地 work_item ID 和 source_span，不新增施工事项。
 
 allowed_bill_record_ids={json.dumps(allowed_bills, ensure_ascii=False)}

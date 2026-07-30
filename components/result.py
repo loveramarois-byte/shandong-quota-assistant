@@ -96,6 +96,33 @@ def compact_analysis_content(sections: list[tuple[str, str]]) -> tuple[str, list
     return summary or "本轮分析没有形成可读结论。", details
 
 
+def proposal_decision_summary(result: dict, proposals: list[dict] | None = None) -> str:
+    """Build the first-screen decision from validated proposal data, not AI prose."""
+    current = proposals if proposals is not None else list(result.get("proposals") or [])
+    questions = [
+        value for value in result.get("clarification_questions") or []
+        if isinstance(value, dict) and str(value.get("question") or "").strip()
+    ]
+    statuses = {str(value.get("status") or "") for value in current if isinstance(value, dict)}
+    if "needs_clarification" in statuses:
+        if questions:
+            return "先确认：" + str(questions[0]["question"]).strip()
+        return "先补充会影响套项的关键施工条件。"
+    if "multiple_valid_options" in statuses:
+        return "存在多个有效方案，请在下方选择后确认。"
+    ready = next((value for value in current if value.get("status") == "ready_for_review"), None)
+    if ready:
+        bill = " ".join(value for value in (str(ready.get("bill_code") or "").strip(), str(ready.get("bill_title") or "").strip()) if value)
+        main = next((value for value in ready.get("quota_lines") or [] if value.get("role") == "main"), None)
+        if bill and main:
+            quota = " ".join(value for value in (str(main.get("code") or "").strip(), str(main.get("title") or "").strip()) if value)
+            if quota:
+                return f"建议清单 {bill}，主定额 {quota}。"
+        if bill:
+            return f"建议清单 {bill}，主定额仍需复核。"
+    return "本地资料暂未形成可靠的清单定额组合。"
+
+
 def _evidence_button_text(item: dict) -> str:
     record_type = str(item.get("record_id") or "").partition(":")[0].lower()
     label = {
@@ -640,7 +667,7 @@ class ProposalCard(ctk.CTkFrame):
             self.assumption_label = None
 
         if self.questions:
-            self.question_area = ctk.CTkFrame(self, fg_color=c.warning_soft, corner_radius=self.tokens.radius_sm)
+            self.question_area = ctk.CTkFrame(self, fg_color=c.subtle, corner_radius=self.tokens.radius_sm)
             self.question_area.pack(fill="x", padx=12, pady=(8, 6))
             for index, question in enumerate(self.questions):
                 question_label = self._label(self.question_area, text=str(question.get("question") or "请补充关键条件"), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text", _weight="semibold")
@@ -721,7 +748,7 @@ class ProposalCard(ctk.CTkFrame):
         for label, tone, size, weight in self._label_styles:
             label.configure(text_color=getattr(tokens.colors, tone), font=tokens.font(size, weight))
         if self.question_area is not None:
-            self.question_area.configure(fg_color=tokens.colors.warning_soft)
+            self.question_area.configure(fg_color=tokens.colors.subtle)
         for button in self._buttons:
             button.apply_theme(tokens)
 
@@ -871,7 +898,8 @@ class ResultPanel(ctk.CTkFrame):
         self._analysis_visible = False
         self._analysis_copy = (lambda: on_copy(copy_text)) if on_copy else None
         validation = validation or {}
-        summary, detail_sections = compact_analysis_content(sections)
+        _ai_summary, detail_sections = compact_analysis_content(sections)
+        summary = proposal_decision_summary(self.result, self.proposals)
         c = self.tokens.colors
 
         self.analysis_frame = ctk.CTkFrame(self.proposal_area, fg_color="transparent", corner_radius=0)
@@ -882,7 +910,7 @@ class ResultPanel(ctk.CTkFrame):
 
         heading_row = ctk.CTkFrame(self.analysis_frame, fg_color="transparent")
         heading_row.pack(fill="x", pady=(2, 3))
-        heading = ctk.CTkLabel(heading_row, text="AI 判断", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        heading = ctk.CTkLabel(heading_row, text="结论", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
         heading.pack(side="left")
         self._analysis_labels.append(heading)
         self._analysis_styles.append((heading, "accent", self.tokens.typography.caption, "semibold"))

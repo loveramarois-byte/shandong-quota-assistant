@@ -84,7 +84,7 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertEqual(analysis["clarification_questions"][0]["work_item_id"], "W1")
 
     def test_plain_concrete_cushion_prefers_unreinforced_and_uses_thickness_conversion(self):
-        item = extract_work_item("C15混凝土垫层，厚度100mm", item_id="W1", discipline="building")
+        item = extract_work_item("基础C15混凝土垫层，厚度100mm", item_id="W1", discipline="building")
         bill = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
         light_aggregate = _candidate(
             "link:2024:982", "2-1-26", "混凝土垫层 轻骨料", "bill_quota_link",
@@ -113,7 +113,7 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertTrue(any("100mm" in value for value in proposal["assumptions"]))
 
     def test_missing_conversion_thickness_becomes_a_clarification(self):
-        item = extract_work_item("C15混凝土垫层", item_id="W1", discipline="building")
+        item = extract_work_item("基础C15混凝土垫层", item_id="W1", discipline="building")
         bill = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
         main = _candidate(
             "link:2024:984", "2-1-28", "混凝土垫层 无筋", "bill_quota_link",
@@ -131,6 +131,30 @@ class PricingPipelineTests(unittest.TestCase):
 
         self.assertEqual(analysis["proposals"][0]["status"], "needs_clarification")
         self.assertEqual(analysis["clarification_questions"][0]["field"], "thickness")
+        self.assertTrue(analysis["validation"]["valid"])
+
+    def test_cushion_without_location_always_requires_deterministic_clarification(self):
+        item = extract_work_item("C15混凝土垫层，厚度100mm", item_id="W1", discipline="building")
+        bill = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
+        main = _candidate(
+            "link:2024:984", "2-1-28", "混凝土垫层 无筋", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:173", bill_code=bill["code"], unit="10m2", factor=1.0,
+        )
+
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [bill], "quotas": [], "links": [main], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        question = analysis["clarification_questions"][0]
+        self.assertEqual(analysis["proposals"][0]["status"], "needs_clarification")
+        self.assertEqual(question["field"], "cushion_location")
+        self.assertEqual(question["question"], "该垫层用于哪个部位？")
+        self.assertEqual(question["options"], ["基础垫层", "楼地面垫层", "其他部位", "不确定"])
         self.assertTrue(analysis["validation"]["valid"])
 
     def test_empty_selected_discipline_retries_one_high_confidence_discipline(self):
@@ -153,14 +177,14 @@ class PricingPipelineTests(unittest.TestCase):
             }
 
         analysis = analyze_pricing_description(
-            "C15混凝土垫层，厚度100mm",
+            "基础C15混凝土垫层，厚度100mm",
             quota_edition="2025",
             standard_edition="2024",
             discipline="installation",
             search_fn=search,
         )
 
-        self.assertEqual(infer_discipline("C15混凝土垫层，厚度100mm"), "building")
+        self.assertEqual(infer_discipline("基础C15混凝土垫层，厚度100mm"), "building")
         self.assertEqual(calls, ["installation", "building"])
         self.assertEqual(analysis["discipline"], "building")
         self.assertTrue(analysis["discipline_auto_switched"])

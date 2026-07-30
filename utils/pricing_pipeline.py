@@ -180,6 +180,7 @@ def _link_relevance(link: dict[str, Any], work_item: WorkItem) -> float:
 
 def _question_from_hint(work_item_id: str, hint: str, index: int) -> ClarificationQuestion:
     mappings = (
+        ("cushion_location", r"垫层.*(?:部位|位置|用途)|用于哪个部位", "该垫层用于哪个部位？", ("基础垫层", "楼地面垫层", "其他部位", "不确定")),
         ("material_application", r"未明确体现|按回填土还是|材料处理口径", "资料中的关联项未体现该材料，应按哪种做法处理？", ("按主体项目处理", "拆成独立材料做法", "不确定")),
         ("soil_type", r"土类|土类别", "本项土类别是哪一类？", ("一二类土", "三类土", "四类土", "不确定")),
         ("depth", r"深度|挖深|槽深|坑深", "本项施工深度是多少？", ("2m以内", "2~4m", "4m以上", "不确定")),
@@ -209,6 +210,14 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
         known_fields.add("material")
     if work_item.location:
         known_fields.add("location")
+    if work_item.object == "垫层" and not re.search(r"基础|楼地面|屋面|道路|路面|园路|地坪", work_item.source_span):
+        question = _question_from_hint(
+            work_item.id,
+            "垫层用途部位未明确，会改变清单及定额选择",
+            start,
+        )
+        questions.append(question)
+        seen_fields.add(question.field)
     for hint in dict.fromkeys(str(value) for value in hints if value):
         question = _question_from_hint(work_item.id, hint, start + len(questions))
         if question.field in seen_fields or question.field in known_fields:

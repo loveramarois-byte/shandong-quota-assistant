@@ -683,6 +683,7 @@ class QuotaApp(ctk.CTk):
             if not structured_validation.get("valid"):
                 detail = "；".join(structured_validation.get("errors") or [])
                 raise ValueError("AI 结构化方案未通过本地校验：" + (detail or "结果不合法"))
+            structured = structured_validation.get("structured") or structured
             ai_text = render_structured_ai_response(structured, result)
             validation = validate_ai_answer(ai_text, result)
             validation["structured_valid"] = True

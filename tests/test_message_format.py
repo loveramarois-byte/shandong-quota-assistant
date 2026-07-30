@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from components.message import ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers
-from components.result import compact_analysis_content
+from components.result import compact_analysis_content, proposal_decision_summary
 
 
 class AiMessageFormatTests(unittest.TestCase):
@@ -16,6 +16,28 @@ class AiMessageFormatTests(unittest.TestCase):
 
         self.assertEqual(summary, "已形成可复核的清单与定额组合建议。")
         self.assertEqual(details, [("工程量与换算", ["已按100mm厚度换算，系数为1。"])])
+
+    def test_first_screen_decision_names_the_bill_and_main_quota(self):
+        result = {
+            "clarification_questions": [],
+            "proposals": [{
+                "status": "ready_for_review", "bill_code": "010501001-000", "bill_title": "基础垫层",
+                "quota_lines": [{"role": "main", "code": "2-1-28", "title": "混凝土垫层 无筋"}],
+            }],
+        }
+
+        self.assertEqual(
+            proposal_decision_summary(result),
+            "建议清单 010501001-000 基础垫层，主定额 2-1-28 混凝土垫层 无筋。",
+        )
+
+    def test_first_screen_decision_prioritizes_the_local_question(self):
+        result = {
+            "clarification_questions": [{"question": "该垫层用于哪个部位？"}],
+            "proposals": [{"status": "needs_clarification"}],
+        }
+
+        self.assertEqual(proposal_decision_summary(result), "先确认：该垫层用于哪个部位？")
 
     def test_markdown_sections_are_cleaned_for_card_rendering(self):
         text = """## 结论
