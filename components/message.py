@@ -479,7 +479,17 @@ class MessageFeed(PointerScrollableFrame):
         except Exception:
             pass
 
-    def add_ai_answer(self, text: str, validation: dict | None = None, on_copy=None, before=None) -> AiAnswerCard:
+    def add_ai_answer(self, text: str, validation: dict | None = None, on_copy=None, before=None) -> AiAnswerCard | ResultPanel:
+        if isinstance(before, ResultPanel):
+            sections = [
+                (heading, strip_ai_reference_markers(body))
+                for heading, body in parse_ai_sections(text)
+            ]
+            copy_text = format_ai_plain_text(sections)
+            if before.attach_ai_analysis(sections, validation, on_copy=on_copy, copy_text=copy_text):
+                self._apply_wrap_to_entry(before)
+                self.after_idle(lambda: self._scroll_to_widget(before))
+                return before
         card = AiAnswerCard(self, tokens=self.tokens, text=text, validation=validation, on_copy=on_copy)
         if before is not None and before in self.entries and before.winfo_exists():
             card.pack(fill="x", padx=5, pady=(0, 16), before=before)

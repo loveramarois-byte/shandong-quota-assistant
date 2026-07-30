@@ -66,6 +66,48 @@ def candidate_copy_lines(items: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def compact_analysis_content(sections: list[tuple[str, str]]) -> tuple[str, list[tuple[str, list[str]]]]:
+    """Keep one decision visible and move supporting prose behind disclosure."""
+    summary = ""
+    details: list[tuple[str, list[str]]] = []
+    for heading, body in sections:
+        items = [
+            re.sub(r"^\s*(?:[-*•▪◦]|\d{1,2}[.、)])\s*", "", line).strip()
+            for line in str(body or "").splitlines()
+        ]
+        items = [value for value in items if value]
+        if not items:
+            continue
+        if heading == "结论" and not summary:
+            summary = items[0]
+            if len(items) > 1:
+                details.append(("补充判断", items[1:]))
+            continue
+        if heading == "建议候选":
+            # The validated proposal immediately below is the single source of
+            # truth for codes and units; repeating it is the main source of noise.
+            continue
+        details.append((heading, items))
+    if not summary:
+        for _heading, items in details:
+            if items:
+                summary = items[0]
+                break
+    return summary or "本轮分析没有形成可读结论。", details
+
+
+def _evidence_button_text(item: dict) -> str:
+    record_type = str(item.get("record_id") or "").partition(":")[0].lower()
+    label = {
+        "bill": "清单原书",
+        "quota": "定额原书",
+        "link": "关联原书",
+        "guidance": "计价规则",
+    }.get(record_type, "打开原书")
+    page = item.get("pdf_page")
+    return f"{label} · 第 {page} 页" if page else label
+
+
 # Kept for callers saved by earlier builds. The UI no longer calls this a
 # pricing format because the product has no quantity, price or fee model.
 pricing_lines = candidate_copy_lines
@@ -486,7 +528,7 @@ class CandidateSection(ctk.CTkFrame):
 
 
 _PROPOSAL_STATUS = {
-    "ready_for_review": ("待人工确认", "success"),
+    "ready_for_review": ("可复核", "success"),
     "needs_clarification": ("待补条件", "warning"),
     "multiple_valid_options": ("请选择方案", "warning"),
     "no_reliable_match": ("暂无可靠组合", "danger"),
@@ -513,41 +555,65 @@ class ProposalCard(ctk.CTkFrame):
         self.on_clarify = on_clarify
         self._wrap_width = 440
         self._labels: list[ctk.CTkLabel] = []
+        self._label_styles: list[tuple[ctk.CTkLabel, str, int, str]] = []
+        self._selection_titles: list[ctk.CTkLabel] = []
         self._buttons: list[DSButton] = []
-        super().__init__(master, fg_color=tokens.colors.surface, border_color=tokens.colors.border, border_width=1, corner_radius=tokens.radius_sm, **kwargs)
+        self._images: dict[str, ctk.CTkImage] = {}
+        # Proposal rows live inside ResultPanel's single recommendation surface.
+        # Keeping this frame visually flat prevents the result from reading as
+        # a stack of nested cards.
+        super().__init__(master, fg_color="transparent", border_width=0, corner_radius=0, **kwargs)
         self._build()
 
     def _label(self, master, **kwargs) -> ctk.CTkLabel:
+        tone = str(kwargs.pop("_tone", "text"))
+        size = int(kwargs.pop("_size", self.tokens.typography.meta))
+        weight = str(kwargs.pop("_weight", "regular"))
         value = ctk.CTkLabel(master, **kwargs)
         self._labels.append(value)
+        self._label_styles.append((value, tone, size, weight))
         return value
+
+    def _icon(self, name: str) -> ctk.CTkImage | None:
+        color = self.tokens.colors.text_muted
+        key = f"{name}:{color}"
+        if key not in self._images:
+            path = resource_path("assets", "icons", f"{name}.svg")
+            if not path.exists():
+                return None
+            try:
+                self._images[key] = svg_image(path, (15, 15), color=color)
+            except Exception:
+                return None
+        return self._images.get(key)
 
     def _build(self) -> None:
         c = self.tokens.colors
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=16, pady=(14, 10))
-        title_group = ctk.CTkFrame(header, fg_color="transparent")
-        title_group.pack(side="left", fill="x", expand=True)
-        item_id = str(self.work_item.get("id") or "")
-        self.item_caption = self._label(title_group, text=f"施工事项 {item_id.removeprefix('W') or item_id}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
-        self.item_caption.pack(anchor="w")
-        self.item_title = self._label(title_group, text=str(self.work_item.get("source_span") or "未识别施工事项"), text_color=c.text, font=self.tokens.font(self.tokens.typography.body, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width)
-        self.item_title.pack(fill="x", pady=(3, 0))
+        header.pack(fill="x", padx=16, pady=(13, 9))
+        header.grid_columnconfigure(0, weight=1)
+        self.item_title = self._label(header, text=str(self.work_item.get("source_span") or "未识别施工事项"), text_color=c.text, font=self.tokens.font(self.tokens.typography.body, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text", _size=self.tokens.typography.body, _weight="semibold")
+        self.item_title.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         status_text, tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("待复核", "warning"))
         tone_color = getattr(c, tone)
-        tone_surface = getattr(c, f"{tone}_soft")
-        self.status_label = self._label(header, text=status_text, text_color=tone_color, fg_color=tone_surface, corner_radius=6, padx=9, pady=4, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
-        self.status_label.pack(side="right", padx=(10, 0), anchor="n")
+        self.status_label = self._label(header, text=status_text, text_color=tone_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="e", _tone=tone, _size=self.tokens.typography.caption, _weight="semibold")
+        ready = self.proposal.get("status") == "ready_for_review"
+        if not ready:
+            self.status_label.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.confirm_button = DSButton(header, tokens=self.tokens, text="已确认" if self.proposal.get("confirmed") else "确认", variant="primary", width=68, height=30, command=self._toggle_confirm)
+        if ready:
+            self.confirm_button.grid(row=0, column=2, sticky="e")
+        self._buttons.append(self.confirm_button)
 
         self.content = ctk.CTkFrame(self, fg_color="transparent")
-        self.content.pack(fill="x", padx=16)
+        self.content.pack(fill="x", padx=16, pady=(2, 2))
         bill_id = self.proposal.get("bill_record_id")
         self._selection_row(
             "清单",
             str(self.proposal.get("bill_code") or "未匹配"),
             str(self.proposal.get("bill_title") or "本地资料未形成可靠清单"),
             str(self.proposal.get("bill_unit") or ""),
-            c.accent if bill_id else c.text_muted,
+            "accent" if bill_id else "text_muted",
         )
         quota_lines = self.proposal.get("quota_lines") or []
         if quota_lines:
@@ -557,19 +623,27 @@ class ProposalCard(ctk.CTkFrame):
                     str(line.get("code") or "未确认"),
                     str(line.get("title") or "未命名定额"),
                     str(line.get("unit") or ""),
-                    c.success if line.get("role") == "main" else c.text_secondary,
+                    "success" if line.get("role") == "main" else "text_secondary",
                     removable=True,
                     record_id=str(line.get("record_id") or ""),
+                    factor=line.get("factor"),
                 )
         else:
-            self.empty_quota = self._label(self.content, text="尚无通过清单关联校验的定额组合", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+            self.empty_quota = self._label(self.content, text="尚无通过清单关联校验的定额组合", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w", _tone="text_muted")
             self.empty_quota.pack(fill="x", pady=(2, 8))
+
+        assumptions = [str(value).strip() for value in self.proposal.get("assumptions") or [] if str(value).strip()]
+        if assumptions:
+            self.assumption_label = self._label(self, text="换算说明 · " + " ".join(assumptions[:2]), text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text_muted", _size=self.tokens.typography.caption)
+            self.assumption_label.pack(fill="x", padx=16, pady=(4, 8))
+        else:
+            self.assumption_label = None
 
         if self.questions:
             self.question_area = ctk.CTkFrame(self, fg_color=c.warning_soft, corner_radius=self.tokens.radius_sm)
             self.question_area.pack(fill="x", padx=12, pady=(8, 6))
             for index, question in enumerate(self.questions):
-                question_label = self._label(self.question_area, text=str(question.get("question") or "请补充关键条件"), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width)
+                question_label = self._label(self.question_area, text=str(question.get("question") or "请补充关键条件"), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text", _weight="semibold")
                 question_label.pack(fill="x", padx=12, pady=(9 if index == 0 else 6, 5))
                 options = ctk.CTkFrame(self.question_area, fg_color="transparent")
                 options.pack(fill="x", padx=9, pady=(0, 8))
@@ -580,32 +654,34 @@ class ProposalCard(ctk.CTkFrame):
         else:
             self.question_area = None
 
-        footer = ctk.CTkFrame(self, fg_color="transparent")
-        footer.pack(fill="x", padx=16, pady=(8, 13))
-        level = {"high": "高", "medium": "中", "low": "低"}.get(str(self.proposal.get("match_level") or ""), "低")
-        self.level_label = self._label(footer, text=f"匹配等级 {level} · 以本地清单定额关联为准", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
-        self.level_label.pack(side="left")
-        ready = self.proposal.get("status") == "ready_for_review"
-        self.confirm_button = DSButton(footer, tokens=self.tokens, text="已确认" if self.proposal.get("confirmed") else "确认方案", variant="primary", width=84, height=30, command=self._toggle_confirm)
-        self.confirm_button.pack(side="right")
-        self.confirm_button.set_enabled(bool(ready))
-        self._buttons.append(self.confirm_button)
+        self.bottom_space = ctk.CTkFrame(self, fg_color="transparent", height=5)
+        self.bottom_space.pack(fill="x")
 
-    def _selection_row(self, role: str, code: str, title: str, unit: str, role_color: str, *, removable: bool = False, record_id: str = "") -> None:
+    def _selection_row(self, role: str, code: str, title: str, unit: str, role_tone: str, *, removable: bool = False, record_id: str = "", factor: object = None) -> None:
         c = self.tokens.colors
         row = ctk.CTkFrame(self.content, fg_color="transparent")
-        row.pack(fill="x", pady=(1, 7))
-        role_label = self._label(row, text=role, width=48, text_color=role_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
-        role_label.pack(side="left", anchor="n", pady=2)
-        copy = ctk.CTkFrame(row, fg_color="transparent")
-        copy.pack(side="left", fill="x", expand=True)
-        code_label = self._label(copy, text=code, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
-        code_label.pack(anchor="w")
-        title_label = self._label(copy, text=title + (f" · {unit}" if unit else ""), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta), anchor="w", justify="left", wraplength=self._wrap_width)
-        title_label.pack(fill="x", pady=(2, 0))
+        row.pack(fill="x", pady=(2, 8))
+        # Keep code, title and unit as one readable cluster. A trailing spacer
+        # absorbs wide-window growth so metadata is not scattered edge to edge.
+        row.grid_columnconfigure(5, weight=1)
+        role_label = self._label(row, text=role, width=48, text_color=getattr(c, role_tone), font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w", _tone=role_tone, _size=self.tokens.typography.caption, _weight="semibold")
+        role_label.grid(row=0, column=0, sticky="nw", pady=1)
+        code_label = self._label(row, text=code, width=118, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w", _tone="text_secondary", _weight="semibold")
+        code_label.grid(row=0, column=1, sticky="nw", padx=(0, 10), pady=1)
+        title_label = self._label(row, text=title, text_color=c.text, font=self.tokens.font(self.tokens.typography.meta), anchor="w", justify="left", wraplength=420, _tone="text")
+        title_label.grid(row=0, column=2, sticky="w", pady=1)
+        self._selection_titles.append(title_label)
+        unit_text = unit
+        if factor is not None:
+            try:
+                unit_text += f" · 系数 {float(factor):g}"
+            except (TypeError, ValueError):
+                pass
+        unit_label = self._label(row, text=unit_text, width=92, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="e", _tone="text_muted", _size=self.tokens.typography.caption)
+        unit_label.grid(row=0, column=3, sticky="nw", padx=(10, 0), pady=2)
         if removable:
-            button = DSButton(row, tokens=self.tokens, text="移除", variant="ghost", width=52, height=28, command=lambda: self._remove(record_id))
-            button.pack(side="right", padx=(8, 0), anchor="n")
+            button = IconButton(row, tokens=self.tokens, image=self._icon("x"), tooltip="移除此定额", command=lambda: self._remove(record_id))
+            button.grid(row=0, column=4, sticky="nw", padx=(4, 0))
             self._buttons.append(button)
 
     def _remove(self, record_id: str) -> None:
@@ -619,7 +695,7 @@ class ProposalCard(ctk.CTkFrame):
 
     def _toggle_confirm(self) -> None:
         self.proposal["confirmed"] = not bool(self.proposal.get("confirmed"))
-        self.confirm_button.configure(text="已确认" if self.proposal["confirmed"] else "确认方案")
+        self.confirm_button.configure(text="已确认" if self.proposal["confirmed"] else "确认")
         if self.on_change:
             self.on_change()
 
@@ -635,10 +711,17 @@ class ProposalCard(ctk.CTkFrame):
                     label.configure(wraplength=self._wrap_width)
             except (TypeError, ValueError):
                 pass
+        title_wrap = max(180, min(480, self._wrap_width - 320))
+        for label in self._selection_titles:
+            label.configure(wraplength=title_wrap)
 
     def apply_theme(self, tokens: ThemeTokens) -> None:
         self.tokens = tokens
-        self.configure(fg_color=tokens.colors.surface, border_color=tokens.colors.border)
+        self.configure(fg_color="transparent", border_width=0)
+        for label, tone, size, weight in self._label_styles:
+            label.configure(text_color=getattr(tokens.colors, tone), font=tokens.font(size, weight))
+        if self.question_area is not None:
+            self.question_area.configure(fg_color=tokens.colors.warning_soft)
         for button in self._buttons:
             button.apply_theme(tokens)
 
@@ -658,30 +741,40 @@ class ResultPanel(ctk.CTkFrame):
         self.primary: dict[str, dict] = {}
         self._wrap_width = 0
         self._details_visible = not collapsed
+        self.analysis_frame: ctk.CTkFrame | None = None
+        self.analysis_details: ctk.CTkFrame | None = None
+        self.analysis_toggle_button: DSButton | None = None
+        self._analysis_visible = False
+        self._analysis_labels: list[ctk.CTkLabel] = []
+        self._analysis_styles: list[tuple[ctk.CTkLabel, str, int, str]] = []
+        self._analysis_buttons: list[DSButton] = []
+        self._analysis_copy = None
         super().__init__(master, fg_color="transparent", border_width=0, corner_radius=0, **kwargs)
         self._build()
 
     def _build(self) -> None:
         c = self.tokens.colors
         if self.proposals:
-            self.proposal_area = ctk.CTkFrame(self, fg_color="transparent")
+            self.proposal_area = ctk.CTkFrame(
+                self,
+                fg_color=c.surface,
+                border_color=c.border,
+                border_width=1,
+                corner_radius=self.tokens.radius_sm,
+            )
             self.proposal_area.pack(fill="x", padx=2, pady=(2, 8))
-            self.proposal_eyebrow = ctk.CTkLabel(self.proposal_area, text="套价草案", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
-            self.proposal_eyebrow.pack(fill="x", padx=14)
-            self.proposal_title = ctk.CTkLabel(self.proposal_area, text="按施工事项生成的清单与定额组合", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
-            self.proposal_title.pack(fill="x", padx=14, pady=(2, 10))
+            self.proposal_title = ctk.CTkLabel(self.proposal_area, text="套价建议", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+            self.proposal_title.pack(fill="x", padx=18, pady=(14, 6))
             self._render_proposals()
         else:
             self.proposal_area = None
         self.header = ctk.CTkFrame(self, fg_color="transparent")
-        self.header.pack(fill="x", padx=16, pady=(15, 4))
-        self.eyebrow_label = ctk.CTkLabel(self.header, text="资料依据", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
-        self.eyebrow_label.pack(anchor="w")
+        self.header.pack(fill="x", padx=16, pady=(6, 4))
         self.title_row = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.title_row.pack(fill="x", pady=(2, 0))
-        self.title_label = ctk.CTkLabel(self.title_row, text="本地清单、定额与原书", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+        self.title_row.pack(fill="x")
+        self.title_label = ctk.CTkLabel(self.title_row, text="核对依据", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
         self.title_label.pack(side="left")
-        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text="查看依据", variant="secondary", width=82, height=28, command=self._toggle_details)
+        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text="展开", variant="ghost", width=56, height=28, command=self._toggle_details)
         self.toggle_button.pack(side="right")
         self.export_frame = ctk.CTkFrame(self.title_row, fg_color="transparent")
         self.export_frame.pack(side="right", padx=(0, 4))
@@ -694,11 +787,11 @@ class ResultPanel(ctk.CTkFrame):
         edition = self.result.get("quota_edition") or "-"
         standard = self.result.get("standard_edition") or "-"
         discipline = discipline_label(self.result.get("discipline")) if self.result.get("discipline") else "全部专业"
-        auto_note = " · 已自动识别专业" if self.result.get("discipline_auto_switched") else ""
-        self.meta_label = ctk.CTkLabel(self.header, text=f"山东 {edition} 定额 / {standard} 清单 · {discipline}{auto_note}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
-        self.meta_label.pack(fill="x", anchor="w", pady=(4, 0))
+        auto_note = " · 自动识别" if self.result.get("discipline_auto_switched") else ""
+        self.meta_label = ctk.CTkLabel(self.header, text=f"山东 {edition} 定额 · {standard} 清单 · {discipline}{auto_note}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.meta_label.pack(fill="x", anchor="w", pady=(2, 0))
         self.summary_label = ctk.CTkLabel(self, text=self._count_summary(), text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
-        self.summary_label.pack(fill="x", padx=16, pady=(2, 7))
+        self.summary_label.pack(fill="x", padx=16, pady=(3, 7))
 
         self.primary_bar = ctk.CTkFrame(self, fg_color=c.subtle, corner_radius=8)
         self.primary_bar.pack(fill="x", padx=12, pady=(0, 6))
@@ -761,10 +854,112 @@ class ResultPanel(ctk.CTkFrame):
                 on_change=self._proposal_changed,
                 on_clarify=self.on_clarify,
             )
-            card.pack(fill="x", padx=10, pady=(0, 8))
+            card.pack(fill="x", padx=2, pady=(0, 5))
             self.proposal_cards.append(card)
             if self._wrap_width:
                 card.set_wraplength(self._wrap_width)
+
+    def attach_ai_analysis(self, sections: list[tuple[str, str]], validation: dict | None = None, *, on_copy=None, copy_text: str = "") -> bool:
+        """Embed AI prose into the proposal instead of rendering a second result card."""
+        if self.proposal_area is None:
+            return False
+        if self.analysis_frame is not None:
+            self.analysis_frame.destroy()
+        self._analysis_labels.clear()
+        self._analysis_styles.clear()
+        self._analysis_buttons.clear()
+        self._analysis_visible = False
+        self._analysis_copy = (lambda: on_copy(copy_text)) if on_copy else None
+        validation = validation or {}
+        summary, detail_sections = compact_analysis_content(sections)
+        c = self.tokens.colors
+
+        self.analysis_frame = ctk.CTkFrame(self.proposal_area, fg_color="transparent", corner_radius=0)
+        pack_kwargs = {"fill": "x", "padx": 18, "pady": (0, 4)}
+        if self.proposal_cards:
+            pack_kwargs["before"] = self.proposal_cards[0]
+        self.analysis_frame.pack(**pack_kwargs)
+
+        heading_row = ctk.CTkFrame(self.analysis_frame, fg_color="transparent")
+        heading_row.pack(fill="x", pady=(2, 3))
+        heading = ctk.CTkLabel(heading_row, text="AI 判断", text_color=c.accent, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        heading.pack(side="left")
+        self._analysis_labels.append(heading)
+        self._analysis_styles.append((heading, "accent", self.tokens.typography.caption, "semibold"))
+        if self._analysis_copy:
+            copy_button = DSButton(heading_row, tokens=self.tokens, text="复制", variant="ghost", width=48, height=26, command=self._analysis_copy)
+            copy_button.pack(side="right")
+            self._analysis_buttons.append(copy_button)
+
+        summary_label = ctk.CTkLabel(self.analysis_frame, text=summary, text_color=c.text, font=self.tokens.font(self.tokens.typography.body, "semibold"), anchor="w", justify="left", wraplength=max(320, self._wrap_width - 72 if self._wrap_width else 640))
+        summary_label.pack(fill="x", pady=(0, 7))
+        self._analysis_labels.append(summary_label)
+        self._analysis_styles.append((summary_label, "text", self.tokens.typography.body, "semibold"))
+
+        located = int(validation.get("evidence_located") or 0)
+        total = int(validation.get("evidence_total") or 0)
+        status = str(validation.get("evidence_status") or "unlocated")
+        evidence_text = f"原书证据 {located}/{total} 已定位" if total else "原书依据待展开复核"
+        footer = ctk.CTkFrame(self.analysis_frame, fg_color="transparent")
+        footer.pack(fill="x", pady=(0, 8))
+        evidence_label = ctk.CTkLabel(footer, text=evidence_text, text_color=c.success if status == "verified" else c.warning, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        evidence_label.pack(side="left")
+        self._analysis_labels.append(evidence_label)
+        self._analysis_styles.append((evidence_label, "success" if status == "verified" else "warning", self.tokens.typography.caption, "semibold"))
+
+        evidence = [value for value in validation.get("evidence") or [] if value.get("located")]
+        warnings = [str(value) for value in validation.get("warnings") or [] if str(value).strip()]
+        has_details = bool(detail_sections or warnings or evidence)
+        self.analysis_toggle_button = DSButton(footer, tokens=self.tokens, text="查看分析", variant="ghost", width=72, height=26, command=self._toggle_analysis)
+        if has_details:
+            self.analysis_toggle_button.pack(side="right", padx=(8, 0))
+            self._analysis_buttons.append(self.analysis_toggle_button)
+
+        self.analysis_details = ctk.CTkFrame(self.analysis_frame, fg_color="transparent")
+        for section_heading, items in detail_sections:
+            section_label = ctk.CTkLabel(self.analysis_details, text=section_heading, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+            section_label.pack(fill="x", pady=(9, 2))
+            self._analysis_labels.append(section_label)
+            self._analysis_styles.append((section_label, "text_secondary", self.tokens.typography.caption, "semibold"))
+            for item in items:
+                item_label = ctk.CTkLabel(self.analysis_details, text=item, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w", justify="left", wraplength=max(300, self._wrap_width - 72 if self._wrap_width else 620))
+                item_label.pack(fill="x", pady=(1, 3))
+                self._analysis_labels.append(item_label)
+                self._analysis_styles.append((item_label, "text_secondary", self.tokens.typography.meta, "regular"))
+        if warnings:
+            warning_title = ctk.CTkLabel(self.analysis_details, text="复核提醒", text_color=c.warning, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+            warning_title.pack(fill="x", pady=(9, 2))
+            self._analysis_labels.append(warning_title)
+            self._analysis_styles.append((warning_title, "warning", self.tokens.typography.caption, "semibold"))
+            for warning in warnings:
+                warning_label = ctk.CTkLabel(self.analysis_details, text=warning, text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w", justify="left", wraplength=max(300, self._wrap_width - 72 if self._wrap_width else 620))
+                warning_label.pack(fill="x", pady=(1, 3))
+                self._analysis_labels.append(warning_label)
+                self._analysis_styles.append((warning_label, "text_secondary", self.tokens.typography.meta, "regular"))
+        if evidence:
+            evidence_row = ctk.CTkFrame(self.analysis_details, fg_color="transparent")
+            evidence_row.pack(fill="x", pady=(7, 10))
+            seen: set[tuple[str, object]] = set()
+            for item in evidence:
+                source_key = (str(item.get("source_path") or item.get("source_name") or ""), item.get("pdf_page"))
+                if source_key in seen:
+                    continue
+                seen.add(source_key)
+                button = DSButton(evidence_row, tokens=self.tokens, text=_evidence_button_text(item), variant="secondary", width=138, height=28, command=lambda current=item: open_source_page(current.get("source_path"), current.get("pdf_page")))
+                button.pack(side="left", padx=(0, 6))
+                self._analysis_buttons.append(button)
+        return True
+
+    def _toggle_analysis(self) -> None:
+        if self.analysis_details is None:
+            return
+        self._analysis_visible = not self._analysis_visible
+        if self._analysis_visible:
+            self.analysis_details.pack(fill="x")
+        else:
+            self.analysis_details.pack_forget()
+        if self.analysis_toggle_button is not None:
+            self.analysis_toggle_button.configure(text="收起分析" if self._analysis_visible else "查看分析")
 
     def _proposal_changed(self) -> None:
         self._render_proposals()
@@ -821,11 +1016,11 @@ class ResultPanel(ctk.CTkFrame):
         self.proposals = proposals
         self.result["clarification_questions"] = questions
         if self.proposal_area is not None:
-            self.proposal_title.configure(text="AI 生成并通过本地校验的套价组合")
+            self.proposal_title.configure(text="套价建议")
         self._render_proposals()
 
     def _detail_widgets(self) -> list[ctk.CTkWidget]:
-        widgets: list[ctk.CTkWidget] = [self.primary_bar]
+        widgets: list[ctk.CTkWidget] = [self.meta_label, self.summary_label, self.primary_bar]
         if self.condition_bar is not None:
             widgets.append(self.condition_bar)
         if self.hints_label is not None:
@@ -839,6 +1034,8 @@ class ResultPanel(ctk.CTkFrame):
         if self._details_visible:
             if not self.export_frame.winfo_manager():
                 self.export_frame.pack(side="right", padx=(0, 4), before=self.toggle_button)
+            if not self.meta_label.winfo_manager():
+                self.meta_label.pack(fill="x", anchor="w", pady=(2, 0))
             self.primary_bar.pack(fill="x", padx=12, pady=(0, 6))
             if self.condition_bar is not None:
                 self.condition_bar.pack(fill="x", padx=12, pady=(0, 6))
@@ -847,12 +1044,12 @@ class ResultPanel(ctk.CTkFrame):
             for section in self.sections:
                 section.pack(fill="x")
             self.footnote.pack(fill="x", padx=16, pady=(8, 14))
-            self.toggle_button.configure(text="收起依据")
+            self.toggle_button.configure(text="收起")
         else:
             self.export_frame.pack_forget()
             for widget in self._detail_widgets():
                 widget.pack_forget()
-            self.toggle_button.configure(text="查看依据")
+            self.toggle_button.configure(text="展开")
 
     def _toggle_details(self) -> None:
         self._set_details_visible(not self._details_visible)
@@ -997,9 +1194,8 @@ class ResultPanel(ctk.CTkFrame):
         self.tokens = tokens
         c = tokens.colors
         self.configure(fg_color="transparent", border_width=0)
-        self.eyebrow_label.configure(text_color=c.accent, font=tokens.font(tokens.typography.caption, "semibold"))
-        self.title_label.configure(text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"))
-        self.meta_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.meta))
+        self.title_label.configure(text_color=c.text_secondary, font=tokens.font(tokens.typography.meta, "semibold"))
+        self.meta_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
         self.summary_label.configure(text_color=c.text_secondary, font=tokens.font(tokens.typography.meta))
         self.primary_bar.configure(fg_color=c.accent_soft if self.primary else c.subtle)
         self.primary_label.configure(text_color=c.text, font=tokens.font(tokens.typography.meta))
@@ -1018,6 +1214,14 @@ class ResultPanel(ctk.CTkFrame):
             section.apply_theme(tokens)
         for card in self.proposal_cards:
             card.apply_theme(tokens)
+        if self.analysis_frame is not None:
+            self.analysis_frame.configure(fg_color="transparent")
+        if self.proposal_area is not None:
+            self.proposal_area.configure(fg_color=c.surface, border_color=c.border)
+        for label, tone, size, weight in self._analysis_styles:
+            label.configure(text_color=getattr(c, tone), font=tokens.font(size, weight))
+        for button in self._analysis_buttons:
+            button.apply_theme(tokens)
 
     def set_wraplength(self, width: int) -> None:
         width = max(360, width)
@@ -1034,6 +1238,12 @@ class ResultPanel(ctk.CTkFrame):
             section.set_wraplength(width)
         for card in self.proposal_cards:
             card.set_wraplength(width)
+        for label in self._analysis_labels:
+            try:
+                if int(label.cget("wraplength") or 0) > 0:
+                    label.configure(wraplength=max(300, width - 72))
+            except (TypeError, ValueError):
+                pass
 
 
 class WarningStrip(ctk.CTkFrame):

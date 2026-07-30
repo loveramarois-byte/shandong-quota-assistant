@@ -6,7 +6,7 @@ from pathlib import Path
 
 from components.result import CandidateSection
 from themes.tokens import DARK, LIGHT
-from utils.svg import _render_svg_cached, svg_image
+from utils.svg import _fallback_icon, _render_svg_cached, svg_image
 
 
 class DesignSystemTests(unittest.TestCase):
@@ -34,6 +34,13 @@ class DesignSystemTests(unittest.TestCase):
         svg_image(path, (16, 16), color="#555A55")
         after = _render_svg_cached.cache_info()
         self.assertEqual(after.hits, before.hits + 1)
+
+    def test_remove_icon_has_a_native_fallback(self):
+        path = Path(__file__).parents[1] / "assets" / "icons" / "x.svg"
+        image = _fallback_icon(path, (16, 16), "#555A55")
+
+        self.assertIsNotNone(image.getbbox())
+        self.assertGreater(image.getpixel((16, 16))[3], 0)
 
 
 if __name__ == "__main__":

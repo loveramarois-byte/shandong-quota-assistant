@@ -61,6 +61,9 @@ def _fallback_icon(path: Path, size: tuple[int, int], color: str) -> Image.Image
         draw.line([point(6, 15), point(12, 9), point(18, 15)], fill=color, width=pen, joint="curve")
     elif name == "check":
         draw.line([point(5, 12), point(9, 16), point(19, 6)], fill=color, width=pen, joint="curve")
+    elif name == "x":
+        draw.line([point(6, 6), point(18, 18)], fill=color, width=pen)
+        draw.line([point(18, 6), point(6, 18)], fill=color, width=pen)
     elif name == "copy":
         draw.rounded_rectangle([point(9, 9), point(20, 20)], radius=max(2, round(2 * scale)), outline=color, width=pen)
         draw.line([point(5, 15), point(4, 15), point(4, 4), point(15, 4), point(15, 5)], fill=color, width=pen)

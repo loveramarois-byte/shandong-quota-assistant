@@ -383,7 +383,8 @@ def _load_links(
             filters.append("q.discipline=?")
             params.append(discipline)
         rows = connection.execute(
-            "SELECT l.link_edition,l.link_id,l.bill_item_id,l.quota_kind_id,l.quota_code,l.quota_title,l.unit,l.factor,l.condition_text,"
+            "SELECT l.link_edition,l.link_id,l.bill_item_id,l.quota_kind_id,l.quota_code,l.quota_title,"
+            "l.unit AS link_unit,q.unit AS quota_unit,l.factor,l.condition_text,"
             "q.edition,q.discipline,q.code,q.name,q.pdf_page,q.source_path,q.ordinal "
             "FROM bill_quota_links l LEFT JOIN quota_items q "
             "ON q.quota_kind_id=l.quota_kind_id AND q.code=l.quota_code "
@@ -402,7 +403,10 @@ def _load_links(
                 "discipline": row["discipline"],
                 "code": quota_code,
                 "title": row["quota_title"] or row["name"] or "",
-                "unit": row["unit"],
+                # Quota master data and its scanned source page are authoritative.
+                # Legacy relation rows occasionally carry a stale unit copied from
+                # another import and must not override the quota itself.
+                "unit": row["quota_unit"] or row["link_unit"],
                 "factor": row["factor"],
                 "condition_text": row["condition_text"],
                 "pdf_page": row["pdf_page"],

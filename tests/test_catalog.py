@@ -5,7 +5,7 @@ import threading
 import time
 import unittest
 
-from utils.catalog import CatalogSearchCancelled, MAX_QUERY_CHARS, _enforce_discipline_scope, _fts_expression, build_ai_prompt, connect_database, library_stats, missing_info_hints, query_terms, search_catalog, validate_catalog_schema
+from utils.catalog import CatalogSearchCancelled, MAX_QUERY_CHARS, _enforce_discipline_scope, _fts_expression, build_ai_prompt, connect_database, library_stats, load_bill_links, missing_info_hints, query_terms, search_catalog, validate_catalog_schema
 from utils.paths import catalog_manifest_path, database_path
 
 
@@ -287,6 +287,18 @@ class ConditionRankingRegressionTests(unittest.TestCase):
         self.assertTrue(result["bills"])
         self.assertEqual(result["bills"][0]["code"], "010501001-000")
         self.assertEqual(result["bills"][0]["title"], "基础垫层")
+
+    def test_bill_link_uses_authoritative_quota_unit(self):
+        result = search_catalog("C15混凝土垫层，厚度100mm", quota_edition="2025", standard_edition="2024", discipline="building", limit=8)
+        links = load_bill_links(
+            result["bills"][:1],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+        cushion = next(value for value in links if value.get("code") == "2-1-28")
+
+        self.assertEqual(cushion["unit"], "10m³")
 
 
 class DirectCodeLookupTests(unittest.TestCase):

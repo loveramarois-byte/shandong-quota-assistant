@@ -3,9 +3,20 @@ from __future__ import annotations
 import unittest
 
 from components.message import ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers
+from components.result import compact_analysis_content
 
 
 class AiMessageFormatTests(unittest.TestCase):
+    def test_compact_result_keeps_one_decision_and_hides_duplicate_candidates(self):
+        summary, details = compact_analysis_content([
+            ("结论", "- 已形成可复核的清单与定额组合建议。"),
+            ("建议候选", "- 清单 010501001-000 基础垫层\n- 定额 2-1-28 混凝土垫层 无筋"),
+            ("工程量与换算", "- 已按100mm厚度换算，系数为1。"),
+        ])
+
+        self.assertEqual(summary, "已形成可复核的清单与定额组合建议。")
+        self.assertEqual(details, [("工程量与换算", ["已按100mm厚度换算，系数为1。"])])
+
     def test_markdown_sections_are_cleaned_for_card_rendering(self):
         text = """## 结论
 需要补充工程专业和施工方法。 [R1][R2]
