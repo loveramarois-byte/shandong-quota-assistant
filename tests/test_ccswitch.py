@@ -9,12 +9,13 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request
 
-from utils.ccswitch import AIRequestConfig, EmptyModelListError, IncompleteAIResponseError, _api_key, _base_url, _call_openai, _looks_incomplete, _read_max_tokens, _read_timeout, _request_text, build_ai_request_config, call_ccswitch, fetch_models, is_complete_ai_text, probe_ccswitch
+from utils.ccswitch import AIRequestConfig, EmptyModelListError, IncompleteAIResponseError, MAX_RESPONSE_BYTES, _api_key, _base_url, _call_openai, _looks_incomplete, _read_max_tokens, _read_timeout, _request_text, build_ai_request_config, call_ccswitch, fetch_models, is_complete_ai_text, probe_ccswitch
 
 
 class _Response:
-    def __init__(self, body: dict):
+    def __init__(self, body: dict, *, final_url: str = ""):
         self.body = json.dumps(body).encode("utf-8")
+        self.final_url = final_url
 
     def __enter__(self):
         return self
@@ -22,11 +23,35 @@ class _Response:
     def __exit__(self, *_args):
         return False
 
-    def read(self):
-        return self.body
+    def read(self, size: int = -1):
+        return self.body if size < 0 else self.body[:size]
+
+    def geturl(self):
+        return self.final_url or "http://127.0.0.1:15721/v1/chat/completions"
 
 
 class CCSwitchTests(unittest.TestCase):
+    def test_environment_endpoint_is_validated_at_request_config_boundary(self):
+        environment = {"AI_PROVIDER": "deepseek", "AI_BASE_URL": "http://api.example.invalid"}
+        with patch.dict(os.environ, environment, clear=True), patch("utils.ccswitch.load_api_key", return_value="saved-key"):
+            with self.assertRaisesRegex(RuntimeError, "安全要求"):
+                build_ai_request_config({"ai_provider": "deepseek", "ai_model": "deepseek-chat"})
+
+    def test_redirect_final_url_must_still_obey_endpoint_policy(self):
+        request = Request("https://api.example.com/v1/chat/completions")
+        response = _Response({"choices": [{"message": {"content": "OK"}}]}, final_url="http://api.example.com/v1/chat/completions")
+        with patch("utils.ccswitch.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "地址"):
+                _request_text(request, protocol="OpenAI")
+
+    def test_response_body_has_a_hard_size_limit(self):
+        request = Request("http://127.0.0.1:15721/v1/chat/completions")
+        response = _Response({})
+        response.body = b"x" * (MAX_RESPONSE_BYTES + 1)
+        with patch("utils.ccswitch.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "过大"):
+                _request_text(request, protocol="OpenAI")
+
     def test_request_config_is_an_immutable_snapshot_and_does_not_write_secrets_to_environment(self):
         settings = {
             "ai_provider": "deepseek",

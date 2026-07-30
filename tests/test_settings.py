@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+
+from tests.support import requires_authorized_catalog
 from pathlib import Path
 from unittest import mock
 
@@ -122,6 +124,7 @@ class PathSafetyTests(unittest.TestCase):
         self.assertTrue(data_dir.exists())
         self.assertIn("ShandongQuotaAssistant", str(data_dir))
 
+    @requires_authorized_catalog
     def test_database_path_resolves(self):
         self.assertTrue(paths.database_path().exists())
 

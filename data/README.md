@@ -2,6 +2,8 @@
 
 此目录在公开仓库中不包含真实定额、清单或 PDF 数据。
 
+无需真实资料即可运行 `python run.py --demo`；生成器和演示数据边界见 [demo/README.md](demo/README.md)。
+
 ## 查找顺序
 
 应用按以下顺序查找 SQLite 资料库：

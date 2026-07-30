@@ -1,0 +1,16 @@
+{
+  "catalog_schema_version": 3,
+  "generator": "tools/build_demo_catalog.py",
+  "distribution_scope": "public_synthetic_demo",
+  "synthetic_only": true,
+  "counts": {
+    "disciplines": 4,
+    "quota_items": 8,
+    "bill_items": 8,
+    "bill_quota_links": 8
+  },
+  "limitations": [
+    "演示数据不对应任何真实定额、清单、价格或出版物。",
+    "演示结果不可用于真实工程。"
+  ]
+}

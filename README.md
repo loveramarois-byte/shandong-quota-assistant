@@ -63,6 +63,18 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+### 无资料库体验完整流程
+
+公开仓库提供完全合成、无版权的演示模式。它会在本地生成 schema v3 SQLite，不下载或复制任何真实定额资料：
+
+```powershell
+.\.venv\Scripts\python.exe .\run.py --demo
+```
+
+窗口会持续标注“演示资料”。可输入 `演示基础构件浇筑`、`演示低压线管敷设`、`演示园区路基铺筑` 或 `演示庭院苗木栽植` 验证四专业隔离、版本隔离、清单定额关联和导出流程。演示结果不可用于真实工程。
+
+### 接入自有合法资料库
+
 将你有权使用的兼容数据库放到 `data\shandong_quota.sqlite`，或指定环境变量：
 
 ```powershell
@@ -100,16 +112,13 @@ data/                仅保留接入说明，不跟踪真实资料
 
 ## 测试
 
-不需要定额数据库的代码测试：
+公开 CI 自动发现全部测试。没有授权资料库时，显式跳过真实资料集成案例，并单独使用合成 demo DB 验证数据库链路：
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest `
-  tests.test_ai_providers tests.test_analysis_state tests.test_ccswitch `
-  tests.test_design_system tests.test_formatting tests.test_layout `
-  tests.test_message_format tests.test_query_parse tests.test_scroll `
-  tests.test_secrets tests.test_sessions tests.test_settings_dialog_logic `
-  tests.test_smoke tests.test_work_items tests.test_pricing_pipeline `
-  tests.test_ai_structured tests.test_evaluation -v
+$env:SHANDONG_SKIP_AUTHORIZED_CATALOG_TESTS = "1"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m tools.build_demo_catalog --output build\demo_catalog.sqlite
+.\.venv\Scripts\python.exe -m unittest tests.test_demo_catalog -v
 ```
 
 配置兼容资料库后，运行全量集成测试：
@@ -132,6 +141,8 @@ data/                仅保留接入说明，不跟踪真实资料
 
 - 不要将 API Key、项目描述、日志或数据库上传到 Issue。
 - 远程 AI 端点只允许 HTTPS；HTTP 仅允许回环地址。
+- 环境变量、自定义地址和重定向后的最终地址执行同一安全校验；单次响应体上限为 4 MiB。
+- 原书入口只接受本地 PDF，拒绝可执行文件、设备路径和网络 UNC 路径。
 - 详细数据流见 [本地数据与 AI 外发边界](docs/DATA_PRIVACY.md)。
 - 漏洞报告方式见 [SECURITY.md](SECURITY.md)。
 

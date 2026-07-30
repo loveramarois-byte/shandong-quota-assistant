@@ -22,7 +22,12 @@ def resolve_source_path(value: object, *, catalog_path: Path | None = None) -> P
     raw = str(value or "").strip()
     if not raw:
         return None
+    normalized = raw.replace("/", "\\")
+    if normalized.startswith(("\\\\", "\\?\\", "\\.\\")):
+        return None
     registered = Path(raw)
+    if registered.suffix.lower() != ".pdf":
+        return None
     candidates = [registered]
     try:
         catalog = (catalog_path or database_path()).resolve()

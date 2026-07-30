@@ -7,6 +7,7 @@ import unittest
 
 from utils.catalog import CatalogSearchCancelled, MAX_QUERY_CHARS, _enforce_discipline_scope, _fts_expression, build_ai_prompt, connect_database, library_stats, load_bill_links, missing_info_hints, query_terms, search_catalog, validate_catalog_schema
 from utils.paths import catalog_manifest_path, database_path
+from tests.support import requires_authorized_catalog
 
 
 class CatalogTests(unittest.TestCase):
@@ -25,6 +26,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual([item["code"] for item in scoped["quotas"]], ["B"])
         self.assertEqual(scoped["bills"], [])
 
+    @requires_authorized_catalog
     def test_waterproofing_is_strictly_isolated_to_selected_building_discipline(self):
         result = search_catalog(
             "防水",
@@ -50,6 +52,7 @@ class CatalogTests(unittest.TestCase):
             search_catalog("人工挖沟槽土方", cancel_event=cancel)
         self.assertLess(time.perf_counter() - started, 0.5)
 
+    @requires_authorized_catalog
     def test_database_is_available(self):
         self.assertTrue(database_path().exists())
         self.assertIsNotNone(catalog_manifest_path())
@@ -63,6 +66,7 @@ class CatalogTests(unittest.TestCase):
         finally:
             connection.close()
 
+    @requires_authorized_catalog
     def test_building_query_returns_candidates(self):
         result = search_catalog("挖沟槽土方，三类土，深度2.5米", quota_edition="2025", discipline="building", limit=6)
         self.assertEqual(result["quota_edition"], "2025")
@@ -78,12 +82,14 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("建议候选", prompt)
         self.assertIn("记录ID=", prompt)
 
+    @requires_authorized_catalog
     def test_sidebar_counts_come_from_database(self):
         stats = library_stats()
         self.assertGreater(stats["quotas"] or 0, 0)
         self.assertGreater(stats["bills"] or 0, 0)
         self.assertGreater(stats["resources"] or 0, 0)
 
+    @requires_authorized_catalog
     def test_fts_query_plan_uses_virtual_table(self):
         connection = connect_database()
         try:
@@ -107,6 +113,7 @@ class CatalogTests(unittest.TestCase):
             search_catalog("挖沟槽土方", quota_edition="2099")
 
 
+@requires_authorized_catalog
 class ExactCodeScopeTests(unittest.TestCase):
     def test_bill_code_is_hard_filtered_by_selected_standard_edition(self):
         current = search_catalog(
@@ -224,6 +231,7 @@ class ExactCodeScopeTests(unittest.TestCase):
                 self.assertEqual(mismatched["links"], [])
 
 
+@requires_authorized_catalog
 class ConditionRankingRegressionTests(unittest.TestCase):
     """Sprint B acceptance: soil/depth/method must change the top ordering."""
 
@@ -301,6 +309,7 @@ class ConditionRankingRegressionTests(unittest.TestCase):
         self.assertEqual(cushion["unit"], "10m³")
 
 
+@requires_authorized_catalog
 class DirectCodeLookupTests(unittest.TestCase):
     def test_bill_code_direct_lookup(self):
         result = search_catalog("010102002", quota_edition="2025", discipline=None, limit=6)
@@ -318,6 +327,7 @@ class DirectCodeLookupTests(unittest.TestCase):
 
 
 class MissingHintTests(unittest.TestCase):
+    @requires_authorized_catalog
     def test_soil_hint_when_candidates_split_by_soil(self):
         result = search_catalog("挖沟槽土方", quota_edition="2025", discipline="building", limit=6)
         hints = missing_info_hints(result)
@@ -328,6 +338,7 @@ class MissingHintTests(unittest.TestCase):
         self.assertTrue(hints)
         self.assertIn("补充", hints[0])
 
+    @requires_authorized_catalog
     def test_underspecified_query_requires_more_conditions(self):
         result = search_catalog("挖沟槽土方", quota_edition="2025", standard_edition="2024", discipline="building", limit=6)
 
@@ -341,6 +352,7 @@ class MissingHintTests(unittest.TestCase):
                 self.assertIn("conflicts", item)
 
 
+@requires_authorized_catalog
 class PromptSafetyTests(unittest.TestCase):
     def test_prompt_wraps_user_text_as_data(self):
         result = search_catalog("挖沟槽土方", quota_edition="2025", discipline="building", limit=4)
@@ -369,6 +381,7 @@ class PromptSafetyTests(unittest.TestCase):
         self.assertIn("必须以“暂不能确定”开头", prompt)
 
 
+@requires_authorized_catalog
 class RetrievalRegressionTests(unittest.TestCase):
     """Cross-discipline smoke regression: every query must return structured candidates."""
 

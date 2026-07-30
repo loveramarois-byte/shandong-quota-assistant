@@ -92,6 +92,13 @@ class EvidenceTests(unittest.TestCase):
     def test_resolve_source_returns_none_for_uninstalled_file(self):
         self.assertIsNone(resolve_source_path(self.root / "missing.pdf", catalog_path=self.database))
 
+    def test_non_pdf_and_network_sources_are_rejected(self):
+        executable = self.root / "source.exe"
+        executable.write_bytes(b"fixture")
+
+        self.assertIsNone(resolve_source_path(executable, catalog_path=self.database))
+        self.assertIsNone(resolve_source_path(r"\\HOST\share\source.pdf", catalog_path=self.database))
+
 
 if __name__ == "__main__":
     unittest.main()

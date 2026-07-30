@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import unittest
 
+from tests.support import requires_authorized_catalog
+
 from components.result import candidate_copy_lines, result_markdown
 from utils.catalog import search_catalog
 from utils.result_export import confirmed_proposal_payload, proposal_csv, result_csv
 
 
+@requires_authorized_catalog
 class ExportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

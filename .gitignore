@@ -22,6 +22,7 @@ dist/
 release/
 install-test-*/
 *.spec
+!ShandongQuotaAssistant.spec
 *.exe
 *.msi
 *.7z
@@ -30,6 +31,9 @@ install-test-*/
 # Licensed catalogue material is never part of the public source repository
 data/*
 !data/README.md
+!data/demo/
+data/demo/*
+!data/demo/README.md
 manifests/catalog-baseline.json
 data/*.sqlite
 data/*.sqlite-*

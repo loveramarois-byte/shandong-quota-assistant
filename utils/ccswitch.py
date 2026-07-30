@@ -11,11 +11,13 @@ from urllib.request import Request, urlopen
 from .ai_providers import effective_base_url, endpoint_url, normalize_provider, provider_config
 from .paths import APP_VERSION
 from .secrets import load_api_key
+from .settings import validate_ai_endpoint
 
 
 CCSWITCH_BASE_URL = os.environ.get("CCSWITCH_BASE_URL", "http://127.0.0.1:15721").rstrip("/")
 CCSWITCH_MODEL = os.environ.get("CCSWITCH_MODEL", "gpt-5.6-sol")
 CCSWITCH_API_FORMAT = os.environ.get("CCSWITCH_API_FORMAT", "openai").strip().lower()
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 class EmptyModelListError(RuntimeError):
@@ -85,9 +87,13 @@ def build_ai_request_config(settings: Mapping[str, Any]) -> AIRequestConfig:
     if not api_key:
         provider_key_name = {"deepseek": "DEEPSEEK_API_KEY", "zhipu": "ZHIPU_API_KEY", "ccswitch": "CCSWITCH_API_KEY"}[provider]
         api_key = str(os.environ.get(provider_key_name) or "").strip()
+    try:
+        base_url = validate_ai_endpoint(effective_base_url(provider, configured_base))
+    except ValueError as exc:
+        raise RuntimeError("AI 服务地址不符合安全要求") from exc
     return AIRequestConfig(
         provider=provider,
-        base_url=effective_base_url(provider, configured_base),
+        base_url=base_url,
         model=configured_model,
         timeout=timeout,
         api_key=api_key,
@@ -115,7 +121,10 @@ def _base_url(provider: str = "", configured: str = "") -> str:
         override = os.environ.get("AI_BASE_URL", "")
     if not override and selected == "ccswitch":
         override = os.environ.get("CCSWITCH_BASE_URL", "")
-    return effective_base_url(selected, override)
+    try:
+        return validate_ai_endpoint(effective_base_url(selected, override))
+    except ValueError as exc:
+        raise RuntimeError("AI 服务地址不符合安全要求") from exc
 
 
 def _api_key(provider: str, explicit: str = "") -> str:
@@ -176,7 +185,10 @@ def call_ccswitch(prompt: str, *, model: str | None = None, config: AIRequestCon
     else:
         provider = normalize_provider(config.provider)
         selected_model = _selected_model(provider, model or config.model)
-        base_url = effective_base_url(provider, config.base_url)
+        try:
+            base_url = validate_ai_endpoint(effective_base_url(provider, config.base_url))
+        except ValueError as exc:
+            raise RuntimeError("AI 服务地址不符合安全要求") from exc
         api_key = str(config.api_key or "").strip()
         timeout = max(8, min(int(config.timeout), 180))
         api_format = str(config.api_format or "openai").strip().lower()
@@ -411,11 +423,22 @@ def _send_completion(
 
 def _request_json(request: Request, *, timeout: int, provider_label: str) -> dict:
     try:
+        validate_ai_endpoint(request.full_url)
         with urlopen(request, timeout=timeout) as response:
-            body = json.loads(response.read())
+            final_url = response.geturl() if hasattr(response, "geturl") else request.full_url
+            validate_ai_endpoint(final_url)
+            try:
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+            except TypeError:
+                raw = response.read()
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise RuntimeError(f"{provider_label} 返回内容过大")
+            body = json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{provider_label} 服务地址或返回格式无效") from exc
     except HTTPError as exc:
         raise RuntimeError(f"{provider_label} HTTP {exc.code}") from exc
-    except (URLError, TimeoutError, ValueError, OSError) as exc:
+    except (URLError, TimeoutError, OSError) as exc:
         raise RuntimeError(f"{provider_label} 请求失败") from exc
     if not isinstance(body, dict):
         raise RuntimeError(f"{provider_label} 返回格式无效")

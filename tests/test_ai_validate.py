@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from tests.support import requires_authorized_catalog
+
 from utils.ai_validate import extract_codes, find_uncited_lines, validate_ai_answer, verify_codes
 from utils.catalog import search_catalog
 
@@ -28,6 +30,7 @@ class UncitedLineTests(unittest.TestCase):
         self.assertEqual(find_uncited_lines("主选：1-2-9 人工挖沟槽坚土 [R3]"), [])
 
 
+@requires_authorized_catalog
 class ValidateAnswerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

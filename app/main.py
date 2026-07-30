@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import queue
 import threading
 import time
@@ -96,7 +97,8 @@ class QuotaApp(ctk.CTk):
         ctk.set_appearance_mode("Dark" if self.theme_name == "dark" else "Light")
         ctk.set_default_color_theme("blue")
         super().__init__()
-        self.title("山东定额助手")
+        self.demo_mode = os.environ.get("SHANDONG_DEMO_MODE") == "1"
+        self.title("山东定额助手（演示资料）" if self.demo_mode else "山东定额助手")
         try:
             self.iconbitmap(resource_path("assets", "images", "app.ico"))
         except (OSError, tk.TclError):
@@ -141,6 +143,8 @@ class QuotaApp(ctk.CTk):
         threading.Thread(target=self._load_library_stats, name="library-stats", daemon=True).start()
         self._poll_job = self.after(120, self._poll_events)
         self.feed.add("assistant", "请描述工程内容、规格和施工条件。\n我会结合山东清单、定额和原书证据，直接给出套项结论。")
+        if self.demo_mode:
+            self.feed.add_warning("当前使用完全合成的演示资料，只用于体验流程，不可用于真实工程。")
         if not ai_connection_state(self.settings)[0]:
             self.feed.add_warning("AI 尚未连接；当前仍可查询本地清单和定额。", action_text="连接 AI", command=self._open_settings)
         self.composer.textbox.focus_set()
@@ -210,7 +214,8 @@ class QuotaApp(ctk.CTk):
         self.header.grid_columnconfigure(0, weight=1)
         self.heading = ctk.CTkFrame(self.header, fg_color="transparent")
         self.heading.grid(row=0, column=0, sticky="w", pady=(15, 10))
-        self.title_label = ctk.CTkLabel(self.heading, text="AI 定额分析", text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
+        title = "AI 定额分析 · 演示资料" if self.demo_mode else "AI 定额分析"
+        self.title_label = ctk.CTkLabel(self.heading, text=title, text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
         self.title_label.pack(anchor="w")
         self.subtitle_label = ctk.CTkLabel(self.heading, text="正在读取 AI 连接状态", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.subtitle_label.pack(anchor="w", pady=(4, 0))
