@@ -31,9 +31,9 @@ OutputDir={#BuildOutputDir}
 OutputBaseFilename={#BuildOutputBaseFilename}
 SetupIconFile=..\assets\images\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-# The internal bundle is dominated by SQLite and PDF assets that are already
-# compact. Recompressing them with lzma2/max saves very little and can turn a
-# routine build into hours of CPU time.
+; The internal bundle is dominated by SQLite and PDF assets that are already
+; compact. Recompressing them with lzma2/max saves very little and can turn a
+; routine build into hours of CPU time.
 Compression=none
 SolidCompression=no
 WizardStyle=modern
