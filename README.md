@@ -10,7 +10,18 @@
 </div>
 
 > [!IMPORTANT]
-> 本仓库公开的是应用源码，不含山东定额/清单数据库、PDF 资料、API Key、安装包或任何第三方计价软件文件。使用者必须自行提供来源合法、结构兼容的本地资料库。
+> Git 源码历史不直接存放数 GB 的数据库和 PDF。项目的 **完整版 Release** 单独提供含授权资料库与已登记原书证据的 Windows 安装介质；API Key 和任何第三方计价软件文件始终不会随软件提供。
+
+## 普通用户直接安装
+
+不需要安装 Python，也不需要自己准备数据库：
+
+1. 打开 [GitHub Releases](https://github.com/loveramarois-byte/shandong-quota-assistant/releases/latest) 或 [Gitee 发行版](https://gitee.com/bbbbo-liu/shandong-quota-assistant/releases)。
+2. 下载 `山东定额助手-Setup-0.7.4.exe` 和同版本的全部 `.bin` 文件，放在同一个文件夹。
+3. 双击 `山东定额助手-Setup-0.7.4.exe` 安装。未签名版本可能显示 Windows“未知发布者”提示，请先核对 Release 中的 SHA-256。
+4. 安装完成即可使用本地检索；需要 AI 时，再在设置中填写自己的 DeepSeek、智谱或兼容接口。
+
+完整版包含山东 2016/2025 定额、2013/2024 清单、清单定额关联以及已登记原书证据。资料权利说明与适用边界见 [DATA_NOTICE.md](legal/DATA_NOTICE.md)。
 
 ## 为什么做这个项目
 
@@ -48,7 +59,7 @@ flowchart LR
     G --> I["人工确认后复制 / 导出"]
 ```
 
-## 运行要求
+## 源码运行要求
 
 - Windows 10/11 x64
 - Python 3.12
@@ -107,7 +118,7 @@ assets/              字体、图标、动画和应用图标
 tests/               单元与数据库集成测试
 evaluation/          不含受限资料的合成评测集与基线报告
 packaging/           Windows 安装包配置
-data/                仅保留接入说明，不跟踪真实资料
+data/                源码仓库仅保留接入说明；完整版数据由 Release 交付
 ```
 
 ## 测试
@@ -149,7 +160,7 @@ $env:SHANDONG_SKIP_AUTHORIZED_CATALOG_TESTS = "1"
 ## 法律与商标边界
 
 - MIT 许可证仅适用于本仓库的原创代码，见 [LICENSE](LICENSE)。
-- 定额、清单、PDF、人材机价格和其他专业资料不由 MIT 许可证覆盖。
+- 定额、清单、PDF、人材机价格和其他专业资料不由 MIT 许可证覆盖；完整版中的资料适用独立的 [数据说明](legal/DATA_NOTICE.md)。
 - “山东定额助手”是本开源项目名称，与政府部门、定额出版单位、AI 服务商或商业计价软件无官方关联。
 - 用户应核实当地有效版本、合同约定和项目特征；软件输出是候选与辅助解释，不代替造价专业人员审核。
 

@@ -19,7 +19,7 @@
 
 - `code-only` 自动发现所有测试，并打印每个跳过原因
 - `demo-db-integration` 使用完全合成 schema v3 数据验证检索、专业/版本隔离与关联
-- `package-smoke` 构建不含授权数据库和 PDF 的公开可执行包
+- `package-smoke` 构建不含授权数据库和 PDF 的源码烟雾包；面向普通用户的完整版由本地授权发布门禁构建
 - Ruff、compileall、pip check 和合成评测成为 CI 门禁
 - 本机授权资料库全量回归结果不得下降
 

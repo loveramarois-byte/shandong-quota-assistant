@@ -36,6 +36,9 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; routine build into hours of CPU time.
 Compression=none
 SolidCompression=no
+DiskSpanning=yes
+DiskSliceSize=900000000
+SlicesPerDisk=1
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible

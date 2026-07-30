@@ -2,6 +2,8 @@
 param(
     [switch]$InternalEvaluation,
     [switch]$AuthorizedInternalDistribution,
+    [switch]$AuthorizedPublicDistribution,
+    [switch]$UnsignedReleaseAcknowledged,
     [string]$DistributionAuthorizationId,
     [string]$SigningCertificateThumbprint,
     [switch]$PreflightOnly,
@@ -19,16 +21,25 @@ $catalogManifestPath = Join-Path $projectRoot "manifests\catalog-baseline.json"
 $database = Join-Path $projectRoot "data\shandong_quota.sqlite"
 $stageRoot = Join-Path $projectRoot "build\release-dist"
 $workRoot = Join-Path $projectRoot "build\release-work"
-$bundleName = if ($InternalEvaluation) { "山东定额助手-内部评估" } else { "山东定额助手-便携版" }
+$bundleName = if ($InternalEvaluation) {
+    "山东定额助手-内部评估"
+} elseif ($AuthorizedPublicDistribution) {
+    "山东定额助手-完整版"
+} else {
+    "山东定额助手-便携版"
+}
 $releaseRoot = if ($InternalEvaluation) {
     Join-Path $projectRoot "build\internal-evaluation"
+} elseif ($AuthorizedPublicDistribution) {
+    Join-Path $projectRoot "build\authorized-public"
 } elseif ($AuthorizedInternalDistribution) {
     Join-Path $projectRoot "build\authorized-internal"
 } else {
     Join-Path $projectRoot "release"
 }
 $bundleRoot = Join-Path $releaseRoot $bundleName
-$requiresSigning = -not ($InternalEvaluation -or $AuthorizedInternalDistribution)
+$requiresSigning = -not ($InternalEvaluation -or $AuthorizedInternalDistribution -or $AuthorizedPublicDistribution)
+$signPublicArtifacts = $AuthorizedPublicDistribution -and -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)
 
 function Get-FileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
@@ -85,14 +96,14 @@ foreach ($required in @($python, $pyinstaller, $database, $catalogManifestPath))
 
 $catalogManifest = Get-Content -LiteralPath $catalogManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $appVersion = [string]$catalogManifest.app_version
-if ($AuthorizedInternalDistribution) {
+if ($AuthorizedInternalDistribution -or $AuthorizedPublicDistribution) {
     # Keep a running colleague build intact while preparing the next version.
     $releaseRoot = Join-Path $releaseRoot "v$appVersion"
     $bundleRoot = Join-Path $releaseRoot $bundleName
 }
 $sourceRevision = Get-SourceRevision
-if ($InternalEvaluation -and $AuthorizedInternalDistribution) {
-    throw "InternalEvaluation 与 AuthorizedInternalDistribution 不能同时使用"
+if (@($InternalEvaluation, $AuthorizedInternalDistribution, $AuthorizedPublicDistribution).Where({ $_ }).Count -gt 1) {
+    throw "InternalEvaluation、AuthorizedInternalDistribution 与 AuthorizedPublicDistribution 只能选择一个"
 }
 if ($InternalEvaluation) {
     if (-not $SkipArchive -or -not $SkipInstaller) {
@@ -107,6 +118,30 @@ if ($InternalEvaluation) {
     }
     if ([string]$catalogManifest.database.distribution_scope -ne "internal_colleagues_only") {
         throw "资料库授权范围不是 internal_colleagues_only，拒绝生成内部安装包"
+    }
+} elseif ($AuthorizedPublicDistribution) {
+    if (-not $DistributionAuthorizationId.Trim()) {
+        throw "授权公开构建需要 DistributionAuthorizationId"
+    }
+    if (-not [bool]$catalogManifest.database.distribution_authorized) {
+        throw "catalog manifest 表明资料库未获分发授权；拒绝生成公开完整发行版"
+    }
+    if ([string]$catalogManifest.database.distribution_scope -ne "public_release") {
+        throw "资料库授权范围不是 public_release，拒绝生成公开完整发行版"
+    }
+    if ([string]$catalogManifest.database.authorization_id -ne $DistributionAuthorizationId) {
+        throw "DistributionAuthorizationId 与 catalog manifest 不一致"
+    }
+    if ($sourceRevision -eq "UNVERSIONED") {
+        throw "授权公开构建需要已冻结的 Git revision"
+    }
+    if (-not $UnsignedReleaseAcknowledged -and -not $signPublicArtifacts) {
+        throw "未签名公开构建必须显式传入 UnsignedReleaseAcknowledged"
+    }
+    foreach ($legalFile in @("legal\EULA.md", "legal\PRIVACY.md", "legal\THIRD_PARTY_NOTICES.md", "legal\DATA_NOTICE.md")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $legalFile))) {
+            throw "授权公开构建缺少必需文件: $legalFile"
+        }
     }
 } else {
     if (-not $DistributionAuthorizationId.Trim()) { throw "正式发布需要 DistributionAuthorizationId" }
@@ -165,7 +200,7 @@ Copy-Item -LiteralPath $catalogManifestPath -Destination (Join-Path $bundleRoot 
 Copy-Item -LiteralPath (Join-Path $projectRoot "使用说明.txt") -Destination $bundleRoot
 
 $evidenceSourceCount = 0
-if ($AuthorizedInternalDistribution) {
+if ($AuthorizedInternalDistribution -or $AuthorizedPublicDistribution) {
     $sourceListPath = Join-Path $workRoot "evidence-sources.json"
     & $python -c 'import json,sqlite3,sys; c=sqlite3.connect(sys.argv[1]); p=[r[0] for r in c.execute("select distinct source_path from chunks where source_path is not null and length(source_path)>0 order by source_path")]; c.close(); open(sys.argv[2],"w",encoding="utf-8").write(json.dumps(p,ensure_ascii=False))' $database $sourceListPath
     $registeredSources = @(Get-Content -LiteralPath $sourceListPath -Raw -Encoding UTF8 | ConvertFrom-Json)
@@ -190,9 +225,13 @@ if ($AuthorizedInternalDistribution) {
     }
 }
 
+if (Test-Path -LiteralPath (Join-Path $projectRoot "legal")) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot "legal") -Destination $bundleRoot -Recurse
+}
+
 $portableExe = Join-Path $bundleRoot "山东定额助手.exe"
 if (-not (Test-Path -LiteralPath $portableExe)) { throw "便携版 EXE 未生成" }
-if ($requiresSigning) { Invoke-CodeSigning $portableExe }
+if ($requiresSigning -or $signPublicArtifacts) { Invoke-CodeSigning $portableExe }
 
 $releaseNote = @"
 山东定额助手 v$($catalogManifest.app_version)
@@ -200,13 +239,16 @@ $releaseNote = @"
 启动：双击“山东定额助手.exe”。
 本地检索只可用于已获授权的资料范围内的受控核验。
 AI 辅助解释默认关闭；启用前须确认施工描述和本地候选摘要的发送权限。
-内部授权安装包包含已登记原书资料，可在候选和 AI 引用中打开对应 PDF 页。
+完整安装包包含已登记资料库与原书证据，可在候选和 AI 引用中打开对应 PDF 页。
 "@
 Set-Content -LiteralPath (Join-Path $bundleRoot "发布说明.txt") -Value $releaseNote -Encoding UTF8
 if ($InternalEvaluation) {
     Set-Content -LiteralPath (Join-Path $bundleRoot "仅限内部评估.txt") -Value "此构建未获分发授权，不得传输、安装或对外发布。" -Encoding UTF8
 } elseif ($AuthorizedInternalDistribution) {
     Set-Content -LiteralPath (Join-Path $bundleRoot "内部授权与签名说明.txt") -Value "授权编号：$DistributionAuthorizationId`r`n授权范围：仅限内部同事使用。`r`n此安装包未进行 Windows 代码签名，首次运行可能显示未知发布者提示。" -Encoding UTF8
+} elseif ($AuthorizedPublicDistribution) {
+    $signatureNote = if ($signPublicArtifacts) { "安装程序和主程序已进行 Windows 代码签名。" } else { "此发行版未进行 Windows 代码签名，首次运行可能显示未知发布者提示。" }
+    Set-Content -LiteralPath (Join-Path $bundleRoot "完整发行版说明.txt") -Value "授权编号：$DistributionAuthorizationId`r`n资料范围：山东 2016/2025 定额、2013/2024 清单及已登记原书证据。`r`n$signatureNote" -Encoding UTF8
 }
 
 if (-not $SkipArchive) {
@@ -233,19 +275,21 @@ if (-not $SkipInstaller) {
     & $innoCompiler @innoDefines (Join-Path $projectRoot "packaging\ShandongQuotaAssistant.iss")
     if ($LASTEXITCODE -ne 0) { throw "安装包编译失败" }
     if (-not (Test-Path -LiteralPath $expectedInstaller)) { throw "安装包未生成: $expectedInstaller" }
-    if ($requiresSigning) { Invoke-CodeSigning $expectedInstaller }
+    if ($requiresSigning -or $signPublicArtifacts) { Invoke-CodeSigning $expectedInstaller }
 }
 
 $artifacts = @(
     Get-ChildItem -LiteralPath $bundleRoot -Recurse -File
     if (-not $SkipArchive -and (Test-Path -LiteralPath $archive)) { Get-Item -LiteralPath $archive }
-    if ($expectedInstaller -and (Test-Path -LiteralPath $expectedInstaller)) { Get-Item -LiteralPath $expectedInstaller }
+    if ($expectedInstaller -and (Test-Path -LiteralPath $expectedInstaller)) {
+        Get-ChildItem -LiteralPath $releaseRoot -File | Where-Object { $_.BaseName -like "山东定额助手-Setup-$appVersion*" }
+    }
 ) | Sort-Object FullName -Unique
 $artifactManifest = @($artifacts | ForEach-Object {
     [ordered]@{ path = $_.FullName.Substring($releaseRoot.Length).TrimStart("\\"); bytes = $_.Length; sha256 = Get-FileSha256 $_.FullName }
 })
 $releaseManifest = [ordered]@{
-    build_type = if ($InternalEvaluation) { "internal_evaluation" } elseif ($AuthorizedInternalDistribution) { "authorized_internal_unsigned" } else { "distribution" }
+    build_type = if ($InternalEvaluation) { "internal_evaluation" } elseif ($AuthorizedInternalDistribution) { "authorized_internal_unsigned" } elseif ($AuthorizedPublicDistribution) { "authorized_public_distribution" } else { "distribution" }
     created_at = (Get-Date).ToUniversalTime().ToString("o")
     app_version = [string]$catalogManifest.app_version
     source_revision = $sourceRevision
@@ -262,7 +306,7 @@ $releaseManifest = [ordered]@{
         compileall = "passed"
         sqlite_quick_check = "ok"
         schema_compatible = $true
-        code_signing = if ($AuthorizedInternalDistribution) { "unsigned_user_accepted" } elseif ($InternalEvaluation) { "not_applicable" } else { "passed" }
+        code_signing = if ($AuthorizedInternalDistribution) { "unsigned_user_accepted" } elseif ($AuthorizedPublicDistribution -and -not $signPublicArtifacts) { "unsigned_release_acknowledged" } elseif ($InternalEvaluation) { "not_applicable" } else { "passed" }
     }
     authorization_id = if ($InternalEvaluation) { $null } else { $DistributionAuthorizationId }
     artifacts = $artifactManifest

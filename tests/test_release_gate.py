@@ -74,6 +74,22 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn('Join-Path $releaseRoot "v$appVersion"', self.script)
         self.assertIn("正式发布需要代码签名证书", self.script)
 
+    def test_public_full_release_requires_explicit_authorization(self):
+        for marker in (
+            "[switch]$AuthorizedPublicDistribution",
+            "[switch]$UnsignedReleaseAcknowledged",
+            'distribution_scope -ne "public_release"',
+            "DistributionAuthorizationId 与 catalog manifest 不一致",
+            "authorized_public_distribution",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, self.script)
+
+    def test_installer_is_split_into_downloadable_media(self):
+        installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
+        self.assertIn("DiskSpanning=yes", installer)
+        self.assertIn("DiskSliceSize=900000000", installer)
+
     def test_internal_build_is_separated_from_release_directory(self):
         self.assertIn("build\\internal-evaluation", self.script)
         self.assertIn("仅限内部评估", self.script)
