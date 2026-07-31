@@ -17,7 +17,7 @@
 不需要安装 Python，也不需要自己准备数据库：
 
 1. 打开 [GitHub Releases](https://github.com/loveramarois-byte/shandong-quota-assistant/releases/latest) 或 [Gitee 发行版](https://gitee.com/bbbbo-liu/shandong-quota-assistant/releases)。
-2. 只下载 `山东定额助手-Setup-0.8.0.exe`。
+2. 只下载 `ShandongQuotaAssistant-Setup-0.8.0.exe`。
 3. 双击安装，安装程序会自动创建桌面和开始菜单入口。未签名版本可能显示 Windows“未知发布者”提示，请先核对 Release 中的 SHA-256。
 4. 安装完成即可使用本地检索；需要 AI 时，再在设置中填写自己的 DeepSeek、智谱或兼容接口。
 
