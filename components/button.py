@@ -3,6 +3,7 @@ from __future__ import annotations
 import customtkinter as ctk
 
 from themes.tokens import ThemeTokens
+from utils.motion import motion_enabled
 
 
 def blend_hex(start: str, end: str, progress: float) -> str:
@@ -86,7 +87,7 @@ class DSButton(ctk.CTkButton):
 
     def _animate_color(self, target: str) -> None:
         current = self.cget("fg_color")
-        if self.variant == "ghost" or current == "transparent" or target == "transparent":
+        if not motion_enabled() or self.variant == "ghost" or current == "transparent" or target == "transparent":
             self._cancel_hover_animation()
             self.configure(fg_color=target)
             return

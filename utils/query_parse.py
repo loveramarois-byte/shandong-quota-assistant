@@ -23,8 +23,63 @@ class QueryConditions:
 _OBJECT_TERMS = ("沟槽", "管沟", "基坑", "地坑", "桩孔", "一般土方", "单独土方", "平整场地")
 
 
+_COMMON_TREE_SPECIES = (
+    "香樟", "法桐", "国槐", "白蜡", "银杏", "栾树", "广玉兰", "雪松", "黑松", "油松",
+    "垂柳", "旱柳", "榉树", "朴树", "榆树", "枫杨", "合欢", "樱花", "海棠", "桂花",
+)
+
+
+def normalize_trade_description(value: str) -> str:
+    """Add common estimating terms without changing the user's stored wording.
+
+    Beginners frequently type site shorthand (``水稳``), spoken units
+    (``公分``), or product names such as ``JDG20``.  Retrieval should see the
+    corresponding trade wording while the original sentence remains the
+    evidence shown in the conversation.
+    """
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not text:
+        return ""
+    replacements = (
+        (r"屋顶", "屋面"),
+        (r"水稳(?:碎石)?", "水泥稳定碎石"),
+        (r"公分", "cm"),
+        (r"电线管", "电气配管"),
+        (r"埋(?:在)?墙里|墙里暗埋|埋墙内", "墙内暗配"),
+        (r"种一(?:棵|株)", "栽植一棵"),
+        (r"(?<!浇筑)浇一层", "浇筑一层"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.I)
+    text = re.sub(
+        r"(?P<size>\d+(?:\.\d+)?)\s*的\s*(?P<kind>JDG|KBG|SC|PVC)",
+        lambda match: f"{match.group('kind').upper()}{match.group('size')}",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\bJDG\s*(\d+(?:\.\d+)?)", r"JDG\1 紧定式钢导管", text, flags=re.I)
+    text = re.sub(r"\bKBG\s*(\d+(?:\.\d+)?)", r"KBG\1 扣压式钢导管", text, flags=re.I)
+    if any(species in text for species in _COMMON_TREE_SPECIES) and not re.search(r"乔木|灌木|水生植物", text):
+        text = f"{text} 乔木"
+    if re.search(r"基础(?:下|下面|底下)", text) and re.search(r"素?混凝土", text) and "垫层" not in text:
+        text = f"{text} 基础垫层"
+    if re.search(r"(?:垫层|基层|保温|防水)", text) and not re.search(r"(?:厚度|板厚|壁厚|厚)\s*\d", text):
+        text = re.sub(
+            r"(?<![A-Za-z\d])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm|毫米|厘米)(?![A-Za-z])",
+            lambda match: f"厚度{match.group('value')}{match.group('unit')}",
+            text,
+            count=1,
+            flags=re.I,
+        )
+    return text
+
+
 def _measurement(text: str, labels: str) -> float | None:
-    match = re.search(rf"(?:{labels})\s*(?:为|约|约为|[:：=])?\s*(\d+(?:\.\d+)?)\s*(km|公里|千米|m|米|cm|厘米|mm|毫米)\b", text, re.I)
+    match = re.search(
+        rf"(?:{labels})\s*(?:为|约|约为|[:：=])?\s*(\d+(?:\.\d+)?)\s*(km|公里|千米|cm|厘米|mm|毫米|m|米)(?![A-Za-z])",
+        text,
+        re.I,
+    )
     if not match:
         return None
     value = float(match.group(1))
@@ -44,7 +99,7 @@ def _measurement_mm(text: str, labels: str) -> float | None:
 
 
 def parse_query_conditions(query: str) -> QueryConditions:
-    text = re.sub(r"\s+", "", query or "")
+    text = re.sub(r"\s+", "", normalize_trade_description(query))
     object_type = next((term for term in _OBJECT_TERMS if term in text), None)
     if re.search(r"(?:三类土|Ⅲ类土|坚土)", text, re.I):
         soil_type = "坚土"
@@ -63,10 +118,14 @@ def parse_query_conditions(query: str) -> QueryConditions:
     else:
         method = None
     thickness_mm = _measurement_mm(text, r"厚度|板厚|壁厚|厚")
-    diameter_mm = _measurement_mm(text, r"直径|管径|公称直径|外径")
+    diameter_mm = _measurement_mm(text, r"土球直径|土球|公称直径|外径|管径|直径")
     diameter_match = re.search(r"(?<![A-Za-z])DN\s*(\d+(?:\.\d+)?)", text, re.I)
     if diameter_mm is None and diameter_match:
         diameter_mm = float(diameter_match.group(1))
+    if diameter_mm is None:
+        conduit_match = re.search(r"(?:JDG|KBG|SC|PVC)\s*(\d+(?:\.\d+)?)", text, re.I)
+        if conduit_match:
+            diameter_mm = float(conduit_match.group(1))
     strength_match = re.search(r"(?<![A-Za-z])((?:C\s*\d{2,3}|M\s*\d{1,3}|HRB\s*\d{3}))(?!\d)", text, re.I)
     strength_grade = re.sub(r"\s+", "", strength_match.group(1)).upper() if strength_match else None
     return QueryConditions(object_type=object_type, soil_type=soil_type, depth_m=depth_m, distance_m=distance_m, method=method, thickness_mm=thickness_mm, diameter_mm=diameter_mm, strength_grade=strength_grade)

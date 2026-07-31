@@ -165,6 +165,92 @@ def _ai_section_tone(heading: str, tokens: ThemeTokens) -> tuple[str, str]:
     return c.text_secondary, c.subtle
 
 
+class WelcomePrompt(ctk.CTkFrame):
+    """Quiet first-run prompt: one task, one sentence, three useful examples."""
+
+    EXAMPLES = (
+        ("屋面 SBS 防水", "屋面SBS改性沥青卷材防水，3mm，两道，热熔"),
+        ("C15 基础垫层", "基础C15素混凝土垫层，厚度100mm"),
+        ("JDG20 暗配", "JDG20电气配管，砖混结构暗配"),
+    )
+
+    def __init__(self, master, *, tokens: ThemeTokens, on_example=None, **kwargs):
+        self.tokens = tokens
+        self.on_example = on_example or (lambda _text: None)
+        self.buttons: list[DSButton] = []
+        super().__init__(master, fg_color="transparent", **kwargs)
+        self._build()
+
+    def _build(self) -> None:
+        c = self.tokens.colors
+        self.shell = ctk.CTkFrame(self, fg_color="transparent")
+        self.shell.pack(fill="x", padx=12, pady=(64, 28))
+        self.kicker = ctk.CTkLabel(
+            self.shell,
+            text="山东清单与定额",
+            text_color=c.accent,
+            font=self.tokens.font(self.tokens.typography.caption, "semibold"),
+            anchor="w",
+        )
+        self.kicker.pack(anchor="w")
+        self.title_label = ctk.CTkLabel(
+            self.shell,
+            text="要套哪个项目？",
+            text_color=c.text,
+            font=self.tokens.font(self.tokens.typography.title, "semibold"),
+            anchor="w",
+        )
+        self.title_label.pack(anchor="w", pady=(7, 0))
+        self.description = ctk.CTkLabel(
+            self.shell,
+            text="写清部位、材料和规格。我会先给推荐方案，再展开依据。",
+            text_color=c.text_secondary,
+            font=self.tokens.font(self.tokens.typography.body),
+            anchor="w",
+            justify="left",
+            wraplength=620,
+        )
+        self.description.pack(fill="x", anchor="w", pady=(9, 21))
+        self.example_row = ctk.CTkFrame(self.shell, fg_color="transparent")
+        self.example_row.pack(fill="x")
+        for label, sample in self.EXAMPLES:
+            button = DSButton(
+                self.example_row,
+                tokens=self.tokens,
+                text=label,
+                variant="secondary",
+                width=162,
+                height=38,
+                command=lambda value=sample: self.on_example(value),
+            )
+            button.pack(side="left", padx=(0, 8))
+            self.buttons.append(button)
+        self.hint = ctk.CTkLabel(
+            self.shell,
+            text="点一个示例，或直接在下方输入",
+            text_color=c.text_muted,
+            font=self.tokens.font(self.tokens.typography.caption),
+            anchor="w",
+        )
+        self.hint.pack(anchor="w", pady=(13, 0))
+
+    def set_wraplength(self, width: int) -> None:
+        self.description.configure(wraplength=max(320, min(640, width - 24)))
+
+    def apply_theme(self, tokens: ThemeTokens) -> None:
+        self.tokens = tokens
+        c = tokens.colors
+        self.configure(fg_color="transparent")
+        self.shell.configure(fg_color="transparent")
+        self.example_row.configure(fg_color="transparent")
+        self.kicker.configure(text_color=c.accent, font=tokens.font(tokens.typography.caption, "semibold"))
+        self.title_label.configure(text_color=c.text, font=tokens.font(tokens.typography.title, "semibold"))
+        self.description.configure(text_color=c.text_secondary, font=tokens.font(tokens.typography.body))
+        self.hint.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
+        for button in self.buttons:
+            button.apply_theme(tokens)
+
+
 class MessageBubble(ctk.CTkFrame):
     def __init__(self, master, *, tokens: ThemeTokens, role: str, text: str, error: bool = False, **kwargs):
         self.tokens = tokens
@@ -452,6 +538,13 @@ class MessageFeed(PointerScrollableFrame):
         self._apply_wrap_to_entry(bubble)
         self.after_idle(self._scroll_end)
         return bubble
+
+    def add_welcome(self, on_example=None) -> WelcomePrompt:
+        welcome = WelcomePrompt(self, tokens=self.tokens, on_example=on_example)
+        welcome.pack(fill="x", expand=True)
+        self.entries.append(welcome)
+        self._apply_wrap_to_entry(welcome)
+        return welcome
 
     def add_result(self, result: dict, on_primary_changed=None, on_export=None, on_clarify=None, *, collapsed: bool = True) -> ResultPanel:
         panel = ResultPanel(self, tokens=self.tokens, result=result, on_primary_changed=on_primary_changed, on_export=on_export, on_clarify=on_clarify, collapsed=collapsed)

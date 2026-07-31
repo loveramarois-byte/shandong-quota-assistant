@@ -3,6 +3,8 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 
+from utils.motion import motion_enabled
+
 
 class LottiePulse(tk.Canvas):
     """A tiny Lottie-backed status indicator with a native Canvas fallback.
@@ -35,6 +37,10 @@ class LottiePulse(tk.Canvas):
         self._draw()
 
     def start(self) -> None:
+        if not motion_enabled():
+            self._step = 1
+            self._draw()
+            return
         if self._job is None:
             self._tick()
 

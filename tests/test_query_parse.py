@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from utils.query_parse import parse_query_conditions, rank_conditions
+from utils.query_parse import normalize_trade_description, parse_query_conditions, rank_conditions
 
 
 class QueryParseTests(unittest.TestCase):
@@ -44,6 +44,18 @@ class QueryParseTests(unittest.TestCase):
         self.assertLess(too_small[0], 0)
         self.assertTrue(too_small[3])
         self.assertTrue(unspecified[2])
+
+    def test_newcomer_trade_language_is_normalized_without_losing_specs(self):
+        normalized = normalize_trade_description("电线管埋墙里，20的JDG")
+        self.assertIn("电气配管", normalized)
+        self.assertIn("墙内暗配", normalized)
+        self.assertIn("JDG20", normalized)
+        self.assertEqual(parse_query_conditions(normalized).diameter_mm, 20)
+
+    def test_centimetres_and_water_stabilized_base_are_normalized(self):
+        normalized = normalize_trade_description("道路基层18公分水稳")
+        self.assertIn("水泥稳定碎石", normalized)
+        self.assertEqual(parse_query_conditions(normalized).thickness_mm, 180)
 
 
 if __name__ == "__main__":

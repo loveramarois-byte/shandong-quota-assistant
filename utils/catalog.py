@@ -11,7 +11,7 @@ from typing import Iterable
 
 from .formatting import enrich_item
 from .paths import CATALOG_SCHEMA_VERSION, database_path
-from .query_parse import parse_query_conditions, rank_conditions
+from .query_parse import normalize_trade_description, parse_query_conditions, rank_conditions
 
 
 STOP_TERMS = {"安装", "工程", "定额", "清单", "项目", "山东", "套用", "套定额", "请问", "帮我"}
@@ -73,7 +73,7 @@ def connect_database() -> sqlite3.Connection:
 
 
 def normalize_query(query: str) -> str:
-    return query.strip().replace("吨", "t").replace("厘米", "cm").replace("毫米", "mm")
+    return normalize_trade_description(query).replace("吨", "t").replace("厘米", "cm").replace("毫米", "mm")
 
 
 _jieba_lock = threading.Lock()
@@ -487,6 +487,10 @@ def _direct_code_lookup(
 ) -> dict | None:
     """Direct lookup when the user pastes an exact bill code or quota code."""
     bill_match = _BILL_CODE_QUERY_RE.match(query)
+    if bill_match is None:
+        embedded = re.findall(r"(?<!\d)(\d{9,12})(?:-\d{3})?(?!\d)", query)
+        if len(set(embedded)) == 1 and re.search(r"清单|编码|编号|代码|只知道", query):
+            bill_match = re.match(r"(\d{9,12})", embedded[0])
     if bill_match:
         code = bill_match.group(1)
         filters = ["chunk_type='bill_item'", "edition=?", "(code=? OR code LIKE ?)"]

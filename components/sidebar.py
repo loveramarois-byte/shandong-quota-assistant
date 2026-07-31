@@ -122,7 +122,7 @@ class Sidebar(ctk.CTkFrame):
         self.footer_rule.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         self._build_library_card()
         version_text = f"v{self.app_version}" if self.app_version else ""
-        self.footer_title = ctk.CTkLabel(self.footer, text=f"山东 2016 / 2025 · {version_text}".strip(" ·"), text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.footer_title = ctk.CTkLabel(self.footer, text=f"山东定额 · {version_text}".strip(" ·"), text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
         self.footer_title.grid(row=2, column=0, sticky="w", pady=(6, 0))
         footer_buttons = ctk.CTkFrame(self.footer, fg_color="transparent")
         footer_buttons.grid(row=3, column=0, sticky="ew", pady=(5, 0))
@@ -134,19 +134,9 @@ class Sidebar(ctk.CTkFrame):
     def _build_library_card(self) -> None:
         c = self.tokens.colors
         self.library_available = any(isinstance(value, int) for value in self.library_stats.values())
-        quotas = self.library_stats.get("quotas")
-        bills = self.library_stats.get("bills")
-        resources = self.library_stats.get("resources")
-        values = " · ".join(
-            value for value in (
-                f"{quotas:,} 定额" if isinstance(quotas, int) else "",
-                f"{bills:,} 清单" if isinstance(bills, int) else "",
-                f"{resources:,} 人材机" if isinstance(resources, int) else "",
-            ) if value
-        )
         self.library_info = ctk.CTkLabel(
             self.footer,
-            text=("资料库已就绪\n" + values) if self.library_available else "正在读取资料库",
+            text="本地资料库 · 已就绪" if self.library_available else "正在读取资料库",
             text_color=c.success if self.library_available else c.text_muted,
             font=self.tokens.font(self.tokens.typography.caption),
             anchor="w",
@@ -159,18 +149,8 @@ class Sidebar(ctk.CTkFrame):
         """Apply asynchronously loaded counts without rebuilding the sidebar."""
         self.library_stats = stats or {}
         self.library_available = any(isinstance(value, int) for value in self.library_stats.values())
-        quotas = self.library_stats.get("quotas")
-        bills = self.library_stats.get("bills")
-        resources = self.library_stats.get("resources")
-        values = " · ".join(
-            value for value in (
-                f"{quotas:,} 定额" if isinstance(quotas, int) else "",
-                f"{bills:,} 清单" if isinstance(bills, int) else "",
-                f"{resources:,} 人材机" if isinstance(resources, int) else "",
-            ) if value
-        )
         self.library_info.configure(
-            text=("资料库已就绪\n" + values) if self.library_available else "资料库未连接",
+            text="本地资料库 · 已就绪" if self.library_available else "资料库未连接",
             text_color=self.tokens.colors.success if self.library_available else self.tokens.colors.text_muted,
         )
 

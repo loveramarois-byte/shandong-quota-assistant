@@ -8,6 +8,7 @@ from components.button import blend_hex
 from components.result import CandidateSection
 from themes.tokens import DARK, LIGHT
 from utils.svg import _fallback_icon, _render_svg_cached, svg_image
+from utils.motion import motion_enabled
 from utils.windows_theme import hex_to_colorref
 
 
@@ -55,6 +56,9 @@ class DesignSystemTests(unittest.TestCase):
         self.assertEqual(hex_to_colorref("#112233"), 0x332211)
         with self.assertRaises(ValueError):
             hex_to_colorref("#123")
+
+    def test_motion_preference_probe_has_a_stable_boolean_contract(self):
+        self.assertIsInstance(motion_enabled(), bool)
 
 
 if __name__ == "__main__":

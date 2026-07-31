@@ -4,6 +4,7 @@ from dataclasses import replace
 import re
 
 from .pricing_models import NegativeConstraint, TypedAttribute, WorkItem
+from .query_parse import normalize_trade_description
 
 
 _ACTION_TERMS = (
@@ -13,8 +14,8 @@ _ACTION_TERMS = (
 _OBJECT_TERMS = (
     "防水层", "防水", "涂料", "抹灰", "管道保温", "风管保温", "保温层", "保温",
     "保护层", "找平层", "垫层", "基层", "面层", "回填土", "灰土", "沟槽土方",
-    "基坑土方", "土方", "混凝土", "砖墙", "墙", "柱", "梁", "板", "模板", "脚手架", "管道",
-    "配管", "电缆", "风管", "乔木", "灌木", "路面", "钢筋",
+    "基坑土方", "土方", "脚手架", "模板", "配管", "电缆", "风管", "管道", "混凝土", "砖墙",
+    "乔木", "灌木", "路面", "钢筋", "墙", "柱", "梁", "板",
 )
 _LOCATIONS = (
     "地下室外墙外侧", "地下室外墙", "地下室", "屋面", "楼地面", "基础", "墙面", "外墙", "内墙",
@@ -23,7 +24,7 @@ _LOCATIONS = (
 _MATERIALS = (
     "SBS改性沥青防水卷材", "水泥稳定碎石", "SBS防水卷材", "商品混凝土", "水泥砂浆", "三七灰土",
     "混合砂浆", "防水卷材", "改性沥青", "镀锌钢板", "橡塑", "挤塑板", "实心砖",
-    "聚氨酯", "聚乙烯", "PVC", "PPR", "钢管", "涂料", "混凝土", "碎石", "砂浆", "灰土", "SBS",
+    "JDG", "KBG", "聚氨酯", "聚乙烯", "PVC", "PPR", "钢导管", "钢管", "涂料", "混凝土", "碎石", "砂浆", "灰土", "SBS",
 )
 _CONDITION_ONLY_RE = re.compile(
     r"^(?:一二三四类土|[一二三四]类土|普通土|坚土|砂砾坚土|人工|机械|机械开挖|人工开挖|"
@@ -68,15 +69,16 @@ def _add_attribute(target: list[TypedAttribute], key: str, value, unit: str | No
 
 def extract_work_item(source_span: str, *, item_id: str, discipline: str | None = None) -> WorkItem:
     text = re.sub(r"\s+", " ", str(source_span or "")).strip(" ，,；;。\n\t")
+    analysis_text = normalize_trade_description(text)
     attributes: list[TypedAttribute] = []
 
     thickness = _number_source(
-        text,
+        analysis_text,
         r"(?:(?:厚度|板厚|壁厚|厚)\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米|m|米)?|"
         r"(?P<value2>\d+(?:\.\d+)?)\s*(?P<unit2>mm|毫米|cm|厘米|m|米|厚)(?=\s*(?:SBS|防水|水泥|砂浆|混凝土|灰土|保温|保护|基层|面层)))",
     )
     if thickness is None:
-        fallback = re.search(r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米|m|米)(?=\s*(?:SBS|防水|水泥|砂浆|混凝土|灰土|保温|保护|基层|面层))", text, re.I)
+        fallback = re.search(r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米|m|米)(?=\s*(?:SBS|防水|水泥|砂浆|混凝土|灰土|保温|保护|基层|面层))", analysis_text, re.I)
         if fallback:
             thickness = _number_source(fallback.group(0), r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米|m|米)")
     if thickness:
@@ -87,15 +89,20 @@ def extract_work_item(source_span: str, *, item_id: str, discipline: str | None 
             value, unit = value * 1000, "mm"
         _add_attribute(attributes, "thickness", value, unit, source)
 
-    diameter = _number_source(text, r"(?:DN|直径|管径|公称直径|外径)\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米)?")
+    diameter = _number_source(analysis_text, r"(?:DN|土球(?:直径)?|直径|管径|公称直径|外径|JDG|KBG|SC|PVC)\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米)?")
     if diameter:
-        _add_attribute(attributes, "diameter", diameter[0], "mm", diameter[2])
+        diameter_value, diameter_unit, diameter_source = diameter
+        if diameter_unit == "cm":
+            diameter_value *= 10
+        elif diameter_unit == "m":
+            diameter_value *= 1000
+        _add_attribute(attributes, "diameter", diameter_value, "mm", diameter_source)
 
-    strength = re.search(r"(?<![A-Za-z])(?:C\s*\d{2,3}|M\s*\d{1,3}|HRB\s*\d{3})(?!\d)", text, re.I)
+    strength = re.search(r"(?<![A-Za-z])(?:C\s*\d{2,3}|M\s*\d{1,3}|HRB\s*\d{3})(?!\d)", analysis_text, re.I)
     if strength:
         _add_attribute(attributes, "strength_grade", re.sub(r"\s+", "", strength.group(0)).upper(), None, strength.group(0))
 
-    layer = re.search(r"(?P<count>\d+|[一二两三四五六七八九十]+)\s*(?:道|层|遍)", text)
+    layer = re.search(r"(?P<count>\d+|[一二两三四五六七八九十]+)\s*(?:道|层|遍)", analysis_text)
     if layer:
         chinese = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
         raw = layer.group("count")
@@ -106,7 +113,7 @@ def extract_work_item(source_span: str, *, item_id: str, discipline: str | None 
         ("depth", r"(?:深度|挖深|槽深|坑深|开挖深度|深)\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>m|米|cm|厘米|mm|毫米)", "m"),
         ("distance", r"(?:运距|运输距离|弃土运距|取土运距)\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>km|公里|千米|m|米)", "m"),
     ):
-        measured = _number_source(text, pattern)
+        measured = _number_source(analysis_text, pattern)
         if not measured:
             continue
         value, source_unit, source = measured
@@ -119,10 +126,10 @@ def extract_work_item(source_span: str, *, item_id: str, discipline: str | None 
         _add_attribute(attributes, key, value, unit, source)
 
     for value, label in (("manual", "人工"), ("mechanical", "机械"), ("pump", "泵送"), ("cast_in_place", "现浇"), ("commercial", "商品混凝土"), ("hot_melt", "热熔"), ("self_adhesive", "自粘")):
-        if label in text:
+        if label in analysis_text:
             _add_attribute(attributes, "method" if value in {"manual", "mechanical"} else value, value, None, label)
 
-    soil_match = re.search(r"(?:一二类土|[一二三四]类土|普通土|坚土|砂砾坚土)", text)
+    soil_match = re.search(r"(?:一二类土|[一二三四]类土|普通土|坚土|砂砾坚土)", analysis_text)
     if soil_match:
         _add_attribute(attributes, "soil_type", soil_match.group(0), None, soil_match.group(0))
 
@@ -134,7 +141,7 @@ def extract_work_item(source_span: str, *, item_id: str, discipline: str | None 
         ("formwork", r"模板"),
         ("loading", r"装卸"),
     ):
-        match = re.search(rf"(?:不含|不做|不计|无需|已有)\s*(?:[^，,；;。]{{0,8}})?(?:{label_pattern})", text)
+        match = re.search(rf"(?:不含|不做|不计|无需|已有)\s*(?:[^，,；;。]{{0,8}})?(?:{label_pattern})", analysis_text)
         if match:
             negative_constraints.append(NegativeConstraint(key=key, source=match.group(0)))
 
@@ -142,13 +149,13 @@ def extract_work_item(source_span: str, *, item_id: str, discipline: str | None 
         id=item_id,
         source_span=text,
         discipline=discipline,
-        action=_first_term(text, _ACTION_TERMS),
-        object=_first_term(text, _OBJECT_TERMS),
-        location=_first_term(text, _LOCATIONS),
-        material=_first_term(text, _MATERIALS),
+        action=_first_term(analysis_text, _ACTION_TERMS),
+        object=_first_term(analysis_text, _OBJECT_TERMS),
+        location=_first_term(analysis_text, _LOCATIONS),
+        material=_first_term(analysis_text, _MATERIALS),
         attributes=tuple(attributes),
         negative_constraints=tuple(negative_constraints),
-        confidence_level="high" if (_first_term(text, _OBJECT_TERMS) and (_first_term(text, _ACTION_TERMS) or _first_term(text, _MATERIALS))) else "medium",
+        confidence_level="high" if (_first_term(analysis_text, _OBJECT_TERMS) and (_first_term(analysis_text, _ACTION_TERMS) or _first_term(analysis_text, _MATERIALS))) else "medium",
     )
 
 

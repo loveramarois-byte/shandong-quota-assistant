@@ -16,7 +16,7 @@ import customtkinter as ctk
 
 from controllers.analysis import AnalysisTaskRegistry, TaskPhase, TaskToken
 from components.about_dialog import AboutDialog
-from components.button import DSButton, IconButton
+from components.button import DSButton
 from components.input import Composer, FilterSelect
 from components.message import MessageFeed
 from components.modal import ConfirmModal
@@ -141,6 +141,7 @@ class QuotaApp(ctk.CTk):
         self._active_turn_id: str | None = None
         self._turn_panels: dict[str, object] = {}
         self._turn_thinking: dict[str, object] = {}
+        self._welcome = None
         self.session: dict | None = None
         self._toast: Toast | None = None
         self._images: dict[str, ctk.CTkImage] = {}
@@ -166,11 +167,9 @@ class QuotaApp(ctk.CTk):
         threading.Thread(target=warm_search, name="catalog-prewarm", daemon=True).start()
         threading.Thread(target=self._load_library_stats, name="library-stats", daemon=True).start()
         self._poll_job = self.after(120, self._poll_events)
-        self.feed.add("assistant", "请描述工程内容、规格和施工条件。\n我会核对山东清单、定额和本地关联，直接给出套项结论。")
+        self._show_welcome_state()
         if self.demo_mode:
             self.feed.add_warning("当前使用完全合成的演示资料，只用于体验流程，不可用于真实工程。")
-        if not ai_connection_state(self.settings)[0]:
-            self.feed.add_warning("AI 尚未连接；当前仍可查询本地清单和定额。", action_text="连接 AI", command=self._open_settings)
         self.composer.textbox.focus_set()
         self.after(200, self._restore_latest_session)
         self.log.info("app started, version=%s", APP_VERSION)
@@ -237,27 +236,37 @@ class QuotaApp(ctk.CTk):
 
     def _build_header(self) -> None:
         c = self.colors
-        self.header = ctk.CTkFrame(self.main, fg_color=c.background, height=102, corner_radius=0)
+        self.header = ctk.CTkFrame(self.main, fg_color=c.background, height=104, corner_radius=0)
         self.header.grid(row=0, column=0, padx=self._content_padding, sticky="ew")
         self.header.grid_propagate(False)
         self.header.grid_columnconfigure(0, weight=1)
         self.heading = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.heading.grid(row=0, column=0, sticky="w", pady=(12, 8))
-        title = "AI 套价分析 · 演示资料" if self.demo_mode else "AI 套价分析"
+        self.heading.grid(row=0, column=0, sticky="w", pady=(9, 4))
+        title = "AI 套价 · 演示资料" if self.demo_mode else "AI 套价"
         self.title_label = ctk.CTkLabel(self.heading, text=title, text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
         self.title_label.pack(anchor="w")
         self.subtitle_label = ctk.CTkLabel(self.heading, text="正在读取 AI 连接状态", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.subtitle_label.pack(anchor="w", pady=(4, 0))
         self.status = self.subtitle_label
         self.controls = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.controls.grid(row=0, column=1, sticky="e", pady=(12, 8))
-        self.ai_button = DSButton(self.controls, tokens=self.tokens, text="连接 AI", variant="primary", width=92, height=34, command=self._open_settings)
+        self.controls.grid(row=0, column=1, sticky="e", pady=(9, 4))
+        self.ai_button = DSButton(self.controls, tokens=self.tokens, text="连接 AI", variant="secondary", width=92, height=34, command=self._open_settings)
         self.ai_button.pack(side="left", padx=(0, 8))
-        self.theme_button = IconButton(self.controls, tokens=self.tokens, image=self._icon("moon"), tooltip="切换深色模式", command=self._toggle_theme)
+        self.theme_button = DSButton(
+            self.controls,
+            tokens=self.tokens,
+            text="外观",
+            image=self._icon("moon"),
+            compound="left",
+            variant="ghost",
+            width=68,
+            height=34,
+            command=self._toggle_theme,
+        )
         self.theme_button.pack(side="left")
 
         self.context_controls = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.context_controls.grid(row=1, column=0, sticky="w", pady=(0, 8))
+        self.context_controls.grid(row=1, column=0, sticky="w", pady=(0, 6))
         self.context_label = ctk.CTkLabel(self.context_controls, text="山东", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
         self.context_label.pack(side="left", padx=(0, 10))
         self.edition_label = ctk.CTkLabel(self.context_controls, text="定额", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
@@ -304,7 +313,6 @@ class QuotaApp(ctk.CTk):
         self.standard_edition.apply_theme(self.tokens)
         self.discipline.apply_theme(self.tokens)
         self.theme_button.apply_theme(self.tokens)
-        self.theme_button.tooltip = "切换浅色模式" if self.theme_name == "dark" else "切换深色模式"
         self.theme_button.configure(image=self._icon("sun" if self.theme_name == "dark" else "moon"))
         self.ai_button.apply_theme(self.tokens)
         self.sidebar.set_new_image(self._icon("plus"))
@@ -332,7 +340,7 @@ class QuotaApp(ctk.CTk):
     def _refresh_ai_presentation(self) -> None:
         connected, subtitle, action = ai_connection_state(self.settings)
         self.subtitle_label.configure(text=subtitle, text_color=self.colors.success if connected else self.colors.text_secondary)
-        self.ai_button.variant = "secondary" if connected else "primary"
+        self.ai_button.variant = "secondary"
         self.ai_button._normal_text = action
         self.ai_button.configure(text=action)
         self.ai_button.set_enabled(True)
@@ -443,11 +451,10 @@ class QuotaApp(ctk.CTk):
         self._turn_panels.clear()
         self._turn_thinking.clear()
         self.feed.clear()
+        self._welcome = None
         self.sidebar.mark_active(None)
         self.composer.clear()
-        self.feed.add("assistant", "请描述工程内容、规格和施工条件，我会给出新的 AI 套项结论。")
-        if not ai_connection_state(self.settings)[0]:
-            self.feed.add_warning("AI 尚未连接；当前仍可查询本地清单和定额。", action_text="连接 AI", command=self._open_settings)
+        self._show_welcome_state()
         self._refresh_ai_presentation()
         self._refresh_task_controls()
         self.composer.textbox.focus_set()
@@ -468,6 +475,7 @@ class QuotaApp(ctk.CTk):
         self._turn_panels.clear()
         self._turn_thinking.clear()
         self.feed.clear()
+        self._welcome = None
         turns = session.get("turns") or []
         latest_ai_card = None
         for turn in turns:
@@ -583,6 +591,11 @@ class QuotaApp(ctk.CTk):
         self.composer.set_text(option)
         self._show_toast("已填入补充条件，可直接发送", "info")
 
+    def _show_welcome_state(self) -> None:
+        if self._welcome is not None:
+            return
+        self._welcome = self.feed.add_welcome(on_example=self.composer.set_text)
+
     # ------------------------------------------------------------------ sending
 
     def _send(self) -> None:
@@ -607,6 +620,9 @@ class QuotaApp(ctk.CTk):
                 clarification_parent_turn_id = str(previous_turn.get("turn_id") or "")
         self.composer.remember_sent(description)
         self.composer.clear()
+        if self._welcome is not None:
+            self.feed.remove_entry(self._welcome)
+            self._welcome = None
         session = self._ensure_session(description.replace("\n", " ").strip()[:28])
         if session is None:
             return

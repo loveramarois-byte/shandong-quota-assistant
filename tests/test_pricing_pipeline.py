@@ -317,6 +317,74 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertEqual(mixed["decision_status"], "no_reliable_match")
         self.assertEqual(mixed["progress"], {"ready": 1, "total": 2})
 
+    def test_installation_pipe_does_not_ask_irrelevant_manual_machine_question(self):
+        item = extract_work_item("电线管埋墙里，20的JDG", item_id="W1", discipline="installation")
+        bill = _candidate("bill:2024:100", "030412001-000", "电气配管", "bill_item", edition="2024", discipline="installation", unit="m")
+        main = _candidate(
+            "link:2024:100", "4-12-8", "砖混结构钢导管暗配 公称直径20mm以内", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"],
+            quota_record_id="quota:172:100", bill_code=bill["code"], discipline="installation", unit="100m",
+        )
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [bill], "quotas": [], "links": [main], "guidance": [], "hints": ["候选区分人工/机械施工方法，请补充施工方法"]})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="installation",
+        )
+        self.assertNotIn("method", {value["field"] for value in analysis["clarification_questions"]})
+
+
+@unittest.skipUnless(__import__("utils.paths", fromlist=["database_path"]).database_path().exists(), "完整结构化资料库未安装")
+class RealCataloguePricingRegressionTests(unittest.TestCase):
+    def _proposal_codes(self, query: str, discipline: str) -> tuple[dict, set[str], set[str]]:
+        result = analyze_pricing_description(
+            query,
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline=discipline,
+            limit=8,
+        )
+        bills = {str(value.get("bill_code") or "") for value in result.get("proposals") or []}
+        quotas = {
+            str(line.get("code") or "")
+            for proposal in result.get("proposals") or []
+            for line in proposal.get("quota_lines") or []
+            if line.get("role") == "main"
+        }
+        return result, bills, quotas
+
+    def test_newcomer_jdg_wording_selects_20mm_dark_conduit(self):
+        result, bills, quotas = self._proposal_codes("电线管埋墙里，20的JDG", "installation")
+        self.assertIn("030412001-000", bills)
+        self.assertIn("4-12-8", quotas)
+        self.assertNotIn("method", {value["field"] for value in result.get("clarification_questions") or []})
+
+    def test_newcomer_road_base_wording_selects_water_stabilized_base(self):
+        _result, bills, quotas = self._proposal_codes("道路基层18公分水稳", "municipal")
+        self.assertIn("040202014-000", bills)
+        self.assertIn("2-1-18", quotas)
+
+    def test_newcomer_tree_wording_selects_80cm_soil_ball_bracket(self):
+        _result, bills, quotas = self._proposal_codes("种一棵土球80公分的香樟", "landscape")
+        self.assertIn("050103001-000", bills)
+        self.assertIn("1-2-32", quotas)
+
+    def test_newcomer_plain_concrete_wording_selects_foundation_cushion(self):
+        _result, bills, quotas = self._proposal_codes("基础下面浇一层C15素混凝土，10公分", "building")
+        self.assertIn("010501001-000", bills)
+        self.assertIn("2-1-28", quotas)
+
+    def test_bill_code_embedded_in_a_sentence_uses_exact_bill(self):
+        _result, bills, _quotas = self._proposal_codes("只知道清单编码030412001", "installation")
+        self.assertIn("030412001-000", bills)
+
+    def test_scaffold_has_a_main_quota_and_only_asks_relevant_conditions(self):
+        result, _bills, quotas = self._proposal_codes("外脚手架搭设", "building")
+        self.assertTrue(quotas)
+        self.assertTrue(result["validation"]["valid"])
+        self.assertIn("scaffold_spec", {value["field"] for value in result.get("clarification_questions") or []})
+
 
 if __name__ == "__main__":
     unittest.main()

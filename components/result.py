@@ -830,7 +830,7 @@ class ResultPanel(ctk.CTkFrame):
                 corner_radius=self.tokens.radius_sm,
             )
             self.proposal_area.pack(fill="x", padx=2, pady=(2, 8))
-            self.proposal_title = ctk.CTkLabel(self.proposal_area, text="套价建议", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
+            self.proposal_title = ctk.CTkLabel(self.proposal_area, text="推荐方案", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w")
             self.proposal_title.pack(fill="x", padx=18, pady=(14, 6))
             self._render_proposals()
         else:
@@ -839,18 +839,18 @@ class ResultPanel(ctk.CTkFrame):
         self.header.pack(fill="x", padx=16, pady=(6, 4))
         self.title_row = ctk.CTkFrame(self.header, fg_color="transparent")
         self.title_row.pack(fill="x")
-        self.title_label = ctk.CTkLabel(self.title_row, text="核对依据", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
+        self.title_label = ctk.CTkLabel(self.title_row, text="依据与候选", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
         self.title_label.pack(side="left")
-        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text="展开", variant="ghost", width=56, height=28, command=self._toggle_details)
+        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text="查看依据", variant="ghost", width=76, height=28, command=self._toggle_details)
         self.toggle_button.pack(side="right")
+        self.copy_pricing_button = DSButton(self.title_row, tokens=self.tokens, text="复制", variant="ghost", width=48, height=28, command=lambda: self._export("candidate_copy"))
+        self.copy_pricing_button.pack(side="right", padx=(0, 2))
         self.export_frame = ctk.CTkFrame(self.title_row, fg_color="transparent")
         self.export_frame.pack(side="right", padx=(0, 4))
         self.export_md_button = DSButton(self.export_frame, tokens=self.tokens, text="导出 JSON", variant="ghost", width=88, height=28, command=lambda: self._export("json"))
         self.export_md_button.pack(side="left", padx=(4, 0))
-        self.export_excel_button = DSButton(self.export_frame, tokens=self.tokens, text="导出方案", variant="ghost", width=88, height=28, command=lambda: self._export("excel"))
+        self.export_excel_button = DSButton(self.export_frame, tokens=self.tokens, text="导出表格", variant="ghost", width=80, height=28, command=lambda: self._export("excel"))
         self.export_excel_button.pack(side="left", padx=(4, 0))
-        self.copy_pricing_button = DSButton(self.export_frame, tokens=self.tokens, text="复制方案", variant="ghost", width=88, height=28, command=lambda: self._export("candidate_copy"))
-        self.copy_pricing_button.pack(side="left", padx=(4, 0))
         edition = self.result.get("quota_edition") or "-"
         standard = self.result.get("standard_edition") or "-"
         discipline = discipline_label(self.result.get("discipline")) if self.result.get("discipline") else "全部专业"
@@ -992,7 +992,7 @@ class ResultPanel(ctk.CTkFrame):
         evidence = [value for value in validation.get("evidence") or [] if value.get("located")]
         warnings = [str(value) for value in validation.get("warnings") or [] if str(value).strip()]
         has_details = bool(detail_sections or warnings or evidence)
-        self.analysis_toggle_button = DSButton(footer, tokens=self.tokens, text="查看分析", variant="ghost", width=72, height=26, command=self._toggle_analysis)
+        self.analysis_toggle_button = DSButton(footer, tokens=self.tokens, text="分析详情", variant="ghost", width=72, height=26, command=self._toggle_analysis)
         if has_details:
             self.analysis_toggle_button.pack(side="right", padx=(8, 0))
             self._analysis_buttons.append(self.analysis_toggle_button)
@@ -1041,7 +1041,7 @@ class ResultPanel(ctk.CTkFrame):
         else:
             self.analysis_details.pack_forget()
         if self.analysis_toggle_button is not None:
-            self.analysis_toggle_button.configure(text="收起分析" if self._analysis_visible else "查看分析")
+            self.analysis_toggle_button.configure(text="收起分析" if self._analysis_visible else "分析详情")
 
     def _proposal_changed(self) -> None:
         self._render_proposals()
@@ -1105,7 +1105,7 @@ class ResultPanel(ctk.CTkFrame):
             else "ready_for_review"
         )
         if self.proposal_area is not None:
-            self.proposal_title.configure(text="套价建议")
+            self.proposal_title.configure(text="推荐方案")
         self._render_proposals()
 
     def _detail_widgets(self) -> list[ctk.CTkWidget]:
@@ -1133,12 +1133,12 @@ class ResultPanel(ctk.CTkFrame):
             for section in self.sections:
                 section.pack(fill="x")
             self.footnote.pack(fill="x", padx=16, pady=(8, 14))
-            self.toggle_button.configure(text="收起")
+            self.toggle_button.configure(text="收起依据")
         else:
             self.export_frame.pack_forget()
             for widget in self._detail_widgets():
                 widget.pack_forget()
-            self.toggle_button.configure(text="展开")
+            self.toggle_button.configure(text="查看依据")
 
     def _toggle_details(self) -> None:
         self._set_details_visible(not self._details_visible)
@@ -1223,7 +1223,9 @@ class ResultPanel(ctk.CTkFrame):
 
     def pricing_text(self) -> str:
         if self.proposals:
-            return proposal_plain_text(self.current_result(), confirmed_only=True)
+            # Copy is a lightweight review action, unlike CSV/JSON export which
+            # still requires explicit confirmation in the app controller.
+            return proposal_plain_text(self.current_result(), confirmed_only=False)
         selected = self.selected_items()
         pool = selected or [*(self.result.get("bills") or [])[:1], *(self.result.get("quotas") or [])[:3], *(self.result.get("links") or [])[:4]]
         return candidate_copy_lines(pool)

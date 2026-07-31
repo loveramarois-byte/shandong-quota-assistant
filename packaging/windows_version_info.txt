@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', '山东定额助手'),
           StringStruct('FileDescription', '山东清单定额检索与 AI 辅助分析'),
-          StringStruct('FileVersion', '0.8.3'),
+          StringStruct('FileVersion', '0.8.4'),
           StringStruct('InternalName', 'ShandongQuotaAssistant'),
           StringStruct('LegalCopyright', '仅供资料检索与辅助分析'),
           StringStruct('OriginalFilename', '山东定额助手.exe'),
           StringStruct('ProductName', '山东定额助手'),
-          StringStruct('ProductVersion', '0.8.3')
+          StringStruct('ProductVersion', '0.8.4')
         ]
       )
     ]),

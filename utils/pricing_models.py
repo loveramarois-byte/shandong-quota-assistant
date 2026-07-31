@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .query_parse import normalize_trade_description
+
 
 VALID_QUOTA_ROLES = {
     "main",
@@ -76,13 +78,14 @@ class WorkItem:
         # "地下室外墙" must not turn a waterproofing query into wall concrete).
         # Keep the original source span for evidence, but use the estimating
         # category name that appears in bill titles for retrieval.
+        normalized_source = normalize_trade_description(self.source_span)
         if "防水" in self.object and "墙" in self.location:
             attributes = " ".join(value.source for value in self.attributes if value.source)
             return f"墙面 {self.material} {self.object} {attributes}".strip()
-        if self.location and self.location not in self.source_span:
+        if self.location and self.location not in normalized_source:
             canonical_location = "墙面" if "墙" in self.location else self.location
-            return f"{canonical_location} {self.source_span}".strip()
-        return self.source_span
+            return f"{canonical_location} {normalized_source}".strip()
+        return normalized_source
 
 
 @dataclass(frozen=True)

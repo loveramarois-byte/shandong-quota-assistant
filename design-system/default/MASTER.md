@@ -1,227 +1,109 @@
-# Design System Master File
+# 山东定额助手 · Design System
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+**Version:** 0.8.4
+**Product:** Windows AI 套价辅助工具
+**Design dials:** variance 2/10 · motion 2/10 · density 3/10
 
----
+## Product principle
 
-**Project:** 山东定额助手
-**Generated:** 2026-07-23 19:35:54
-**Category:** Productivity Tool
-**Design Dials:** Variance 3/10 (Centered / Minimal) | Motion 3/10 (Subtle) | Density 6/10 (Standard)
+界面只服务一条主路径：**描述施工内容 → 看推荐方案 → 补关键条件 → 按需查看依据**。
 
----
+- 一个页面只突出一个主要操作。
+- 结论先于资料，推荐先于候选。
+- 默认收起专业细节，用渐进展开照顾新手。
+- 不依赖装饰制造“高级感”，用排版、留白、节奏和准确文案建立可信度。
 
-## Global Rules
+## Visual language
 
-### Color Palette
+- 暖中性背景，不用纯白、荧光色、AI 紫色渐变或发光。
+- 表面层级只使用背景差、1px 淡边框和极轻分隔；避免厚重阴影。
+- 圆角控制在 5/8/10/12px，不使用大胶囊容器。
+- 单列内容最大宽度 880px；长文保持约 60–70 个字符的阅读宽度。
+- SVG 图标统一为线性、相同描边，不用 emoji 充当控件图标。
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#0D9488` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#14B8A6` | `--color-secondary` |
-| Accent/CTA | `#EA580C` | `--color-accent` |
-| Background | `#F0FDFA` | `--color-background` |
-| Foreground | `#134E4A` | `--color-foreground` |
-| Muted | `#E8F1F4` | `--color-muted` |
-| Border | `#99F6E4` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| Ring | `#0D9488` | `--color-ring` |
+## Color tokens
 
-**Color Notes:** Teal focus + action orange [Accent adjusted from #F97316 for WCAG 3:1]
+### Light
 
-### Typography
+| Token | Value | Use |
+|---|---:|---|
+| background | `#F7F6F2` | 主画布 |
+| sidebar | `#EFEEE9` | 侧栏 |
+| surface | `#F2F0EA` | 分组表面 |
+| elevated | `#FCFBF8` | 输入框、按钮、弹层 |
+| border | `#DEDBD3` | 结构分隔 |
+| text | `#292824` | 主文本 |
+| secondary | `#5F5C55` | 正文辅助 |
+| muted | `#817D74` | 元信息 |
+| accent | `#5C6557` | 稀缺强调色 |
+| focus | `#737E6C` | 键盘焦点 |
 
-- **Heading Font:** Inter
-- **Body Font:** Inter
-- **Mood:** dark, cinematic, technical, precision, clean, premium, developer, professional, high-end utility
-- **Google Fonts:** [Inter + Inter](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap)
+### Dark
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-```
+| Token | Value |
+|---|---:|
+| background | `#1E1D1A` |
+| sidebar | `#181714` |
+| surface | `#25231F` |
+| elevated | `#2B2924` |
+| border | `#3D3A34` |
+| text | `#EFEEE9` |
+| secondary | `#C7C3BA` |
+| muted | `#969087` |
+| accent | `#B7BDAA` |
 
-### Spacing Variables
+## Typography
 
-*Density: 6/10 — Standard*
+- UI font: **Inter** Regular / Medium / SemiBold / Bold，中文由 Windows 系统字体回退。
+- Caption 12px / Meta 13px / Body 15px / Section 17px / Title 22px。
+- 正文行高优先可读；标题使用 semibold，不用夸张超大字或全大写。
+- 编码、数量、版本保持稳定对齐；辅助文字不能低于 12px。
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
+## Spacing and shape
 
-### Shadow Depths
+- 4/8px 基础节奏：4, 8, 12, 16, 20, 24, 32, 40。
+- Control height: 40px；compact control: 32px。
+- Radius: 5 / 8 / 10 / 12px。
+- Sidebar: 204px；content max width: 880px。
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+## Core components
 
----
+### Welcome prompt
 
-## Component Specs
+- 一句任务标题、一句说明、三个真实示例。
+- 示例只填入输入框，不直接提交。
+- 用户开始分析后立即移除，不与结果抢占空间。
 
-### Buttons
+### Composer
 
-```css
-/* Primary Button */
-.btn-primary {
-  background: #EA580C;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+- 常驻内容只有“补充条件”、文本输入和“分析”。
+- AI 连接状态由顶部统一表达，不改变提交按钮名称。
+- focus / error 使用边框反馈，不改变组件尺寸。
 
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+### Result
 
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #0D9488;
-  border: 2px solid #0D9488;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
+- 默认只显示：推荐方案、关键待补条件、复制、查看依据。
+- 清单和主定额在同一视觉组内；增补项弱一级。
+- 候选、识别条件、计时、原书和导出位于“依据与候选”展开区。
+- 表格与 JSON 导出必须经过显式确认；复制可用于审阅当前推荐。
 
-### Cards
+### Sidebar
 
-```css
-.card {
-  background: #F0FDFA;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+- 仅保留品牌、新分析、历史记录、资料库状态、设置与关于。
+- 侧栏不展示三组大数字；详细统计放在“关于”。
 
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
+## Interaction and motion
 
-### Inputs
+- hover / active / focus / disabled / loading / error 状态齐全。
+- 过渡 150–300ms；仅使用颜色、透明度和轻微变换。
+- 滚轮输入合并到 8ms 帧内；嵌套滚动到边缘时交给父容器。
+- 尊重 Windows 减少动画偏好；加载动画仅用于等待状态。
+- Ctrl+K 聚焦输入，Ctrl+Enter 提交，Esc 关闭弹层。
 
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
+## Accessibility and release checklist
 
-.input:focus {
-  border-color: #0D9488;
-  outline: none;
-  box-shadow: 0 0 0 3px #0D948820;
-}
-```
-
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Exaggerated Minimalism
-
-**Keywords:** Bold minimalism, oversized typography, high contrast, negative space, loud minimal, statement design
-
-**Best For:** Fashion, architecture, portfolios, agency landing pages, luxury brands, editorial
-
-**Key Effects:** font-size: clamp(3rem 10vw 12rem), font-weight: 900, letter-spacing: -0.05em, massive whitespace
-
-### Page Pattern
-
-**Pattern Name:** Minimal Single Column
-
-- **Conversion Strategy:** Single CTA focus. Large typography. Lots of whitespace. No nav clutter. Mobile-first.
-- **CTA Placement:** Center, large CTA button
-- **Section Order:** 1. Hero headline, 2. Short description, 3. Benefit bullets (3 max), 4. CTA, 5. Footer
-
----
-
-## Motion
-
-**Scroll Reveal** (Subtle) — Trigger: scroll (viewport enter) | Duration: 300-400ms | Easing: `power1.out`
-
-```js
-gsap.from(el, { opacity: 0, y: 12, duration: 0.35, ease: 'power1.out', scrollTrigger: { trigger: el, start: 'top 90%', toggleActions: 'play none none reverse' } });
-```
-
-**Framework notes:** Requires the ScrollTrigger plugin registered once via gsap.registerPlugin(ScrollTrigger)
-
-- ✅ Keep the y offset small (8-16px) so it reads as a fade, not a slide
-- ❌ Don't reveal below-the-fold content needed for SEO/crawlers as invisible-by-default without a no-JS fallback
-- ⚡ toggleActions 'play none none reverse' avoids re-triggering on every scroll direction change
-
----
-
-## Anti-Patterns (Do NOT Use)
-
-- ❌ Complex onboarding
-- ❌ Slow performance
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
-
----
-
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- 正文对比度 ≥ 4.5:1，状态不只依赖颜色。
+- 所有可交互组件支持键盘焦点，图标按钮有可读提示。
+- 125% / 150% / 200% DPI 下不截字、不横向溢出。
+- 980×680 最小窗口、1366×768 常用窗口、宽屏均验证。
+- 浅色和深色独立检查；滚动、空状态、加载、错误和长结果均实机检查。

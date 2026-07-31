@@ -7,6 +7,8 @@ import weakref
 
 import customtkinter as ctk
 
+from utils.motion import motion_enabled
+
 
 def normalized_wheel_pixels(delta: int | float, step: int = 56) -> float:
     """Map a Windows 120-delta wheel notch to a stable pixel distance."""
@@ -158,6 +160,8 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
     def smooth_moveto(self, fraction: float, duration_ms: int = 180) -> None:
         """Move the vertical canvas with a short, cancellable ease-out."""
         self._cancel_smooth_scroll()
+        if not motion_enabled():
+            duration_ms = 0
         try:
             start = float(self._parent_canvas.yview()[0])
         except (IndexError, TypeError, ValueError, tk.TclError):

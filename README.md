@@ -17,11 +17,11 @@
 不需要安装 Python，也不需要自己准备数据库：
 
 1. 打开 [GitHub Releases](https://github.com/loveramarois-byte/shandong-quota-assistant/releases/latest) 或 [Gitee 发行版](https://gitee.com/bbbbo-liu/shandong-quota-assistant/releases)。
-2. 只下载 `ShandongQuotaAssistant-Setup-0.8.3.exe`。
+2. 只下载 `山东定额助手-Setup-0.8.4.exe`。
 3. 双击后只需点一次“一键安装”。软件默认安装到当前用户目录，不要求管理员权限，不再询问安装位置；进度完成后会自动创建桌面和开始菜单入口并启动。
 4. 安装完成即可使用本地检索；需要 AI 时，再在设置中填写自己的 DeepSeek、智谱或兼容接口。未签名版本可能显示 Windows“未知发布者”提示，请先核对 Release 中的 SHA-256。
 
-需要批量部署时，可使用静默参数：`ShandongQuotaAssistant-Setup-0.8.3.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`。
+需要批量部署时，可使用静默参数：`山东定额助手-Setup-0.8.4.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`。
 
 完整版包含山东 2016/2025 定额、2013/2024 清单、清单定额关联和人材机消耗。结构化资料是普通套项的主要依据；紧凑安装包不携带 PDF 原书，PDF 页不是确认和导出的强制门禁。资料权利说明与适用边界见 [DATA_NOTICE.md](legal/DATA_NOTICE.md)。
 
@@ -44,10 +44,10 @@
 - **条件排序**：根据施工方式、土类、深度、材料和部位等条件调整候选顺序。
 - **结构化资料为主**：清单、定额、关联和人材机数据直接参与确认与导出；已登记原书页作为可选复核入口，不再阻塞普通套项。
 - **可选 AI**：支持本机兼容端点、DeepSeek 和智谱 AI；AI 结果通过本地校验后回填到可编辑方案卡。
-- **确认后导出**：只有人工确认的方案可复制或导出 CSV / JSON，候选池不会被命名为套价成果。
+- **确认后导出**：当前推荐可一键复制用于审阅；只有人工确认的方案可导出 CSV / JSON，候选池不会被命名为套价成果。
 - **隐私边界**：AI 默认关闭；远程分析需要分别确认施工描述和候选摘要的发送权限。
 - **Windows 凭据保护**：API Key 使用 DPAPI 绑定当前 Windows 用户，不写入普通设置文件。
-- **现代桌面交互**：CustomTkinter 自定义设计系统、Windows 原生字体、SVG 图标、浅色/深色主题与非阻塞分析流程。
+- **现代桌面交互**：CustomTkinter 自定义设计系统、Inter 字体、SVG 图标、浅色/深色主题与非阻塞分析流程。
 
 ## 工作流程
 
@@ -61,7 +61,7 @@ flowchart LR
     F -->|"否"| G["本地方案校验"]
     F -->|"是"| H["AI JSON 方案"]
     H --> G
-    G --> I["人工确认后复制 / 导出"]
+    G --> I["复制审阅 / 人工确认后导出"]
 ```
 
 ## 源码运行要求

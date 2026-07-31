@@ -5,14 +5,6 @@ import customtkinter as ctk
 from themes.tokens import ThemeTokens
 from .button import DSButton
 
-EXAMPLE_CHIPS = [
-    ("土方", "人工挖沟槽土方，三类土，槽深2.5m，弃土运距50m"),
-    ("混凝土垫层", "C15混凝土垫层，厚度100mm"),
-    ("砌砖", "M5混合砂浆砌实心砖墙，墙厚240mm"),
-    ("电气配管", "电气配管 DN20 暗配"),
-    ("给排水", "室内给水管道安装 DN25"),
-]
-
 _SOIL_OPTIONS = ["未指定", "普通土(一、二类)", "坚土(三类)", "砂砾坚土(四类)"]
 _SOIL_QUERY = {"普通土(一、二类)": "普通土", "坚土(三类)": "三类土", "砂砾坚土(四类)": "四类土"}
 _METHOD_OPTIONS = ["未指定", "人工", "机械"]
@@ -138,7 +130,7 @@ class Composer(ctk.CTkFrame):
         self.on_cancel = on_cancel
         self.on_limit = on_limit
         self._ai_mode = True
-        self.placeholder = "描述工程内容、规格和施工条件"
+        self.placeholder = "例如：屋面 SBS 卷材防水，3mm，两道，热熔"
         self._placeholder_active = True
         self._error_job = None
         self._enter_send = False
@@ -154,10 +146,6 @@ class Composer(ctk.CTkFrame):
         self.condition_toggle = DSButton(self.chips_frame, tokens=self.tokens, text="补充条件", variant="ghost", width=72, height=26, command=self._toggle_conditions)
         self.condition_toggle.pack(side="left", padx=(0, 5))
         self._chip_buttons: list[DSButton] = []
-        for label, sample in EXAMPLE_CHIPS:
-            chip = DSButton(self.chips_frame, tokens=self.tokens, text=label, variant="ghost", width=62, height=26, command=lambda text=sample: self._fill_example(text))
-            chip.pack(side="left", padx=(0, 4))
-            self._chip_buttons.append(chip)
         self.char_label = ctk.CTkLabel(self.chips_frame, text="", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="e")
 
         self.condition_bar = ConditionBar(self, tokens=self.tokens)
@@ -176,7 +164,7 @@ class Composer(ctk.CTkFrame):
         # move the send button or leave a stale CustomTkinter canvas behind.
         self.action_frame = ctk.CTkFrame(
             self.shell,
-            width=164,
+            width=150,
             height=self.tokens.control_height,
             fg_color=c.elevated,
             corner_radius=0,
@@ -184,7 +172,7 @@ class Composer(ctk.CTkFrame):
         self.action_frame.pack(side="right", padx=(4, 10), pady=10, anchor="s")
         self.action_frame.pack_propagate(False)
         self.cancel_button = DSButton(self.action_frame, tokens=self.tokens, text="停止", variant="secondary", width=64, command=self.on_cancel or (lambda: None))
-        self.send_button = DSButton(self.action_frame, tokens=self.tokens, text="开始分析", variant="primary", image=send_image, compound="left", width=92, command=self.on_send)
+        self.send_button = DSButton(self.action_frame, tokens=self.tokens, text="分析", variant="primary", image=send_image, compound="left", width=78, command=self.on_send)
         self.send_button.place(x=72, y=0)
         self.textbox.bind("<FocusIn>", lambda _e: self.shell.configure(border_color=self.tokens.colors.accent), add="+")
         self.textbox.bind("<FocusOut>", lambda _e: self.shell.configure(border_color=self.tokens.colors.border), add="+")
@@ -218,18 +206,14 @@ class Composer(ctk.CTkFrame):
             self.textbox.bind("<Control-Return>", self._send_event)
 
     def set_ai_mode(self, enabled: bool) -> None:
-        """Keep AI as the primary action while retaining an honest offline fallback."""
+        """Keep one stable action; connection state belongs in the header."""
         self._ai_mode = bool(enabled)
-        next_placeholder = (
-            "描述工程内容、规格和施工条件"
-            if self._ai_mode
-            else "描述工程内容、规格和施工条件，先从本地资料库查找依据"
-        )
+        next_placeholder = "例如：屋面 SBS 卷材防水，3mm，两道，热熔"
         if self._placeholder_active:
             self.textbox.delete("1.0", "end")
             self.textbox.insert("1.0", next_placeholder)
         self.placeholder = next_placeholder
-        action_text = "开始分析" if self._ai_mode else "查本地"
+        action_text = "分析"
         self.send_button._normal_text = action_text
         if str(self.send_button.cget("state")) != "disabled":
             self.send_button.configure(text=action_text)
