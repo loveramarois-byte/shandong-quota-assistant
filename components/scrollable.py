@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import tkinter as tk
+import time
 import weakref
 
 import customtkinter as ctk
@@ -52,6 +53,11 @@ def view_can_scroll(view: tuple[float, float], pixels: int | float) -> bool:
     return False
 
 
+def ease_out_cubic(progress: float) -> float:
+    value = max(0.0, min(1.0, float(progress)))
+    return 1.0 - ((1.0 - value) ** 3)
+
+
 class PointerScrollableFrame(ctk.CTkScrollableFrame):
     """Route and coalesce wheel input for the area under the pointer."""
 
@@ -64,7 +70,13 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
         self._pending_vertical_pixels = 0
         self._pending_horizontal_pixels = 0
         self._wheel_job: str | None = None
+        self._scroll_animation_job: str | None = None
         super().__init__(*args, **kwargs)
+        try:
+            self._scrollbar.configure(width=6)
+            self._parent_canvas.configure(highlightthickness=0, yscrollincrement=1)
+        except (AttributeError, tk.TclError):
+            pass
         self._instances.add(self)
 
         # CTkScrollableFrame registers one bind_all callback per instance.
@@ -108,6 +120,9 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
         return "break"
 
     def _queue_wheel(self, delta: int | float, *, horizontal: bool) -> None:
+        cancel_animation = getattr(self, "_cancel_smooth_scroll", None)
+        if callable(cancel_animation):
+            cancel_animation()
         self._wheel_remainder += normalized_wheel_pixels(delta, self.WHEEL_STEP)
         pixels = int(self._wheel_remainder)
         self._wheel_remainder -= pixels
@@ -140,8 +155,49 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
         except tk.TclError:
             pass
 
+    def smooth_moveto(self, fraction: float, duration_ms: int = 180) -> None:
+        """Move the vertical canvas with a short, cancellable ease-out."""
+        self._cancel_smooth_scroll()
+        try:
+            start = float(self._parent_canvas.yview()[0])
+        except (IndexError, TypeError, ValueError, tk.TclError):
+            return
+        target = max(0.0, min(1.0, float(fraction)))
+        if abs(target - start) < 1e-6 or duration_ms <= 0:
+            try:
+                self._parent_canvas.yview_moveto(target)
+            except tk.TclError:
+                pass
+            return
+        started = time.perf_counter()
+
+        def step() -> None:
+            elapsed = (time.perf_counter() - started) * 1000
+            progress = min(1.0, elapsed / max(1, duration_ms))
+            value = start + ((target - start) * ease_out_cubic(progress))
+            try:
+                self._parent_canvas.yview_moveto(value)
+            except tk.TclError:
+                self._scroll_animation_job = None
+                return
+            if progress < 1.0:
+                self._scroll_animation_job = self.after(16, step)
+            else:
+                self._scroll_animation_job = None
+
+        self._scroll_animation_job = self.after(0, step)
+
+    def _cancel_smooth_scroll(self) -> None:
+        if self._scroll_animation_job is not None:
+            try:
+                self.after_cancel(self._scroll_animation_job)
+            except tk.TclError:
+                pass
+            self._scroll_animation_job = None
+
     def destroy(self):
         self._instances.discard(self)
+        self._cancel_smooth_scroll()
         if self._wheel_job is not None:
             try:
                 self.after_cancel(self._wheel_job)

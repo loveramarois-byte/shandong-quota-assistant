@@ -105,8 +105,11 @@ def proposal_decision_summary(result: dict, proposals: list[dict] | None = None)
     ]
     statuses = {str(value.get("status") or "") for value in current if isinstance(value, dict)}
     if "needs_clarification" in statuses:
+        pending = sum(1 for value in current if value.get("status") == "needs_clarification")
+        if pending > 1:
+            return f"{pending} 项施工内容需补充条件，请逐项选择后确认。"
         if questions:
-            return "先确认：" + str(questions[0]["question"]).strip()
+            return "请先补充下方关键施工条件，再确认套项。"
         return "先补充会影响套项的关键施工条件。"
     if "multiple_valid_options" in statuses:
         return "存在多个有效方案，请在下方选择后确认。"
@@ -623,7 +626,7 @@ class ProposalCard(ctk.CTkFrame):
         self.item_title.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         status_text, tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("待复核", "warning"))
         tone_color = getattr(c, tone)
-        self.status_label = self._label(header, text=status_text, text_color=tone_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="e", _tone=tone, _size=self.tokens.typography.caption, _weight="semibold")
+        self.status_label = self._label(header, text=status_text, text_color=tone_color, fg_color=getattr(c, f"{tone}_soft"), corner_radius=self.tokens.radius_xs, width=72, height=24, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="center", _tone=tone, _size=self.tokens.typography.caption, _weight="semibold")
         ready = proposal_confirmable(self.proposal)
         if self.proposal.get("status") == "ready_for_review" and not ready:
             status_text, tone = "证据待定位", "warning"
@@ -677,13 +680,13 @@ class ProposalCard(ctk.CTkFrame):
             self.assumption_label = None
 
         if self.questions:
-            self.question_area = ctk.CTkFrame(self, fg_color=c.subtle, corner_radius=self.tokens.radius_sm)
-            self.question_area.pack(fill="x", padx=12, pady=(8, 6))
+            self.question_area = ctk.CTkFrame(self, fg_color=c.warning_soft, corner_radius=self.tokens.radius_xs)
+            self.question_area.pack(fill="x", padx=16, pady=(6, 5))
             for index, question in enumerate(self.questions):
                 question_label = self._label(self.question_area, text=str(question.get("question") or "请补充关键条件"), text_color=c.text, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text", _weight="semibold")
-                question_label.pack(fill="x", padx=12, pady=(9 if index == 0 else 6, 5))
+                question_label.pack(fill="x", padx=11, pady=(8 if index == 0 else 5, 4))
                 options = ctk.CTkFrame(self.question_area, fg_color="transparent")
-                options.pack(fill="x", padx=9, pady=(0, 8))
+                options.pack(fill="x", padx=8, pady=(0, 7))
                 for option in (question.get("options") or [])[:4]:
                     button = DSButton(options, tokens=self.tokens, text=str(option), variant="secondary", width=88, height=28, command=lambda q=question, value=str(option): self._clarify(q, value))
                     button.pack(side="left", padx=3)
@@ -697,7 +700,7 @@ class ProposalCard(ctk.CTkFrame):
     def _selection_row(self, role: str, code: str, title: str, unit: str, role_tone: str, *, removable: bool = False, record_id: str = "", factor: object = None) -> None:
         c = self.tokens.colors
         row = ctk.CTkFrame(self.content, fg_color="transparent")
-        row.pack(fill="x", pady=(2, 8))
+        row.pack(fill="x", pady=(1, 6))
         # Keep code, title and unit as one readable cluster. A trailing spacer
         # absorbs wide-window growth so metadata is not scattered edge to edge.
         row.grid_columnconfigure(5, weight=1)
@@ -760,8 +763,12 @@ class ProposalCard(ctk.CTkFrame):
         self.configure(fg_color="transparent", border_width=0)
         for label, tone, size, weight in self._label_styles:
             label.configure(text_color=getattr(tokens.colors, tone), font=tokens.font(size, weight))
+        status_tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("", "warning"))[1]
+        if self.proposal.get("status") == "ready_for_review" and not proposal_confirmable(self.proposal):
+            status_tone = "warning"
+        self.status_label.configure(fg_color=getattr(tokens.colors, f"{status_tone}_soft"))
         if self.question_area is not None:
-            self.question_area.configure(fg_color=tokens.colors.subtle)
+            self.question_area.configure(fg_color=tokens.colors.warning_soft)
         for button in self._buttons:
             button.apply_theme(tokens)
 

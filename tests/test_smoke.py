@@ -27,6 +27,7 @@ MODULES = [
     "utils.sessions",
     "utils.settings",
     "utils.single_instance",
+    "utils.windows_theme",
 ]
 
 

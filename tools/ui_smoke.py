@@ -19,6 +19,7 @@ DEFAULT_QUERY = "地下室外墙外侧做4mm SBS防水两道，20厚水泥砂浆
 QUERY = os.environ.get("UI_SMOKE_QUERY", DEFAULT_QUERY).strip() or DEFAULT_QUERY
 VIEW = os.environ.get("UI_SMOKE_VIEW", "default").strip().lower()
 THEME = os.environ.get("UI_SMOKE_THEME", "").strip().lower()
+GEOMETRY = os.environ.get("UI_SMOKE_GEOMETRY", "").strip().lower()
 
 
 def _capture(app: QuotaApp, path: Path) -> None:
@@ -42,6 +43,9 @@ def main() -> int:
     output = Path(os.environ.get("UI_SMOKE_OUTPUT", "build/ui-smoke")).resolve()
     output.mkdir(parents=True, exist_ok=True)
     app = QuotaApp()
+    if GEOMETRY:
+        app.geometry(GEOMETRY)
+        app.update_idletasks()
     original_theme = app.theme_name
     if THEME in {"light", "dark"} and THEME != original_theme:
         app._toggle_theme()

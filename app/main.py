@@ -39,6 +39,7 @@ from utils.pricing_pipeline import analyze_pricing_description, merge_clarificat
 from utils.settings import DISCIPLINE_LABEL_TO_CODE, DISCIPLINE_OPTIONS, load_settings, sanitize_settings, save_settings
 from utils.single_instance import SingleInstanceGuard
 from utils.svg import svg_image
+from utils.windows_theme import apply_window_chrome
 from components.result import result_markdown
 
 DISCIPLINE_CODE_TO_LABEL = {code: label for label, code in DISCIPLINE_LABEL_TO_CODE.items()}
@@ -74,6 +75,24 @@ def initial_window_bounds(screen_width: int, screen_height: int, window_scaling:
     left = max(16, (screen_width - physical_width) // 2)
     top = max(16, (screen_height - physical_height) // 2)
     return logical_width, logical_height, left, top, logical_min_width, logical_min_height
+
+
+def centered_content_padding(
+    window_width: int,
+    sidebar_width: int,
+    content_max_width: int,
+    minimum: int = 22,
+    window_scaling: float = 1.0,
+) -> int:
+    """Keep the conversation centered without crushing compact windows."""
+    try:
+        scaling = max(1.0, float(window_scaling))
+        logical_width = round(int(window_width) / scaling)
+        available = max(0, logical_width - int(sidebar_width))
+        ideal = (available - int(content_max_width)) // 2
+    except (TypeError, ValueError):
+        return int(minimum)
+    return max(int(minimum), ideal)
 
 
 def ai_connection_state(settings: dict) -> tuple[bool, str, str]:
@@ -129,9 +148,14 @@ class QuotaApp(ctk.CTk):
         self._poll_job: str | None = None
         self._resize_job: str | None = None
         self._ai_hint_job: str | None = None
-        self._content_padding = 30
+        self._content_padding = centered_content_padding(
+            width,
+            self.tokens.sidebar_width,
+            self.tokens.content_max_width,
+        )
         self._last_layout_size: tuple[int, int] | None = None
         self._build()
+        self.after(60, lambda: apply_window_chrome(self, self.tokens))
         self._refresh_ai_presentation()
         # Keep keyboard submission reliable when Windows UIA focuses an outer CTk pane.
         self.bind("<Control-k>", self._focus_composer, add="+")
@@ -164,8 +188,8 @@ class QuotaApp(ctk.CTk):
     def colors(self):
         return self.tokens.colors
 
-    def _icon(self, name: str, size: tuple[int, int] = (17, 17)) -> ctk.CTkImage | None:
-        color = self.colors.text_secondary
+    def _icon(self, name: str, size: tuple[int, int] = (17, 17), color: str | None = None) -> ctk.CTkImage | None:
+        color = color or self.colors.text_secondary
         key = f"{name}:{size[0]}x{size[1]}:{color}"
         if key not in self._images:
             path = resource_path("assets", "icons", f"{name}.svg")
@@ -192,6 +216,11 @@ class QuotaApp(ctk.CTk):
             library_stats={},
             app_version=APP_VERSION,
             new_image=self._icon("plus"),
+            brand_image=self._icon("database", (17, 17), self.colors.accent),
+            rename_image=self._icon("edit", (14, 14)),
+            delete_image=self._icon("trash", (14, 14)),
+            settings_image=self._icon("settings", (15, 15)),
+            about_image=self._icon("info", (15, 15)),
         )
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.main = ctk.CTkFrame(self, fg_color=self.colors.background, corner_radius=0)
@@ -208,29 +237,29 @@ class QuotaApp(ctk.CTk):
 
     def _build_header(self) -> None:
         c = self.colors
-        self.header = ctk.CTkFrame(self.main, fg_color=c.background, height=112, corner_radius=0)
+        self.header = ctk.CTkFrame(self.main, fg_color=c.background, height=102, corner_radius=0)
         self.header.grid(row=0, column=0, padx=self._content_padding, sticky="ew")
         self.header.grid_propagate(False)
         self.header.grid_columnconfigure(0, weight=1)
         self.heading = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.heading.grid(row=0, column=0, sticky="w", pady=(15, 10))
-        title = "AI 定额分析 · 演示资料" if self.demo_mode else "AI 定额分析"
+        self.heading.grid(row=0, column=0, sticky="w", pady=(12, 8))
+        title = "AI 套价分析 · 演示资料" if self.demo_mode else "AI 套价分析"
         self.title_label = ctk.CTkLabel(self.heading, text=title, text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
         self.title_label.pack(anchor="w")
         self.subtitle_label = ctk.CTkLabel(self.heading, text="正在读取 AI 连接状态", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
         self.subtitle_label.pack(anchor="w", pady=(4, 0))
         self.status = self.subtitle_label
         self.controls = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.controls.grid(row=0, column=1, sticky="e", pady=(16, 10))
+        self.controls.grid(row=0, column=1, sticky="e", pady=(12, 8))
         self.ai_button = DSButton(self.controls, tokens=self.tokens, text="连接 AI", variant="primary", width=92, height=34, command=self._open_settings)
         self.ai_button.pack(side="left", padx=(0, 8))
         self.theme_button = IconButton(self.controls, tokens=self.tokens, image=self._icon("moon"), tooltip="切换深色模式", command=self._toggle_theme)
         self.theme_button.pack(side="left")
 
         self.context_controls = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.context_controls.grid(row=1, column=0, sticky="w", pady=(0, 9))
-        self.context_label = ctk.CTkLabel(self.context_controls, text="分析口径", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
-        self.context_label.pack(side="left", padx=(0, 12))
+        self.context_controls.grid(row=1, column=0, sticky="w", pady=(0, 8))
+        self.context_label = ctk.CTkLabel(self.context_controls, text="山东", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
+        self.context_label.pack(side="left", padx=(0, 10))
         self.edition_label = ctk.CTkLabel(self.context_controls, text="定额", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
         self.edition_label.pack(side="left", padx=(0, 6))
         self.edition = FilterSelect(self.context_controls, tokens=self.tokens, values=["2025", "2016"], width=78, height=32)
@@ -279,6 +308,13 @@ class QuotaApp(ctk.CTk):
         self.theme_button.configure(image=self._icon("sun" if self.theme_name == "dark" else "moon"))
         self.ai_button.apply_theme(self.tokens)
         self.sidebar.set_new_image(self._icon("plus"))
+        self.sidebar.set_action_images(
+            brand=self._icon("database", (17, 17), self.colors.accent),
+            rename=self._icon("edit", (14, 14)),
+            delete=self._icon("trash", (14, 14)),
+            settings=self._icon("settings", (15, 15)),
+            about=self._icon("info", (15, 15)),
+        )
         self.composer.set_send_image(self._icon("send"))
         for label, color, font in (
             (self.title_label, c.text, self.tokens.font(self.tokens.typography.title, "semibold")),
@@ -291,6 +327,7 @@ class QuotaApp(ctk.CTk):
         ):
             label.configure(text_color=color, font=font)
         self._refresh_ai_presentation()
+        self.after_idle(lambda: apply_window_chrome(self, self.tokens))
 
     def _refresh_ai_presentation(self) -> None:
         connected, subtitle, action = ai_connection_state(self.settings)
@@ -1124,14 +1161,23 @@ class QuotaApp(ctk.CTk):
 
     def _apply_responsive_layout(self) -> None:
         self._resize_job = None
-        padding = 22 if self.winfo_width() < 1120 else 30
+        try:
+            window_scaling = max(1.0, float(ctk.ScalingTracker.get_window_scaling(self)))
+        except (AttributeError, TypeError, ValueError):
+            window_scaling = 1.0
+        padding = centered_content_padding(
+            self.winfo_width(),
+            self.tokens.sidebar_width,
+            self.tokens.content_max_width,
+            window_scaling=window_scaling,
+        )
         if padding == self._content_padding:
             return
         self._content_padding = padding
         self.header.grid_configure(padx=padding)
         self.divider.grid_configure(padx=padding)
         self.feed.grid_configure(padx=padding)
-        self.composer.grid_configure(padx=padding, pady=(5, 19 if padding == 22 else 23))
+        self.composer.grid_configure(padx=padding, pady=(5, 19 if self.winfo_height() < 760 else 23))
 
     def _on_close(self) -> None:
         if self._closing:

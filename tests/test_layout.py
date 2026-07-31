@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from app.main import QuotaApp, ai_connection_state, clean_structured_validation, initial_window_bounds
+from app.main import QuotaApp, ai_connection_state, centered_content_padding, clean_structured_validation, initial_window_bounds
 from components.sidebar import Sidebar
 
 
@@ -42,6 +42,12 @@ class LayoutRefreshTests(unittest.TestCase):
         self.assertLessEqual(height + (top * 2), 768)
         self.assertGreaterEqual(width, min_width)
         self.assertGreaterEqual(height, min_height)
+
+    def test_conversation_width_is_centered_on_wide_windows(self):
+        self.assertEqual(centered_content_padding(1360, 204, 960), 98)
+        self.assertEqual(centered_content_padding(1920, 204, 960), 378)
+        self.assertEqual(centered_content_padding(980, 204, 960), 22)
+        self.assertEqual(centered_content_padding(2040, 204, 960, window_scaling=1.5), 98)
 
     def test_window_move_with_same_size_does_not_schedule_layout_refresh(self):
         probe = _LayoutProbe((1280, 820))

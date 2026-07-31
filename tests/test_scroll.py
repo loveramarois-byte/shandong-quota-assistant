@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from components.scrollable import (
     PointerScrollableFrame,
+    ease_out_cubic,
     normalized_wheel_pixels,
     pixel_scroll_fraction,
     view_can_scroll,
@@ -23,6 +24,11 @@ class WheelNormalizationTests(unittest.TestCase):
     def test_scrollable_uses_content_sized_pixel_increments(self):
         self.assertGreaterEqual(PointerScrollableFrame.WHEEL_STEP, 48)
         self.assertLessEqual(PointerScrollableFrame.WHEEL_STEP, 72)
+
+    def test_smooth_scroll_easing_is_bounded_and_decelerates(self):
+        self.assertEqual(ease_out_cubic(-1), 0)
+        self.assertEqual(ease_out_cubic(2), 1)
+        self.assertGreater(ease_out_cubic(0.5), 0.5)
 
     def test_pixel_delta_uses_canvas_fraction_instead_of_tk_units(self):
         self.assertAlmostEqual(pixel_scroll_fraction((0.25, 0.5), 56, 250), 0.306)

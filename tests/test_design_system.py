@@ -4,15 +4,19 @@ import json
 import unittest
 from pathlib import Path
 
+from components.button import blend_hex
 from components.result import CandidateSection
 from themes.tokens import DARK, LIGHT
 from utils.svg import _fallback_icon, _render_svg_cached, svg_image
+from utils.windows_theme import hex_to_colorref
 
 
 class DesignSystemTests(unittest.TestCase):
     def test_light_and_dark_tokens_are_complete(self):
         for theme in (LIGHT, DARK):
             self.assertTrue(theme.colors.background)
+            self.assertTrue(theme.colors.accent_fill)
+            self.assertTrue(theme.colors.on_accent)
             self.assertGreater(theme.control_height, 30)
             self.assertLess(theme.transition_fast, theme.transition_normal)
 
@@ -41,6 +45,16 @@ class DesignSystemTests(unittest.TestCase):
 
         self.assertIsNotNone(image.getbbox())
         self.assertGreater(image.getpixel((16, 16))[3], 0)
+
+    def test_interaction_color_blending_is_bounded(self):
+        self.assertEqual(blend_hex("#000000", "#FFFFFF", 0.5), "#808080")
+        self.assertEqual(blend_hex("#112233", "#FFFFFF", -2), "#112233")
+        self.assertEqual(blend_hex("#112233", "#FFFFFF", 4), "#FFFFFF")
+
+    def test_windows_caption_color_uses_colorref_order(self):
+        self.assertEqual(hex_to_colorref("#112233"), 0x332211)
+        with self.assertRaises(ValueError):
+            hex_to_colorref("#123")
 
 
 if __name__ == "__main__":

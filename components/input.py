@@ -18,16 +18,56 @@ _SOIL_QUERY = {"普通土(一、二类)": "普通土", "坚土(三类)": "三类
 _METHOD_OPTIONS = ["未指定", "人工", "机械"]
 
 
-class FilterSelect(ctk.CTkOptionMenu):
+class FilterSelect(ctk.CTkFrame):
+    """A thin bordered option control built from the existing CTk menu."""
+
     def __init__(self, master, *, tokens: ThemeTokens, values: list[str], **kwargs):
         self.tokens = tokens
-        height = kwargs.pop("height", tokens.control_height)
-        super().__init__(master, values=values, fg_color=tokens.colors.elevated, button_color=tokens.colors.elevated, button_hover_color=tokens.colors.subtle, text_color=tokens.colors.text, dropdown_fg_color=tokens.colors.elevated, dropdown_hover_color=tokens.colors.subtle, dropdown_text_color=tokens.colors.text, font=tokens.font(tokens.typography.meta), dropdown_font=tokens.font(tokens.typography.meta), corner_radius=tokens.radius_sm, height=height, **kwargs)
+        width = int(kwargs.pop("width", 140))
+        height = int(kwargs.pop("height", tokens.control_height))
+        corner_radius = int(kwargs.pop("corner_radius", tokens.radius_xs))
+        command = kwargs.pop("command", None)
+        super().__init__(
+            master,
+            width=width,
+            height=height,
+            fg_color=tokens.colors.border,
+            corner_radius=corner_radius,
+            **kwargs,
+        )
+        self.pack_propagate(False)
+        self.grid_propagate(False)
+        self._menu = ctk.CTkOptionMenu(
+            self,
+            values=values,
+            command=command,
+            width=max(24, width - 2),
+            height=max(22, height - 2),
+            fg_color=tokens.colors.elevated,
+            button_color=tokens.colors.elevated,
+            button_hover_color=tokens.colors.subtle,
+            text_color=tokens.colors.text,
+            dropdown_fg_color=tokens.colors.elevated,
+            dropdown_hover_color=tokens.colors.subtle,
+            dropdown_text_color=tokens.colors.text,
+            font=tokens.font(tokens.typography.meta),
+            dropdown_font=tokens.font(tokens.typography.meta),
+            corner_radius=max(3, corner_radius - 1),
+            dynamic_resizing=False,
+        )
+        self._menu.place(relx=0.5, rely=0.5, anchor="center")
+
+    def get(self) -> str:
+        return self._menu.get()
+
+    def set(self, value: str) -> None:
+        self._menu.set(value)
 
     def apply_theme(self, tokens: ThemeTokens) -> None:
         self.tokens = tokens
         c = tokens.colors
-        self.configure(fg_color=c.elevated, button_color=c.elevated, button_hover_color=c.subtle, text_color=c.text, dropdown_fg_color=c.elevated, dropdown_hover_color=c.subtle, dropdown_text_color=c.text, font=tokens.font(tokens.typography.meta), dropdown_font=tokens.font(tokens.typography.meta))
+        self.configure(fg_color=c.border)
+        self._menu.configure(fg_color=c.elevated, button_color=c.elevated, button_hover_color=c.subtle, text_color=c.text, dropdown_fg_color=c.elevated, dropdown_hover_color=c.subtle, dropdown_text_color=c.text, font=tokens.font(tokens.typography.meta), dropdown_font=tokens.font(tokens.typography.meta))
 
 
 class ConditionBar(ctk.CTkFrame):
@@ -98,7 +138,7 @@ class Composer(ctk.CTkFrame):
         self.on_cancel = on_cancel
         self.on_limit = on_limit
         self._ai_mode = True
-        self.placeholder = "描述工程内容、规格和施工条件，AI 将结合山东定额给出套项建议"
+        self.placeholder = "描述工程内容、规格和施工条件"
         self._placeholder_active = True
         self._error_job = None
         self._enter_send = False
@@ -110,23 +150,22 @@ class Composer(ctk.CTkFrame):
     def _build(self, send_image) -> None:
         c = self.tokens.colors
         self.chips_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.chips_frame.pack(fill="x", pady=(0, 6))
-        self.condition_toggle = DSButton(self.chips_frame, tokens=self.tokens, text="条件 +", variant="ghost", width=64, height=26, command=self._toggle_conditions)
-        self.condition_toggle.pack(side="left", padx=(0, 6))
+        self.chips_frame.pack(fill="x", pady=(0, 7))
+        self.condition_toggle = DSButton(self.chips_frame, tokens=self.tokens, text="补充条件", variant="ghost", width=72, height=26, command=self._toggle_conditions)
+        self.condition_toggle.pack(side="left", padx=(0, 5))
         self._chip_buttons: list[DSButton] = []
         for label, sample in EXAMPLE_CHIPS:
-            chip = DSButton(self.chips_frame, tokens=self.tokens, text=label, variant="ghost", width=64, height=26, command=lambda text=sample: self._fill_example(text))
+            chip = DSButton(self.chips_frame, tokens=self.tokens, text=label, variant="ghost", width=62, height=26, command=lambda text=sample: self._fill_example(text))
             chip.pack(side="left", padx=(0, 4))
             self._chip_buttons.append(chip)
-        self.char_label = ctk.CTkLabel(self.chips_frame, text=f"0/{self.MAX_CHARS}", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="e")
-        self.char_label.pack(side="right")
+        self.char_label = ctk.CTkLabel(self.chips_frame, text="", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="e")
 
         self.condition_bar = ConditionBar(self, tokens=self.tokens)
 
         self.shell = ctk.CTkFrame(self, fg_color=c.elevated, border_color=c.border, border_width=1, corner_radius=self.tokens.radius_md)
         self.shell.pack(fill="x")
-        self.textbox = ctk.CTkTextbox(self.shell, height=64, fg_color="transparent", border_width=0, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.body), wrap="word", activate_scrollbars=False)
-        self.textbox.pack(side="left", fill="both", expand=True, padx=(16, 4), pady=9)
+        self.textbox = ctk.CTkTextbox(self.shell, height=58, fg_color="transparent", border_width=0, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.body), wrap="word", activate_scrollbars=False)
+        self.textbox.pack(side="left", fill="both", expand=True, padx=(15, 4), pady=8)
         self.textbox.insert("1.0", self.placeholder)
         self.textbox.bind("<FocusIn>", self._clear_placeholder)
         self.textbox.bind("<FocusOut>", self._restore_placeholder)
@@ -137,16 +176,16 @@ class Composer(ctk.CTkFrame):
         # move the send button or leave a stale CustomTkinter canvas behind.
         self.action_frame = ctk.CTkFrame(
             self.shell,
-            width=172,
+            width=164,
             height=self.tokens.control_height,
             fg_color=c.elevated,
             corner_radius=0,
         )
-        self.action_frame.pack(side="right", padx=(4, 12), pady=12, anchor="s")
+        self.action_frame.pack(side="right", padx=(4, 10), pady=10, anchor="s")
         self.action_frame.pack_propagate(False)
-        self.cancel_button = DSButton(self.action_frame, tokens=self.tokens, text="停止", variant="secondary", width=68, command=self.on_cancel or (lambda: None))
-        self.send_button = DSButton(self.action_frame, tokens=self.tokens, text="问 AI", variant="primary", image=send_image, compound="left", width=96, command=self.on_send)
-        self.send_button.place(x=76, y=0)
+        self.cancel_button = DSButton(self.action_frame, tokens=self.tokens, text="停止", variant="secondary", width=64, command=self.on_cancel or (lambda: None))
+        self.send_button = DSButton(self.action_frame, tokens=self.tokens, text="开始分析", variant="primary", image=send_image, compound="left", width=92, command=self.on_send)
+        self.send_button.place(x=72, y=0)
         self.textbox.bind("<FocusIn>", lambda _e: self.shell.configure(border_color=self.tokens.colors.accent), add="+")
         self.textbox.bind("<FocusOut>", lambda _e: self.shell.configure(border_color=self.tokens.colors.border), add="+")
 
@@ -154,10 +193,10 @@ class Composer(ctk.CTkFrame):
         self._conditions_visible = not self._conditions_visible
         if self._conditions_visible:
             self.condition_bar.pack(fill="x", pady=(0, 6), before=self.shell)
-            self.condition_toggle.configure(text="条件 −")
+            self.condition_toggle.configure(text="收起条件")
         else:
             self.condition_bar.pack_forget()
-            self.condition_toggle.configure(text="条件 +")
+            self.condition_toggle.configure(text="补充条件")
 
     def _fill_example(self, text: str) -> None:
         if self._placeholder_active:
@@ -182,7 +221,7 @@ class Composer(ctk.CTkFrame):
         """Keep AI as the primary action while retaining an honest offline fallback."""
         self._ai_mode = bool(enabled)
         next_placeholder = (
-            "描述工程内容、规格和施工条件，AI 将结合山东定额给出套项建议"
+            "描述工程内容、规格和施工条件"
             if self._ai_mode
             else "描述工程内容、规格和施工条件，先从本地资料库查找依据"
         )
@@ -190,7 +229,7 @@ class Composer(ctk.CTkFrame):
             self.textbox.delete("1.0", "end")
             self.textbox.insert("1.0", next_placeholder)
         self.placeholder = next_placeholder
-        action_text = "问 AI" if self._ai_mode else "查本地"
+        action_text = "开始分析" if self._ai_mode else "查本地"
         self.send_button._normal_text = action_text
         if str(self.send_button.cget("state")) != "disabled":
             self.send_button.configure(text=action_text)
@@ -204,7 +243,11 @@ class Composer(ctk.CTkFrame):
     def _update_char_count(self, _event=None) -> None:
         length = 0 if self._placeholder_active else len(self.textbox.get("1.0", "end").strip())
         over = length > self.MAX_CHARS
-        self.char_label.configure(text=f"{length}/{self.MAX_CHARS}", text_color=self.tokens.colors.danger if over else self.tokens.colors.text_muted)
+        self.char_label.configure(text=f"{length}/{self.MAX_CHARS}" if length else "", text_color=self.tokens.colors.danger if over else self.tokens.colors.text_muted)
+        if length and not self.char_label.winfo_manager():
+            self.char_label.pack(side="right")
+        elif not length and self.char_label.winfo_manager():
+            self.char_label.pack_forget()
         if over and self.on_limit:
             self.on_limit()
 

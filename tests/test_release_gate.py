@@ -41,7 +41,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("Get-HardLinkCount $stagedDatabase", self.script)
 
     def test_release_version_is_consistent_across_runtime_and_packaging(self):
-        self.assertEqual(APP_VERSION, "0.7.5")
+        self.assertEqual(APP_VERSION, "0.8.0")
         self.assertEqual(self.catalog_manifest["app_version"], APP_VERSION)
         installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
         version_info = (PROJECT_ROOT / "packaging" / "windows_version_info.txt").read_text(encoding="utf-8-sig")
@@ -85,10 +85,12 @@ class ReleaseGateTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.script)
 
-    def test_installer_is_split_into_downloadable_media(self):
+    def test_installer_is_one_self_contained_file(self):
         installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
-        self.assertIn("DiskSpanning=yes", installer)
-        self.assertIn("DiskSliceSize=900000000", installer)
+        self.assertIn("Compression=lzma2/max", installer)
+        self.assertIn("SolidCompression=yes", installer)
+        self.assertIn("DiskSpanning=no", installer)
+        self.assertNotIn("DiskSliceSize=", installer)
 
     def test_internal_build_is_separated_from_release_directory(self):
         self.assertIn("build\\internal-evaluation", self.script)

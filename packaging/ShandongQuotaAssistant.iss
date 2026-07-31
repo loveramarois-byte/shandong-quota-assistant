@@ -1,5 +1,5 @@
 #define MyAppName "山东定额助手"
-#define MyAppVersion "0.7.5"
+#define MyAppVersion "0.8.0"
 #define MyAppPublisher "山东定额助手"
 #define MyAppExeName "山东定额助手.exe"
 #ifndef BuildSourceDir
@@ -17,7 +17,7 @@ AppId={{DBCE01BE-5A4E-49AE-98B6-831B2580C70F}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.7.5.0
+VersionInfoVersion=0.8.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=山东清单定额检索与 AI 辅助分析安装程序
 VersionInfoProductName={#MyAppName}
@@ -25,20 +25,19 @@ VersionInfoProductVersion={#MyAppVersion}
 DefaultDirName={localappdata}\Programs\ShandongQuotaAssistant
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+DisableReadyPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir={#BuildOutputDir}
 OutputBaseFilename={#BuildOutputBaseFilename}
 SetupIconFile=..\assets\images\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-; The internal bundle is dominated by SQLite and PDF assets that are already
-; compact. Recompressing them with lzma2/max saves very little and can turn a
-; routine build into hours of CPU time.
-Compression=none
-SolidCompression=no
-DiskSpanning=yes
-DiskSliceSize=900000000
-SlicesPerDisk=1
+; Keep the entire authorized catalogue in one installer. The source bundle is
+; roughly 4 GB but solid LZMA2 compression keeps the distributable below the
+; release-host single-file limit, removing the error-prone .bin workflow.
+Compression=lzma2/max
+SolidCompression=yes
+DiskSpanning=no
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -50,15 +49,12 @@ UsePreviousAppDir=yes
 [Languages]
 Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
-[Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："; Flags: checkedonce
-
 [Files]
 Source: "{#BuildSourceDir}\*"; DestDir: "{app}"; Excludes: "data\*.sqlite-shm,data\*.sqlite-wal"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent

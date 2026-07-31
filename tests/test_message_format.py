@@ -37,7 +37,7 @@ class AiMessageFormatTests(unittest.TestCase):
             "proposals": [{"status": "needs_clarification"}],
         }
 
-        self.assertEqual(proposal_decision_summary(result), "先确认：该垫层用于哪个部位？")
+        self.assertEqual(proposal_decision_summary(result), "请先补充下方关键施工条件，再确认套项。")
 
     def test_markdown_sections_are_cleaned_for_card_rendering(self):
         text = """## 结论

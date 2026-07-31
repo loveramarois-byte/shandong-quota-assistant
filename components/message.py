@@ -187,10 +187,12 @@ class MessageBubble(ctk.CTkFrame):
         bubble.grid(row=0, column=0, sticky="e" if is_user else "ew")
         if not is_user:
             bubble.grid_configure(sticky="ew")
-        self.heading = ctk.CTkLabel(bubble, text=("你的描述" if is_user else ("连接提示" if self.error else "定额助手")), text_color=c.user_text if is_user else (c.danger if self.error else c.accent), font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="e" if is_user else "w")
-        self.heading.pack(fill="x", padx=15 if is_user or self.error else 2, pady=(11 if is_user or self.error else 2, 1))
+        self.heading = None
+        if self.error:
+            self.heading = ctk.CTkLabel(bubble, text="连接提示", text_color=c.danger, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
+            self.heading.pack(fill="x", padx=15, pady=(10, 1))
         self.body = ctk.CTkLabel(bubble, text=self.body_text, text_color=text_color, font=self.tokens.font(self.tokens.typography.body), justify="right" if is_user else "left", anchor="e" if is_user else "w", wraplength=self._wraplength)
-        self.body.pack(fill="x", padx=15 if is_user or self.error else 2, pady=(3, 13 if is_user or self.error else 2))
+        self.body.pack(fill="x", padx=15 if is_user or self.error else 2, pady=(10 if is_user and not self.error else 3, 11 if is_user or self.error else 2))
         self._row, self._bubble = row, bubble
 
     def set_wraplength(self, width: int) -> None:
@@ -203,7 +205,8 @@ class MessageBubble(ctk.CTkFrame):
         c = tokens.colors
         self._row.configure(fg_color="transparent")
         self._bubble.configure(fg_color=c.user_surface if is_user else (c.danger_soft if self.error else "transparent"), border_color=c.danger if self.error else c.border)
-        self.heading.configure(text_color=c.user_text if is_user else (c.danger if self.error else c.accent), font=tokens.font(tokens.typography.meta, "semibold"))
+        if self.heading is not None:
+            self.heading.configure(text_color=c.danger, font=tokens.font(tokens.typography.meta, "semibold"))
         self.body.configure(text_color=c.user_text if is_user else (c.danger if self.error else c.text), font=tokens.font(tokens.typography.body))
 
 
@@ -229,7 +232,7 @@ class AiAnswerCard(ctk.CTkFrame):
 
     def _build(self) -> None:
         c = self.tokens.colors
-        self.shell = ctk.CTkFrame(self, fg_color=c.surface, border_color=c.border, border_width=1, corner_radius=self.tokens.radius_md)
+        self.shell = ctk.CTkFrame(self, fg_color=c.surface, border_width=0, corner_radius=self.tokens.radius_md)
         self.shell.pack(fill="x", padx=2, pady=(0, 18))
         self.header = ctk.CTkFrame(self.shell, fg_color="transparent")
         self.header.pack(fill="x", padx=18, pady=(15, 10))
@@ -390,7 +393,7 @@ class AiThinkingCard(ctk.CTkFrame):
         self._wraplength = 400
         super().__init__(master, fg_color="transparent", **kwargs)
         c = tokens.colors
-        self.shell = ctk.CTkFrame(self, fg_color=c.surface, border_color=c.border, border_width=1, corner_radius=tokens.radius_md)
+        self.shell = ctk.CTkFrame(self, fg_color=c.subtle, border_width=0, corner_radius=tokens.radius_sm)
         self.shell.pack(fill="x", padx=2, pady=(0, 18))
         self.row = ctk.CTkFrame(self.shell, fg_color="transparent")
         self.row.pack(fill="x", padx=18, pady=15)
@@ -398,7 +401,7 @@ class AiThinkingCard(ctk.CTkFrame):
             self.row,
             asset=resource_path("assets", "animations", "analysis-pulse.json"),
             color=c.accent,
-            background=c.surface,
+            background=c.subtle,
         )
         self.pulse.pack(side="left", padx=(0, 10))
         copy = ctk.CTkFrame(self.row, fg_color="transparent")
@@ -416,9 +419,9 @@ class AiThinkingCard(ctk.CTkFrame):
     def apply_theme(self, tokens: ThemeTokens) -> None:
         self.tokens = tokens
         c = tokens.colors
-        self.shell.configure(fg_color=c.surface, border_color=c.border)
+        self.shell.configure(fg_color=c.subtle)
         self.row.configure(fg_color="transparent")
-        self.pulse.apply_theme(c.accent, c.surface)
+        self.pulse.apply_theme(c.accent, c.subtle)
         self.heading.configure(text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"))
         self.detail.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
 
@@ -542,10 +545,7 @@ class MessageFeed(PointerScrollableFrame):
         entry.set_wraplength(self._wrap_width)
 
     def _scroll_end(self) -> None:
-        try:
-            self._parent_canvas.yview_moveto(1.0)
-        except Exception:
-            pass
+        self.smooth_moveto(1.0, self.tokens.transition_normal)
 
     def scroll_to_end(self, delay_ms: int = 0) -> None:
         """Scroll after Tk has completed deferred geometry for restored history."""
@@ -559,7 +559,7 @@ class MessageFeed(PointerScrollableFrame):
         try:
             bounds = self._parent_canvas.bbox("all")
             if bounds and bounds[3] > 0:
-                self._parent_canvas.yview_moveto(max(0.0, min(1.0, widget.winfo_y() / bounds[3])))
+                self.smooth_moveto(max(0.0, min(1.0, widget.winfo_y() / bounds[3])), self.tokens.transition_normal)
         except Exception:
             pass
 

@@ -72,6 +72,25 @@ def _fallback_icon(path: Path, size: tuple[int, int], color: str) -> Image.Image
         draw.line([point(9, 4), point(9, 3), point(15, 3), point(15, 4)], fill=color, width=pen)
         draw.line([point(8, 9), point(16, 9)], fill=color, width=pen)
         draw.line([point(8, 13), point(14, 13)], fill=color, width=pen)
+    elif name == "edit":
+        draw.line([point(5, 19), point(8, 15), point(17, 6), point(20, 9), point(11, 18), point(5, 19)], fill=color, width=pen, joint="curve")
+        draw.line([point(15.5, 7.5), point(18.5, 10.5)], fill=color, width=pen)
+    elif name == "trash":
+        draw.line([point(5, 7), point(19, 7)], fill=color, width=pen)
+        draw.line([point(9, 7), point(9, 4), point(15, 4), point(15, 7)], fill=color, width=pen)
+        draw.line([point(7, 8), point(8, 20), point(16, 20), point(17, 8)], fill=color, width=pen)
+        draw.line([point(11, 11), point(11, 17)], fill=color, width=pen)
+        draw.line([point(14, 11), point(14, 17)], fill=color, width=pen)
+    elif name == "settings":
+        for y, knob_x in ((6, 9), (12, 15), (18, 11)):
+            draw.line([point(4, y), point(20, y)], fill=color, width=pen)
+            draw.ellipse([point(knob_x - 1.5, y - 1.5), point(knob_x + 1.5, y + 1.5)], fill=color)
+    elif name == "info":
+        draw.ellipse([point(4, 4), point(20, 20)], outline=color, width=pen)
+        draw.ellipse([point(11, 7), point(13, 9)], fill=color)
+        draw.line([point(12, 11), point(12, 17)], fill=color, width=pen)
+    elif name == "moon":
+        draw.arc([point(4, 3), point(20, 21)], 55, 300, fill=color, width=pen)
     else:
         draw.arc([point(4, 3), point(21, 21)], 40, 300, fill=color, width=pen)
     return image
