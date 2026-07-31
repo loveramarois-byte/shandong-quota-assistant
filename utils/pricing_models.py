@@ -112,6 +112,8 @@ class QuotaSelection:
     reason: str
     evidence_refs: tuple[str, ...]
     source_link_record_id: str | None = None
+    data_basis: str = "structured_catalog"
+    source_status: str = "structured_only"
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -134,6 +136,9 @@ class PricingProposal:
     evidence_refs: tuple[str, ...] = field(default_factory=tuple)
     evidence_pages: tuple[str, ...] = field(default_factory=tuple)
     evidence_located: bool = False
+    data_basis: str = ""
+    source_review_required: bool = False
+    source_review_reasons: tuple[str, ...] = field(default_factory=tuple)
     match_level: str = "low"
     status: str = "no_reliable_match"
     confirmed: bool = False
@@ -153,6 +158,9 @@ class PricingProposal:
             "evidence_refs": list(self.evidence_refs),
             "evidence_pages": list(self.evidence_pages),
             "evidence_located": self.evidence_located,
+            "data_basis": self.data_basis,
+            "source_review_required": self.source_review_required,
+            "source_review_reasons": list(self.source_review_reasons),
             "match_level": self.match_level,
             "status": self.status,
             "confirmed": self.confirmed,

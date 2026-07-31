@@ -42,6 +42,8 @@ def _schema(connection: sqlite3.Connection) -> None:
             unit TEXT,
             pdf_page INTEGER,
             source_path TEXT,
+            resource_count INTEGER NOT NULL DEFAULT 0,
+            alignment_status TEXT NOT NULL DEFAULT 'master_only',
             PRIMARY KEY (quota_kind_id, ordinal)
         );
         CREATE INDEX idx_demo_quota_scope ON quota_items(edition, discipline, name);
@@ -129,8 +131,10 @@ def _populate(connection: sqlite3.Connection) -> None:
             quota_kind_id = int(f"{edition}{discipline_index}")
             quota_code = f"{discipline_index}-{edition[-2:]}-1"
             connection.execute(
-                "INSERT INTO quota_items VALUES (?,?,?,?,?,?,?,?,?)",
-                (quota_kind_id, 1, edition, discipline, quota_code, quota_name, quota_unit, 1, ""),
+                "INSERT INTO quota_items "
+                "(quota_kind_id,ordinal,edition,discipline,code,name,unit,pdf_page,source_path,resource_count,alignment_status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (quota_kind_id, 1, edition, discipline, quota_code, quota_name, quota_unit, 1, "", 1, "master_only"),
             )
             quota_chunk_id = f"quota:{quota_kind_id}:1"
             quota_text = _quota_text(edition, quota_code, quota_name, quota_unit)

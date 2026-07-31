@@ -30,19 +30,21 @@ def result_csv(result: dict[str, Any]) -> list[list[str]]:
     return rows
 
 
-def _evidence_text(proposal: dict[str, Any], line: dict[str, Any] | None = None) -> str:
+def _source_basis_text(proposal: dict[str, Any], line: dict[str, Any] | None = None) -> str:
     pages = [str(value) for value in proposal.get("evidence_pages") or [] if value]
+    basis = "结构化定额库已匹配" if proposal.get("data_basis") == "structured_catalog" else "本地资料已匹配"
     if pages:
-        return "；".join(dict.fromkeys(pages))
+        return basis + "；原书页：" + "；".join(dict.fromkeys(pages))
     refs = [*(proposal.get("evidence_refs") or []), *((line or {}).get("evidence_refs") or [])]
-    return "；".join(dict.fromkeys(str(value) for value in refs if value))
+    reference_text = "；".join(dict.fromkeys(str(value) for value in refs if value))
+    return basis + ("；资料索引：" + reference_text if reference_text else "")
 
 
 def proposal_csv(result: dict[str, Any], *, confirmed_only: bool = True) -> list[list[str]]:
-    rows = [["施工事项", "类型", "角色", "编码", "名称", "单位", "状态", "假设/换算", "证据"]]
+    rows = [["施工事项", "类型", "角色", "编码", "名称", "单位", "状态", "假设/换算", "资料依据"]]
     work_items = {str(value.get("id") or ""): value for value in result.get("work_items") or []}
     status_labels = {
-        "ready_for_review": "待复核",
+        "ready_for_review": "可确认",
         "needs_clarification": "待补条件",
         "multiple_valid_options": "多个有效方案",
         "no_reliable_match": "暂无可靠组合",
@@ -54,10 +56,10 @@ def proposal_csv(result: dict[str, Any], *, confirmed_only: bool = True) -> list
         span = str(work_item.get("source_span") or proposal.get("work_item_id") or "")
         status = status_labels.get(str(proposal.get("status") or ""), str(proposal.get("status") or ""))
         if proposal.get("bill_record_id"):
-            rows.append([span, "清单", "", str(proposal.get("bill_code") or ""), str(proposal.get("bill_title") or ""), str(proposal.get("bill_unit") or ""), status, "；".join(proposal.get("assumptions") or []), _evidence_text(proposal)])
+            rows.append([span, "清单", "", str(proposal.get("bill_code") or ""), str(proposal.get("bill_title") or ""), str(proposal.get("bill_unit") or ""), status, "；".join(proposal.get("assumptions") or []), _source_basis_text(proposal)])
         for quota in proposal.get("quota_lines") or []:
             role = {"main": "主项", "supplement": "增补", "adjustment": "调整", "transport": "运输", "conversion": "换算", "alternative": "备选"}.get(str(quota.get("role") or ""), str(quota.get("role") or ""))
-            rows.append([span, "定额", role, str(quota.get("code") or ""), str(quota.get("title") or ""), str(quota.get("unit") or ""), status, "；".join(proposal.get("assumptions") or []), _evidence_text(proposal, quota)])
+            rows.append([span, "定额", role, str(quota.get("code") or ""), str(quota.get("title") or ""), str(quota.get("unit") or ""), status, "；".join(proposal.get("assumptions") or []), _source_basis_text(proposal, quota)])
     return rows
 
 

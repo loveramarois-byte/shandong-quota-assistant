@@ -122,8 +122,11 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         normalized["evidence_refs"] = list(local_proposal.get("evidence_refs") or normalized.get("evidence_refs") or [])
         normalized["evidence_pages"] = list(local_proposal.get("evidence_pages") or [])
         normalized["evidence_located"] = bool(local_proposal.get("evidence_located"))
+        normalized["data_basis"] = str(local_proposal.get("data_basis") or "")
+        normalized["source_review_required"] = bool(local_proposal.get("source_review_required"))
+        normalized["source_review_reasons"] = list(local_proposal.get("source_review_reasons") or [])
         if local_proposal.get("status") == "ready_for_review" and status != "ready_for_review":
-            schema_errors.append(f"{normalized.get('work_item_id')} 的本地方案已可复核，AI 不得随机降级")
+            schema_errors.append(f"{normalized.get('work_item_id')} 的本地方案已可确认，AI 不得随机降级")
         if (
             local_proposal.get("bill_record_id")
             and local_proposal.get("quota_lines")
@@ -256,7 +259,7 @@ def render_structured_ai_response(payload: dict[str, Any], result: dict[str, Any
     elif "needs_clarification" in statuses:
         decision = "需补充关键施工条件后再确定套价组合。"
     else:
-        decision = "已形成可复核的清单与定额组合建议。"
+        decision = "已形成可确认的清单与定额组合建议。"
     lines = ["## 结论", f"- {decision}"]
     if proposals:
         lines.extend(["", "## 建议候选"])

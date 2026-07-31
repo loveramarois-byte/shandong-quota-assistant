@@ -54,7 +54,30 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertEqual(proposal["bill_record_id"], self.bill["record_id"])
         self.assertEqual([line["role"] for line in proposal["quota_lines"]], ["main", "adjustment"])
         self.assertEqual(proposal["status"], "ready_for_review")
+        self.assertEqual(proposal["data_basis"], "structured_catalog")
+        self.assertFalse(proposal["source_review_required"])
+        self.assertTrue(all(line["source_status"] == "source_page_linked" for line in proposal["quota_lines"]))
         self.assertTrue(analysis["validation"]["valid"])
+
+    def test_structured_only_relation_is_confirmable_without_pdf_page(self):
+        main = dict(self.main, source_path="", pdf_page=None, alignment_status="master_only")
+        adjustment = dict(self.adjustment, source_path="", pdf_page=None, alignment_status="master_only")
+        analysis = assemble_pricing_result(
+            self.item.source_span,
+            [(self.item, {"bills": [self.bill], "quotas": [], "links": [main, adjustment], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        proposal = analysis["proposals"][0]
+        self.assertEqual(proposal["status"], "ready_for_review")
+        self.assertFalse(proposal["evidence_located"])
+        self.assertEqual(proposal["evidence_pages"], ["清单第1页"])
+        self.assertTrue(proposal_confirmable(proposal))
+        self.assertTrue(proposal["source_review_required"])
+        self.assertIn("主定额暂无对应原书页", proposal["source_review_reasons"])
+        self.assertEqual(proposal["quota_lines"][0]["source_status"], "structured_only")
 
     def test_unknown_record_id_is_rejected_by_deterministic_validator(self):
         analysis = assemble_pricing_result(
@@ -113,6 +136,44 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertEqual(proposal["status"], "ready_for_review")
         self.assertTrue(analysis["validation"]["valid"])
         self.assertTrue(any("100mm" in value for value in proposal["assumptions"]))
+        self.assertTrue(proposal["source_review_required"])
+        self.assertIn("方案包含假设或换算", proposal["source_review_reasons"])
+
+    def test_concrete_cushion_bill_outranks_generic_concrete_rebar_bill(self):
+        item = extract_work_item("基础C15混凝土垫层，厚度100mm", item_id="W1", discipline="building")
+        cushion = _candidate("bill:2024:76", "010501001-000", "基础垫层", "bill_item", edition="2024", unit="m3")
+        rebar = _candidate("bill:2024:161", "010506001-000", "现浇混凝土基础及联系梁钢筋", "bill_item", edition="2024", unit="t")
+        main = _candidate(
+            "link:2024:984", "2-1-28", "混凝土垫层 无筋", "bill_quota_link",
+            quota_edition="2025", standard_edition="2024", bill_record_id=cushion["record_id"],
+            quota_record_id="quota:171:173", bill_code=cushion["code"], unit="10m2", factor=1.0,
+        )
+
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [rebar, cushion], "quotas": [], "links": [main], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        self.assertEqual(analysis["proposals"][0]["bill_code"], cushion["code"])
+        self.assertEqual(analysis["proposals"][0]["status"], "ready_for_review")
+
+    def test_non_unit_factor_requests_source_review_but_remains_confirmable(self):
+        main = dict(self.main, factor=1.2)
+        analysis = assemble_pricing_result(
+            "SBS卷材防水一层",
+            [(extract_work_item("SBS卷材防水一层", item_id="W1", discipline="building"), {"bills": [self.bill], "quotas": [], "links": [main], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        proposal = analysis["proposals"][0]
+        self.assertTrue(proposal_confirmable(proposal))
+        self.assertTrue(proposal["source_review_required"])
+        self.assertIn("方案包含非 1.0 系数", proposal["source_review_reasons"])
 
     def test_missing_conversion_thickness_becomes_a_clarification(self):
         item = extract_work_item("基础C15混凝土垫层", item_id="W1", discipline="building")

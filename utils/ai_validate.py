@@ -146,7 +146,7 @@ def _claim_status(code: str, line: str, result: dict[str, Any] | None) -> tuple[
 
 
 def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Validate AI claims and resolve each cited candidate to its original page."""
+    """Validate AI claims against the structured catalog and attach optional source pages."""
     result = hydrate_result_sources(result)
     codes = extract_codes(ai_text)
     statuses: dict[str, str] = {}
@@ -194,19 +194,26 @@ def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> di
     evidence_located = len(located_references)
     warnings: list[str] = []
     if unverified:
-        warnings.append("AI 提到了未能在本轮筛选口径内核验的编号：" + "、".join(unverified) + "。这些编号不作为建议候选，请以本地列表和原书为准。")
+        warnings.append("AI 提到了未能在本轮结构化资料中核验的编号：" + "、".join(unverified) + "。这些编号不作为建议候选。")
     if invalid_references:
         warnings.append("AI 使用了本轮结果中不存在的资料编号：" + "、".join(invalid_references) + "。")
     if uncited:
         warnings.append("AI 部分关键结论未标注本地候选编号，属于模型推断，不可直接作为套项依据。")
     missing_sources = [item for item in unlocated_references if item["status"] != "invalid_reference"]
-    if missing_sources:
-        missing = "、".join(f"[{item['reference']}]" for item in missing_sources)
-        if evidence_located:
-            warnings.append(f"原书证据已定位 {evidence_located}/{evidence_total}；{missing} 尚未精确定位，需人工复核。")
-        else:
-            warnings.append(f"本回答引用的原书证据尚未精确定位：{missing}。")
+    source_review_reasons = list(dict.fromkeys(
+        str(reason).strip()
+        for proposal in (result or {}).get("proposals") or []
+        if isinstance(proposal, dict) and proposal.get("source_review_required")
+        for reason in proposal.get("source_review_reasons") or []
+        if str(reason).strip()
+    ))
+    source_review_required = bool(source_review_reasons)
+    source_review_note = (
+        "结构化候选可正常使用；本方案涉及换算、系数或重点条件，建议结合原书复核。"
+        if source_review_required else ""
+    )
     evidence_verified = bool(evidence_total and evidence_located == evidence_total)
+    catalog_verified = bool(references & known_references) and not unverified and not invalid_references
     return {
         "codes": statuses,
         "claims": claims,
@@ -215,6 +222,10 @@ def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> di
         "invalid_references": invalid_references,
         "warnings": warnings,
         "referenced": bool(references & known_references),
+        "catalog_verified": catalog_verified,
+        "source_review_required": source_review_required,
+        "source_review_reasons": source_review_reasons,
+        "source_review_note": source_review_note,
         "evidence": evidence,
         "located_references": located_references,
         "unlocated_references": unlocated_references,
@@ -222,4 +233,5 @@ def validate_ai_answer(ai_text: str, result: dict[str, Any] | None = None) -> di
         "evidence_total": evidence_total,
         "evidence_status": "verified" if evidence_verified else ("partial" if evidence_located else "unlocated"),
         "evidence_verified": evidence_verified,
+        "source_pages_optional": bool(missing_sources) and not source_review_required,
     }

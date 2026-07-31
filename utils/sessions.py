@@ -501,10 +501,17 @@ def export_session_markdown(session: dict[str, Any]) -> str:
                 except (FileNotFoundError, OSError):
                     validation = {}
             located = int(validation.get("evidence_located") or 0)
-            total = int(validation.get("evidence_total") or 0)
-            evidence_label = f"原书证据已定位 {located}/{total}" if total else "未引用可定位原书证据"
-            lines.extend(["", f"### AI 辅助解释（{evidence_label}）", "", str(attempt["response"])])
+            catalog_verified = bool(validation.get("catalog_verified") or validation.get("structured_valid"))
+            if validation.get("source_review_required"):
+                source_label = "本地结构化资料已校验，建议重点复核"
+            elif located:
+                source_label = "本地结构化资料已校验，原书页可查看"
+            elif catalog_verified:
+                source_label = "本地结构化资料已校验"
+            else:
+                source_label = "本地候选待确认"
+            lines.extend(["", f"### AI 辅助解释（{source_label}）", "", str(attempt["response"])])
     for warning in session.get("migration_warnings") or []:
         lines.extend(["", f"> 迁移提示：{warning}"])
-    lines.extend(["", "---", "本记录由山东定额助手导出；候选和 AI 解释不等于正式计价成果，须回到原书和项目依据复核。"])
+    lines.extend(["", "---", "本记录由山东定额助手导出；候选和 AI 解释不等于正式计价成果。普通套项以本地结构化资料为依据，换算、系数或争议项建议结合原书和项目条件复核。"])
     return "\n".join(lines)

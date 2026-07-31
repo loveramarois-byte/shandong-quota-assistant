@@ -29,6 +29,25 @@ class UncitedLineTests(unittest.TestCase):
     def test_cited_conclusion_is_not_flagged(self):
         self.assertEqual(find_uncited_lines("主选：1-2-9 人工挖沟槽坚土 [R3]"), [])
 
+    def test_missing_pdf_page_does_not_downgrade_structured_catalog_match(self):
+        result = {
+            "quota_edition": "2025", "standard_edition": "2024", "discipline": "building",
+            "bills": [], "links": [], "guidance": [],
+            "quotas": [{
+                "reference": "R1", "record_id": "quota:1:1", "code": "1-2-9",
+                "title": "人工挖沟槽", "unit": "10m3", "edition": "2025", "discipline": "building",
+                "data_basis": "structured_catalog", "alignment_status": "master_only",
+            }],
+            "proposals": [],
+        }
+
+        validation = validate_ai_answer("建议候选：1-2-9 人工挖沟槽 [R1]。", result)
+
+        self.assertTrue(validation["catalog_verified"])
+        self.assertTrue(validation["source_pages_optional"])
+        self.assertFalse(validation["evidence_verified"])
+        self.assertFalse(any("原书" in warning for warning in validation["warnings"]))
+
 
 @requires_authorized_catalog
 class ValidateAnswerTests(unittest.TestCase):
@@ -56,7 +75,7 @@ class ValidateAnswerTests(unittest.TestCase):
         validation = validate_ai_answer("主选：0-0-0 不存在的定额子目 [R1]。", self.result)
         self.assertIn("0-0-0", validation["unverified_codes"])
         self.assertTrue(validation["warnings"])
-        self.assertIn("本轮筛选口径内核验", validation["warnings"][0])
+        self.assertIn("本轮结构化资料中核验", validation["warnings"][0])
 
     def test_uncited_key_conclusion_adds_warning(self):
         validation = validate_ai_answer("## 主选\n建议直接套用某沟槽定额，深度应该差不多。", self.result)

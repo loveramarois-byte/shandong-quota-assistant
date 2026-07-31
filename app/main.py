@@ -166,7 +166,7 @@ class QuotaApp(ctk.CTk):
         threading.Thread(target=warm_search, name="catalog-prewarm", daemon=True).start()
         threading.Thread(target=self._load_library_stats, name="library-stats", daemon=True).start()
         self._poll_job = self.after(120, self._poll_events)
-        self.feed.add("assistant", "请描述工程内容、规格和施工条件。\n我会结合山东清单、定额和原书证据，直接给出套项结论。")
+        self.feed.add("assistant", "请描述工程内容、规格和施工条件。\n我会核对山东清单、定额和本地关联，直接给出套项结论。")
         if self.demo_mode:
             self.feed.add_warning("当前使用完全合成的演示资料，只用于体验流程，不可用于真实工程。")
         if not ai_connection_state(self.settings)[0]:
@@ -1128,7 +1128,7 @@ class QuotaApp(ctk.CTk):
                     self.tasks.finish(request_id, TaskPhase.LOCAL_READY)
                     if self._save_event_session(event_session, is_current=is_current) and is_current:
                         if is_foreground_turn:
-                            self._set_status("AI 分析完成 · 原书证据已校验")
+                            self._set_status("AI 分析完成 · 本地资料已校验")
                         self._last_ai_text = ai_text
                         panel = self._turn_panels.get(turn_id)
                         if panel is not None and validation.get("structured_valid"):

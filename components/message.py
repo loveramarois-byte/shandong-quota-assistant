@@ -211,7 +211,7 @@ class MessageBubble(ctk.CTkFrame):
 
 
 class AiAnswerCard(ctk.CTkFrame):
-    """Structured AI answer: model explanation separated from local evidence (P0-7)."""
+    """Structured AI answer with catalog validation and optional source-page actions."""
 
     def __init__(self, master, *, tokens: ThemeTokens, text: str, validation: dict | None = None, on_copy=None, **kwargs):
         self.tokens = tokens
@@ -291,19 +291,23 @@ class AiAnswerCard(ctk.CTkFrame):
                 self._warning_records.append((warning_title, warning_label))
         else:
             self.warning_frame = None
-        references = ai_references(self.text)
         self.footer = ctk.CTkFrame(self.shell, fg_color="transparent")
         self.footer.pack(fill="x", padx=18, pady=(4, 13))
         located = int(self.validation.get("evidence_located") or 0)
-        total = int(self.validation.get("evidence_total") or 0)
-        status = str(self.validation.get("evidence_status") or "unlocated")
-        if references and total:
-            reference_text = f"原书证据 {located}/{total} 已定位"
-        elif references:
-            reference_text = "本轮引用尚无可定位原书页"
+        catalog_verified = bool(self.validation.get("catalog_verified") or self.validation.get("structured_valid"))
+        if self.validation.get("source_review_required"):
+            reference_text = "本地结构化资料已校验 · 建议重点复核"
+            self.reference_tone = "warning"
+        elif located:
+            reference_text = "本地结构化资料已校验 · 原书页可查看"
+            self.reference_tone = "success"
+        elif catalog_verified:
+            reference_text = "本地结构化资料已校验"
+            self.reference_tone = "success"
         else:
-            reference_text = "未标注本地候选索引，不能直接作为套项依据"
-        reference_color = c.success if status == "verified" else c.warning
+            reference_text = "本地候选待确认"
+            self.reference_tone = "warning"
+        reference_color = getattr(c, self.reference_tone)
         self.reference_label = ctk.CTkLabel(self.footer, text=reference_text, text_color=reference_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
         self.reference_label.pack(anchor="w")
         self.evidence_actions = ctk.CTkFrame(self.footer, fg_color="transparent")
@@ -333,7 +337,7 @@ class AiAnswerCard(ctk.CTkFrame):
             self.evidence_buttons.append(button)
         if self.evidence_actions.winfo_children():
             self.evidence_actions.pack(fill="x")
-        self.footnote = ctk.CTkLabel(self.footer, text="模型负责解释，最终结论以本地资料、原书和项目条件为准。", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=self._wraplength)
+        self.footnote = ctk.CTkLabel(self.footer, text="普通套项以本地结构化资料为依据；换算、系数或争议项建议结合原书和项目条件复核。", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=self._wraplength)
         self.footnote.pack(fill="x", pady=(4, 0))
 
     def _copy(self) -> None:
@@ -370,8 +374,7 @@ class AiAnswerCard(ctk.CTkFrame):
             divider.configure(fg_color=c.border)
         self.footer.configure(fg_color="transparent")
         self.evidence_actions.configure(fg_color="transparent")
-        status = str(self.validation.get("evidence_status") or "unlocated")
-        self.reference_label.configure(text_color=c.success if status == "verified" else c.warning, font=tokens.font(tokens.typography.caption, "semibold"))
+        self.reference_label.configure(text_color=getattr(c, self.reference_tone), font=tokens.font(tokens.typography.caption, "semibold"))
         for row in self.evidence_actions.winfo_children():
             row.configure(fg_color="transparent")
         for button in self.evidence_buttons:
@@ -408,7 +411,7 @@ class AiThinkingCard(ctk.CTkFrame):
         copy.pack(side="left", fill="x", expand=True)
         self.heading = ctk.CTkLabel(copy, text="AI 正在分析", text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"), anchor="w")
         self.heading.pack(anchor="w")
-        self.detail = ctk.CTkLabel(copy, text="正在核对清单、定额、关联项和原书证据", text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
+        self.detail = ctk.CTkLabel(copy, text="正在核对清单、定额和本地关联", text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
         self.detail.pack(anchor="w", pady=(3, 0))
         self.pulse.start()
 

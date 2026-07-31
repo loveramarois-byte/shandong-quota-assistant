@@ -28,7 +28,7 @@ _ROLE_LABELS = {
     "alternative": "备选",
 }
 _STATUS_LABELS = {
-    "ready_for_review": "待复核",
+    "ready_for_review": "可确认",
     "needs_clarification": "待补条件",
     "multiple_valid_options": "有多个方案",
     "no_reliable_match": "暂无可靠组合",
@@ -178,7 +178,10 @@ def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: 
     if main and source_actions & {"涂刷", "抹灰", "保温"} and target_objects & {"混凝土"}:
         conflicts.append("施工动作冲突：面层或保温做法不得套用混凝土实体子目")
     material_required = source_materials - {"涂料" if "涂饰" in source_objects else ""}
-    if main and material_required and not (material_required & target_materials):
+    # Bill names are often intentionally generic (for example, “基础垫层”);
+    # material compatibility is enforced again on the linked quota item.
+    is_bill = str(candidate.get("type") or candidate.get("entity_type") or "") == "bill_item"
+    if main and not is_bill and material_required and not (material_required & target_materials):
         conflicts.append("材料不一致：候选未体现“" + "/".join(sorted(material_required)) + "”")
     if main and any(term in target for term in _NON_MAIN_ACTION_TERMS) and not any(term in source for term in _NON_MAIN_ACTION_TERMS):
         conflicts.append("候选为试验、拆除或保护工序，不是施工主体")
@@ -194,7 +197,12 @@ def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: 
 
 
 def proposal_confirmable(proposal: dict[str, Any]) -> bool:
-    """Single confirmation/export gate shared by pipeline, AI and UI."""
+    """Single confirmation/export gate shared by pipeline, AI and UI.
+
+    A locally whitelisted bill-to-quota relation is sufficient for normal use.
+    PDF page linkage remains optional supporting evidence and must never block a
+    structurally valid proposal from confirmation or export.
+    """
     lines = [value for value in proposal.get("quota_lines") or [] if isinstance(value, dict)]
     main_lines = [value for value in lines if value.get("role") == "main"]
     return bool(
@@ -205,9 +213,16 @@ def proposal_confirmable(proposal: dict[str, Any]) -> bool:
         and str(main_lines[0].get("record_id") or "").strip()
         and not (proposal.get("hard_conflicts") or [])
         and not (proposal.get("unresolved_question_ids") or [])
-        and bool(proposal.get("evidence_located"))
-        and bool(proposal.get("evidence_pages") or proposal.get("evidence_refs") or main_lines[0].get("evidence_refs"))
     )
+
+
+def _source_status(item: dict[str, Any]) -> str:
+    alignment = str(item.get("alignment_status") or (item.get("metadata") or {}).get("alignment") or "")
+    if alignment == "master_only":
+        return "structured_only"
+    if alignment == "master_pdf" or (item.get("source_path") and item.get("pdf_page")):
+        return "source_page_linked"
+    return "structured_only"
 
 
 def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
@@ -228,7 +243,9 @@ def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
         score += 72
         semantic_hit = True
     if work_item.object and _normalized_trade_text(work_item.object) in title:
-        score += 100
+        # The construction object must outrank a generic material-family hit;
+        # otherwise “混凝土垫层” can drift to a concrete rebar bill.
+        score += 150
         semantic_hit = True
     if work_item.action and _normalized_trade_text(work_item.action) in title:
         score += 70
@@ -494,6 +511,7 @@ def _assemble_proposal(
             reason="；".join(str(value) for value in reasons[:2]),
             evidence_refs=evidence,
             source_link_record_id=str(link.get("record_id") or ""),
+            source_status=_source_status(link),
         ))
 
     review_candidates: list[QuotaSelection] = []
@@ -509,6 +527,7 @@ def _assemble_proposal(
                 reason="候选已由清单关联召回，但未通过主方案组合门槛",
                 evidence_refs=tuple(value for value in (references.get(str(link.get("record_id") or "")),) if value),
                 source_link_record_id=str(link.get("record_id") or ""),
+                source_status=_source_status(link),
             ))
 
     status = "ready_for_review"
@@ -541,6 +560,14 @@ def _assemble_proposal(
                 f"清单按{bill.get('unit') or '-'}、定额按{selected_main.get('unit') or '-'}计量，"
                 f"已按{thickness:g}mm厚度换算，定额系数为{factor:g}。"
             )
+    source_review_reasons: list[str] = []
+    main_line = next((value for value in lines if value.role == "main"), None)
+    if main_line and main_line.source_status == "structured_only":
+        source_review_reasons.append("主定额暂无对应原书页")
+    if assumptions:
+        source_review_reasons.append("方案包含假设或换算")
+    if any(value.factor is not None and abs(value.factor - 1.0) > 1e-9 for value in lines):
+        source_review_reasons.append("方案包含非 1.0 系数")
     return PricingProposal(
         work_item_id=work_item.id,
         bill_record_id=bill_id,
@@ -555,6 +582,9 @@ def _assemble_proposal(
         evidence_refs=tuple(dict.fromkeys(value for value in evidence_refs if value)),
         evidence_pages=evidence_pages,
         evidence_located=evidence_located,
+        data_basis="structured_catalog" if bill_id and lines else "",
+        source_review_required=bool(source_review_reasons),
+        source_review_reasons=tuple(dict.fromkeys(source_review_reasons)),
         match_level=match_level,
         status=status,
     ), questions
@@ -792,9 +822,9 @@ def validate_pricing_result(result: dict[str, Any]) -> dict[str, Any]:
         if proposal.get("quota_lines") and main_count != 1:
             errors.append(f"{work_item_id} 的定额组合必须且只能有一个主项")
         if status == "ready_for_review" and (not bill_id or not proposal.get("quota_lines")):
-            errors.append(f"{work_item_id} 缺少通过复核所需的清单或主定额")
+            errors.append(f"{work_item_id} 缺少进入可确认状态所需的清单或主定额")
         if status == "ready_for_review" and proposal.get("hard_conflicts"):
-            errors.append(f"{work_item_id} 存在语义硬冲突，不得进入可复核状态")
+            errors.append(f"{work_item_id} 存在语义硬冲突，不得进入可确认状态")
         if status == "needs_clarification" and not proposal.get("unresolved_question_ids"):
             warnings.append(f"{work_item_id} 标记待补条件，但没有结构化问题")
     return {"valid": not errors, "errors": list(dict.fromkeys(errors)), "warnings": list(dict.fromkeys(warnings))}

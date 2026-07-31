@@ -16,11 +16,11 @@ from utils.svg import svg_image
 from .button import DSButton, IconButton
 
 DISCLAIMER = (
-    "AI 结论须由专业造价人员结合当地现行定额、原书和项目实际情况复核。"
-    "编码、单位、换算、工作内容及最终套项，请以现行标准、合同约定、现场条件及原书为准；"
+    "普通套项以本地结构化山东清单定额库为依据。"
+    "涉及换算、系数、争议或未挂页记录时，建议结合现行标准、合同约定、现场条件及原书重点复核；"
     "无本地资料引用的结论不得直接用于报量结算。"
 )
-UI_DISCLAIMER = "候选来自本地资料库；正式套项请结合原书、合同约定和现场条件复核。"
+UI_DISCLAIMER = "普通套项以本地结构化资料为依据；换算、系数或争议项建议重点复核。"
 
 
 def _unit(item: dict) -> str:
@@ -122,7 +122,7 @@ def proposal_decision_summary(result: dict, proposals: list[dict] | None = None)
             if quota:
                 return f"建议清单 {bill}，主定额 {quota}。"
         if bill:
-            return f"建议清单 {bill}，主定额仍需复核。"
+            return f"建议清单 {bill}，主定额仍待确定。"
     return "本地资料暂未形成可靠的清单定额组合。"
 
 
@@ -321,8 +321,8 @@ class CandidateRow(ctk.CTkFrame):
         elif resolved_source:
             source_detail = f"{_source_name(str(resolved_source))} · 页码待补"
         else:
-            source_detail = "原书页待补"
-        details.append(("原书依据", f"{edition_text} · {source_detail}"))
+            source_detail = "结构化数据已入库 · 原书页可选复核"
+        details.append(("资料来源", f"{edition_text} · {source_detail}"))
         for name, value in details:
             value = _display_text(value)
             if not value:
@@ -558,7 +558,7 @@ class CandidateSection(ctk.CTkFrame):
 
 
 _PROPOSAL_STATUS = {
-    "ready_for_review": ("可复核", "success"),
+    "ready_for_review": ("可确认", "success"),
     "needs_clarification": ("待补条件", "warning"),
     "multiple_valid_options": ("请选择方案", "warning"),
     "no_reliable_match": ("暂无可靠组合", "danger"),
@@ -624,14 +624,10 @@ class ProposalCard(ctk.CTkFrame):
         header.grid_columnconfigure(0, weight=1)
         self.item_title = self._label(header, text=str(self.work_item.get("source_span") or "未识别施工事项"), text_color=c.text, font=self.tokens.font(self.tokens.typography.body, "semibold"), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text", _size=self.tokens.typography.body, _weight="semibold")
         self.item_title.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        status_text, tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("待复核", "warning"))
+        status_text, tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("待确认", "warning"))
         tone_color = getattr(c, tone)
         self.status_label = self._label(header, text=status_text, text_color=tone_color, fg_color=getattr(c, f"{tone}_soft"), corner_radius=self.tokens.radius_xs, width=72, height=24, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="center", _tone=tone, _size=self.tokens.typography.caption, _weight="semibold")
         ready = proposal_confirmable(self.proposal)
-        if self.proposal.get("status") == "ready_for_review" and not ready:
-            status_text, tone = "证据待定位", "warning"
-            tone_color = getattr(c, tone)
-            self.status_label.configure(text=status_text, text_color=tone_color)
         if not ready:
             self.status_label.grid(row=0, column=1, sticky="e", padx=(0, 8))
         self.confirm_button = DSButton(header, tokens=self.tokens, text="已确认" if self.proposal.get("confirmed") else "确认", variant="primary", width=68, height=30, command=self._toggle_confirm)
@@ -671,6 +667,30 @@ class ProposalCard(ctk.CTkFrame):
                 review_caption.pack(fill="x", pady=(4, 5))
                 for line in review_candidates[:3]:
                     self._selection_row("候选", str(line.get("code") or "未确认"), str(line.get("title") or "未命名定额"), str(line.get("unit") or ""), "warning", factor=line.get("factor"))
+
+        if self.proposal.get("data_basis") == "structured_catalog":
+            source_review_required = bool(self.proposal.get("source_review_required"))
+            if source_review_required:
+                source_text, source_tone = "结构化定额库已匹配 · 建议重点复核", "warning"
+            elif self.proposal.get("evidence_pages"):
+                source_text, source_tone = "结构化定额库已匹配 · 原书页可查看", "success"
+            else:
+                source_text, source_tone = "结构化定额库已匹配 · 原书页可选复核", "success"
+            self.source_label = self._label(
+                self,
+                text=source_text,
+                text_color=getattr(c, source_tone),
+                font=self.tokens.font(self.tokens.typography.caption, "semibold"),
+                anchor="w",
+                justify="left",
+                wraplength=self._wrap_width,
+                _tone=source_tone,
+                _size=self.tokens.typography.caption,
+                _weight="semibold",
+            )
+            self.source_label.pack(fill="x", padx=16, pady=(5, 3))
+        else:
+            self.source_label = None
 
         assumptions = [str(value).strip() for value in self.proposal.get("assumptions") or [] if str(value).strip()]
         if assumptions:
@@ -945,15 +965,29 @@ class ResultPanel(ctk.CTkFrame):
         self._analysis_styles.append((summary_label, "text", self.tokens.typography.body, "semibold"))
 
         located = int(validation.get("evidence_located") or 0)
-        total = int(validation.get("evidence_total") or 0)
-        status = str(validation.get("evidence_status") or "unlocated")
-        evidence_text = f"原书证据 {located}/{total} 已定位" if total else "原书依据待展开复核"
+        catalog_verified = bool(
+            validation.get("catalog_verified")
+            or validation.get("structured_valid")
+            or any(value.get("data_basis") == "structured_catalog" for value in self.proposals)
+        )
+        source_review_required = bool(
+            validation.get("source_review_required")
+            or any(value.get("source_review_required") for value in self.proposals)
+        )
+        if source_review_required:
+            evidence_text, evidence_tone = "本地结构化资料已校验 · 建议重点复核", "warning"
+        elif located:
+            evidence_text, evidence_tone = "本地结构化资料已校验 · 原书页可查看", "success"
+        elif catalog_verified:
+            evidence_text, evidence_tone = "本地结构化资料已校验", "success"
+        else:
+            evidence_text, evidence_tone = "本地候选待确认", "warning"
         footer = ctk.CTkFrame(self.analysis_frame, fg_color="transparent")
         footer.pack(fill="x", pady=(0, 8))
-        evidence_label = ctk.CTkLabel(footer, text=evidence_text, text_color=c.success if status == "verified" else c.warning, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
+        evidence_label = ctk.CTkLabel(footer, text=evidence_text, text_color=getattr(c, evidence_tone), font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w")
         evidence_label.pack(side="left")
         self._analysis_labels.append(evidence_label)
-        self._analysis_styles.append((evidence_label, "success" if status == "verified" else "warning", self.tokens.typography.caption, "semibold"))
+        self._analysis_styles.append((evidence_label, evidence_tone, self.tokens.typography.caption, "semibold"))
 
         evidence = [value for value in validation.get("evidence") or [] if value.get("located")]
         warnings = [str(value) for value in validation.get("warnings") or [] if str(value).strip()]
@@ -1209,10 +1243,10 @@ class ResultPanel(ctk.CTkFrame):
         match_level = self.result.get("match_level")
         status_labels = {
             "exact_match": "精确编码命中",
-            "candidate_review": "候选可复核",
+            "candidate_review": "候选可查看",
             "needs_more_conditions": "需补条件",
             "no_reliable_candidate": "无可靠候选",
-            "ready_for_review": "方案待复核",
+            "ready_for_review": "方案可确认",
             "needs_clarification": "方案需补条件",
             "multiple_valid_options": "多个有效方案",
             "no_reliable_match": "暂无可靠组合",

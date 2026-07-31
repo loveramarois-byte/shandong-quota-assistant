@@ -61,7 +61,25 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(len(proposal_csv(proposal_result)), 3)
         self.assertEqual(len(confirmed_proposal_payload(proposal_result)["proposals"]), 1)
         self.assertIn("假设/换算", proposal_csv(proposal_result)[0])
-        self.assertIn("证据", proposal_csv(proposal_result)[0])
+        self.assertIn("资料依据", proposal_csv(proposal_result)[0])
+
+    def test_confirmed_structured_proposal_exports_without_pdf_evidence(self):
+        result = {
+            "analysis_version": "1", "query": "测试", "work_items": [{"id": "W1", "source_span": "测试事项"}],
+            "proposals": [{
+                "work_item_id": "W1", "confirmed": True, "status": "ready_for_review",
+                "bill_record_id": "bill:1", "bill_code": "0101", "bill_title": "测试清单", "bill_unit": "m2",
+                "quota_lines": [{"record_id": "quota:1", "role": "main", "code": "1-1", "title": "测试定额", "unit": "10m2"}],
+                "evidence_refs": [], "evidence_pages": [], "evidence_located": False,
+                "unresolved_question_ids": [], "hard_conflicts": [], "data_basis": "structured_catalog",
+            }],
+        }
+
+        rows = proposal_csv(result)
+
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all("结构化定额库已匹配" in row[-1] for row in rows[1:]))
+        self.assertEqual(len(confirmed_proposal_payload(result)["proposals"]), 1)
 
 
 if __name__ == "__main__":

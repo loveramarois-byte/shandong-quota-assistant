@@ -123,12 +123,16 @@ def _row_to_item(row: sqlite3.Row, score: float) -> dict:
         metadata = json.loads(row["metadata_json"] or "{}")
     except (TypeError, json.JSONDecodeError):
         metadata = {}
-    return enrich_item({
+    item = enrich_item({
         "chunk_id": row["chunk_id"], "record_id": row["chunk_id"], "entity_type": row["chunk_type"],
         "type": row["chunk_type"], "edition": row["edition"], "discipline": row["discipline"],
         "code": row["code"], "title": row["title"] or row["code"] or "", "source_path": row["source_path"],
         "pdf_page": row["pdf_page"], "text": row["text"] or "", "metadata": metadata, "score": round(score, 3),
     })
+    item["data_basis"] = "structured_catalog"
+    if metadata.get("alignment"):
+        item["alignment_status"] = str(metadata["alignment"])
+    return item
 
 
 def _rank_rows(rows: Iterable[sqlite3.Row], terms: list[str], query: str, limit: int) -> list[dict]:
@@ -397,7 +401,7 @@ def _load_links(
         rows = connection.execute(
             "SELECT l.link_edition,l.link_id,l.bill_item_id,l.quota_kind_id,l.quota_code,l.quota_title,"
             "l.unit AS link_unit,q.unit AS quota_unit,l.factor,l.condition_text,"
-            "q.edition,q.discipline,q.code,q.name,q.pdf_page,q.source_path,q.ordinal "
+            "q.edition,q.discipline,q.code,q.name,q.pdf_page,q.source_path,q.ordinal,q.alignment_status,q.resource_count "
             "FROM bill_quota_links l LEFT JOIN quota_items q "
             "ON q.quota_kind_id=l.quota_kind_id AND q.code=l.quota_code "
             f"WHERE {' AND '.join(filters)} ORDER BY l.factor,l.link_id LIMIT ?",
@@ -423,6 +427,9 @@ def _load_links(
                 "condition_text": row["condition_text"],
                 "pdf_page": row["pdf_page"],
                 "source_path": row["source_path"],
+                "alignment_status": row["alignment_status"],
+                "resource_count": row["resource_count"],
+                "data_basis": "structured_catalog",
                 "bill_record_id": bill.get("record_id") or bill.get("chunk_id"),
                 "quota_record_id": f"quota:{row['quota_kind_id']}:{row['ordinal']}" if row["ordinal"] is not None else None,
                 "bill_code": bill["code"],

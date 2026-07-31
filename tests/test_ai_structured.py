@@ -54,7 +54,7 @@ class StructuredAiTests(unittest.TestCase):
         result = {
             "discipline": "building", "quota_edition": "2025", "standard_edition": "2024",
             "work_items": [{"id": "W1"}], "clarification_questions": [],
-            "bills": [{"record_id": "bill:2024:1", "discipline": "building", "edition": "2024", "unit": "m2"}],
+            "bills": [{"record_id": "bill:2024:1", "code": "010101001-000", "title": "测试清单", "discipline": "building", "edition": "2024", "unit": "m2"}],
             "quotas": [],
             "links": [{
                 "record_id": "link:2024:1", "quota_record_id": "quota:1:1", "bill_record_id": "bill:2024:1",
@@ -115,15 +115,15 @@ class StructuredAiTests(unittest.TestCase):
         result = {
             "discipline": "building", "quota_edition": "2025", "standard_edition": "2024",
             "work_items": [{"id": "W1"}], "clarification_questions": [],
-            "bills": [{"record_id": "bill:2024:1", "discipline": "building", "edition": "2024", "unit": "m2"}],
+            "bills": [{"record_id": "bill:2024:1", "code": "010101001-000", "title": "测试清单", "discipline": "building", "edition": "2024", "unit": "m2"}],
             "quotas": [],
             "links": [{
                 "record_id": "link:2024:1", "quota_record_id": "quota:1:1", "bill_record_id": "bill:2024:1",
-                "discipline": "building", "quota_edition": "2025", "standard_edition": "2024", "unit": "m2",
+                "code": "1-1-1", "title": "测试定额", "discipline": "building", "quota_edition": "2025", "standard_edition": "2024", "unit": "m2",
             }],
             "proposals": [{
                 "work_item_id": "W1", "bill_record_id": "bill:2024:1",
-                "quota_lines": [{"record_id": "quota:1:1", "role": "main"}], "status": "ready_for_review",
+                "quota_lines": [{"record_id": "quota:1:1", "code": "1-1-1", "title": "测试定额", "unit": "m2", "role": "main"}], "status": "ready_for_review",
             }],
         }
         payload = {
@@ -138,6 +138,40 @@ class StructuredAiTests(unittest.TestCase):
 
         self.assertFalse(validation["valid"])
         self.assertTrue(any("不得随机降级" in value for value in validation["errors"]))
+
+    def test_ai_cannot_overwrite_local_source_status(self):
+        result = {
+            "discipline": "building", "quota_edition": "2025", "standard_edition": "2024",
+            "work_items": [{"id": "W1"}], "clarification_questions": [],
+            "bills": [{"record_id": "bill:2024:1", "code": "010101001-000", "title": "测试清单", "discipline": "building", "edition": "2024", "unit": "m2"}],
+            "quotas": [],
+            "links": [{
+                "record_id": "link:2024:1", "quota_record_id": "quota:1:1", "bill_record_id": "bill:2024:1",
+                "code": "1-1-1", "title": "测试定额", "discipline": "building", "quota_edition": "2025", "standard_edition": "2024", "unit": "m2",
+            }],
+            "proposals": [{
+                "work_item_id": "W1", "bill_record_id": "bill:2024:1",
+                "quota_lines": [{"record_id": "quota:1:1", "code": "1-1-1", "title": "测试定额", "unit": "m2", "role": "main"}], "status": "ready_for_review",
+                "data_basis": "structured_catalog", "source_review_required": True,
+                "source_review_reasons": ["主定额暂无对应原书页"],
+            }],
+        }
+        payload = {
+            "analysis_version": "1", "work_items": [{"id": "W1"}], "clarification_questions": [],
+            "proposals": [{
+                "work_item_id": "W1", "bill_record_id": "bill:2024:1",
+                "quota_lines": [{"record_id": "quota:1:1", "code": "1-1-1", "title": "测试定额", "unit": "m2", "role": "main"}], "status": "ready_for_review",
+                "data_basis": "model_claim", "source_review_required": False, "source_review_reasons": [],
+            }],
+        }
+
+        validation = validate_structured_ai_response(payload, result)
+
+        self.assertTrue(validation["valid"])
+        proposal = validation["structured"]["proposals"][0]
+        self.assertEqual(proposal["data_basis"], "structured_catalog")
+        self.assertTrue(proposal["source_review_required"])
+        self.assertEqual(proposal["source_review_reasons"], ["主定额暂无对应原书页"])
 
 
 if __name__ == "__main__":
