@@ -1,5 +1,5 @@
 #define MyAppName "山东定额助手"
-#define MyAppVersion "0.8.2"
+#define MyAppVersion "0.8.3"
 #define MyAppPublisher "山东定额助手"
 #define MyAppExeName "山东定额助手.exe"
 #ifndef BuildSourceDir
@@ -17,7 +17,7 @@ AppId={{DBCE01BE-5A4E-49AE-98B6-831B2580C70F}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.8.2.0
+VersionInfoVersion=0.8.3.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=山东清单定额检索与 AI 辅助分析安装程序
 VersionInfoProductName={#MyAppName}

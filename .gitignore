@@ -20,6 +20,7 @@ settings.json
 build/
 dist/
 release/
+work/
 install-test-*/
 *.spec
 !ShandongQuotaAssistant.spec

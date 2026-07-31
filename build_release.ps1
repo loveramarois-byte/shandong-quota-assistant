@@ -8,7 +8,8 @@ param(
     [string]$SigningCertificateThumbprint,
     [switch]$PreflightOnly,
     [switch]$SkipArchive,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$IncludeEvidenceSources
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +41,7 @@ $releaseRoot = if ($InternalEvaluation) {
 $bundleRoot = Join-Path $releaseRoot $bundleName
 $requiresSigning = -not ($InternalEvaluation -or $AuthorizedInternalDistribution -or $AuthorizedPublicDistribution)
 $signPublicArtifacts = $AuthorizedPublicDistribution -and -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)
+$useCompactCatalog = $AuthorizedPublicDistribution -and -not $IncludeEvidenceSources
 
 function Get-FileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
@@ -188,19 +190,31 @@ $pyinstallerArgs += (Join-Path $projectRoot "run.py")
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 构建失败" }
 
 Move-Item -LiteralPath (Join-Path $stageRoot "山东定额助手") -Destination $bundleRoot
+# jieba ships optional POS/analyse/LAC data that this app never imports. Keep
+# the dictionary used by query_terms, but remove the unused model payload from
+# public bundles so the self-contained installer stays within hosting limits.
+foreach ($optionalJiebaData in @("analyse", "lac_small", "posseg")) {
+    $optionalPath = Join-Path $bundleRoot ("_internal\jieba\" + $optionalJiebaData)
+    if (Test-Path -LiteralPath $optionalPath) { Remove-Item -LiteralPath $optionalPath -Recurse -Force }
+}
 New-Item -ItemType Directory -Path (Join-Path $bundleRoot "data") -Force | Out-Null
 $stagedDatabase = Join-Path $bundleRoot "data\shandong_quota.sqlite"
 # A release copy must be a new file. Hard links make a shipped database mutate
 # when the working catalog changes, so they are categorically forbidden here.
-Copy-Item -LiteralPath $database -Destination $stagedDatabase
-if ((Get-FileSha256 $stagedDatabase) -ne (Get-FileSha256 $database)) { throw "staging 数据库复制校验失败" }
+if ($useCompactCatalog) {
+    & $python (Join-Path $projectRoot "tools\compact_catalog.py") $database $stagedDatabase
+    if ($LASTEXITCODE -ne 0) { throw "紧凑资料库构建失败" }
+} else {
+    Copy-Item -LiteralPath $database -Destination $stagedDatabase
+}
+if (-not $useCompactCatalog -and (Get-FileSha256 $stagedDatabase) -ne (Get-FileSha256 $database)) { throw "staging 数据库复制校验失败" }
 if ((Get-HardLinkCount $stagedDatabase) -ne 1) { throw "staging 数据库不是独立文件，拒绝构建" }
 New-Item -ItemType Directory -Path (Join-Path $bundleRoot "manifests") -Force | Out-Null
 Copy-Item -LiteralPath $catalogManifestPath -Destination (Join-Path $bundleRoot "manifests\catalog-baseline.json")
 Copy-Item -LiteralPath (Join-Path $projectRoot "使用说明.txt") -Destination $bundleRoot
 
 $evidenceSourceCount = 0
-if ($AuthorizedInternalDistribution -or $AuthorizedPublicDistribution) {
+if ($IncludeEvidenceSources -and ($AuthorizedInternalDistribution -or $AuthorizedPublicDistribution)) {
     $sourceListPath = Join-Path $workRoot "evidence-sources.json"
     & $python (Join-Path $projectRoot "tools\write_evidence_sources.py") $database $sourceListPath
     # Windows PowerShell 5 can wrap a JSON array as one nested array when @(...)
@@ -240,13 +254,15 @@ $portableExe = Join-Path $bundleRoot "山东定额助手.exe"
 if (-not (Test-Path -LiteralPath $portableExe)) { throw "便携版 EXE 未生成" }
 if ($requiresSigning -or $signPublicArtifacts) { Invoke-CodeSigning $portableExe }
 
+$evidenceLine = if ($IncludeEvidenceSources) { "此构建同时包含已登记原书证据，可在候选和 AI 引用中打开对应 PDF 页。" } else { "此紧凑构建不携带 PDF 原书，原书只作为有争议项目的外部复核资料。" }
 $releaseNote = @"
 山东定额助手 v$($catalogManifest.app_version)
 
 启动：双击“山东定额助手.exe”。
 本地检索只可用于已获授权的资料范围内的受控核验。
 AI 辅助解释默认关闭；启用前须确认施工描述和本地候选摘要的发送权限。
-完整安装包包含已登记资料库与原书证据，可在候选和 AI 引用中打开对应 PDF 页。
+结构化资料库已内置，普通套项不需要另装 PDF。
+$evidenceLine
 "@
 Set-Content -LiteralPath (Join-Path $bundleRoot "发布说明.txt") -Value $releaseNote -Encoding UTF8
 if ($InternalEvaluation) {
@@ -255,7 +271,8 @@ if ($InternalEvaluation) {
     Set-Content -LiteralPath (Join-Path $bundleRoot "内部授权与签名说明.txt") -Value "授权编号：$DistributionAuthorizationId`r`n授权范围：仅限内部同事使用。`r`n此安装包未进行 Windows 代码签名，首次运行可能显示未知发布者提示。" -Encoding UTF8
 } elseif ($AuthorizedPublicDistribution) {
     $signatureNote = if ($signPublicArtifacts) { "安装程序和主程序已进行 Windows 代码签名。" } else { "此发行版未进行 Windows 代码签名，首次运行可能显示未知发布者提示。" }
-    Set-Content -LiteralPath (Join-Path $bundleRoot "完整发行版说明.txt") -Value "授权编号：$DistributionAuthorizationId`r`n资料范围：山东 2016/2025 定额、2013/2024 清单及已登记原书证据。`r`n$signatureNote" -Encoding UTF8
+    $dataNote = if ($IncludeEvidenceSources) { "资料范围：山东 2016/2025 定额、2013/2024 清单及已登记原书证据。" } else { "资料范围：山东 2016/2025 定额、2013/2024 清单、清单定额关联和人材机结构化资料；PDF 原书不随紧凑包分发。" }
+    Set-Content -LiteralPath (Join-Path $bundleRoot "完整发行版说明.txt") -Value "授权编号：$DistributionAuthorizationId`r`n$dataNote`r`n$signatureNote" -Encoding UTF8
 }
 
 if (-not $SkipArchive) {
@@ -305,6 +322,8 @@ $releaseManifest = [ordered]@{
         schema_version = [int]$catalogManifest.catalog_schema_version
         database_sha256 = Get-FileSha256 $stagedDatabase
         source_database_sha256 = Get-FileSha256 $database
+        compact_runtime_catalog = $useCompactCatalog
+        evidence_source_files_bundled = $evidenceSourceCount
         hardlinks_forbidden = $true
         evidence_source_files = $evidenceSourceCount
     }

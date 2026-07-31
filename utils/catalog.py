@@ -39,11 +39,13 @@ def validate_catalog_schema(connection: sqlite3.Connection) -> None:
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
     if version != CATALOG_SCHEMA_VERSION:
         raise RuntimeError(f"资料库 schema 不兼容：需要 {CATALOG_SCHEMA_VERSION}，实际 {version}")
-    required_tables = {"quota_items", "bill_items", "bill_quota_links", "chunks", "chunks_fts"}
+    # The public compact catalogue deliberately omits the multi-gigabyte FTS5
+    # index.  LIKE fallback is bounded by the structured scope/title index.
+    required_tables = {"quota_items", "bill_items", "bill_quota_links", "chunks"}
     present = {
         str(row[0])
         for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name IN (?,?,?,?,?)",
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name IN (?,?,?,?)",
             tuple(sorted(required_tables)),
         )
     }
@@ -351,7 +353,7 @@ def _search_chunks(connection: sqlite3.Connection, query: str, *, edition: str |
         return []
     if os.environ.get("SEARCH_BACKEND", "fts").lower() != "like":
         fts_rows = _search_chunks_fts(connection, query, edition=edition, discipline=discipline, chunk_types=chunk_types, limit=limit, title_only=title_only)
-        if fts_rows or (title_only and fts_rows is not None):
+        if fts_rows:
             return fts_rows
     common = ["c.chunk_type IN (" + ",".join("?" for _ in chunk_types) + ")"]
     params: list[object] = list(chunk_types)
@@ -363,7 +365,19 @@ def _search_chunks(connection: sqlite3.Connection, query: str, *, edition: str |
         params.append(discipline)
     fields = "c.chunk_id,c.chunk_type,c.edition,c.discipline,c.code,c.title,c.source_path,c.pdf_page,c.text,c.metadata_json"
     titles = ["c.title LIKE ?" for _ in terms]
-    title_rows = list(connection.execute(f"SELECT {fields} FROM chunks c WHERE {' AND '.join(common)} AND ({' OR '.join(titles)}) LIMIT ?", params + [f"%{term}%" for term in terms] + [max(limit * 8, 40)]))
+    normalized_phrase = re.sub(r"\s+", "", normalize_query(query))
+    recall_score = ["CASE WHEN REPLACE(c.title,' ','') LIKE ? THEN 100 ELSE 0 END"]
+    recall_score.extend("CASE WHEN c.title LIKE ? THEN 1 ELSE 0 END" for _ in terms)
+    title_values = [f"%{term}%" for term in terms]
+    title_rows = list(connection.execute(
+        f"SELECT {fields}, ({' + '.join(recall_score)}) AS recall_score "
+        f"FROM chunks c WHERE {' AND '.join(common)} AND ({' OR '.join(titles)}) "
+        "ORDER BY recall_score DESC, LENGTH(c.title), c.chunk_id LIMIT ?",
+        [f"%{normalized_phrase}%", *title_values]
+        + params
+        + title_values
+        + [max(limit * 40, 320)],
+    ))
     if title_only or len(title_rows) >= limit:
         return _rank_rows(title_rows, terms, query, limit)
     clauses = ["(c.title LIKE ? OR c.text LIKE ? OR c.code LIKE ?)" for _ in terms]
