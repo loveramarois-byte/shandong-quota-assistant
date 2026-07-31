@@ -41,7 +41,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("Get-HardLinkCount $stagedDatabase", self.script)
 
     def test_release_version_is_consistent_across_runtime_and_packaging(self):
-        self.assertEqual(APP_VERSION, "0.8.0")
+        self.assertEqual(APP_VERSION, "0.8.1")
         self.assertEqual(self.catalog_manifest["app_version"], APP_VERSION)
         installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
         version_info = (PROJECT_ROOT / "packaging" / "windows_version_info.txt").read_text(encoding="utf-8-sig")
@@ -91,6 +91,22 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("SolidCompression=yes", installer)
         self.assertIn("DiskSpanning=no", installer)
         self.assertNotIn("DiskSliceSize=", installer)
+
+    def test_installer_is_one_click_for_regular_users(self):
+        installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
+        for directive in (
+            "DisableWelcomePage=yes",
+            "DisableDirPage=yes",
+            "DisableProgramGroupPage=yes",
+            "DisableReadyPage=no",
+            "DisableFinishedPage=yes",
+            "PrivilegesRequired=lowest",
+            "ButtonInstall=一键安装(&I)",
+        ):
+            with self.subTest(directive=directive):
+                self.assertIn(directive, installer)
+        self.assertIn('Name: "{autodesktop}\\{#MyAppName}"', installer)
+        self.assertIn('Flags: nowait postinstall skipifsilent', installer)
 
     def test_internal_build_is_separated_from_release_directory(self):
         self.assertIn("build\\internal-evaluation", self.script)
