@@ -51,7 +51,8 @@ class ExportTests(unittest.TestCase):
             "proposals": [{
                 "work_item_id": "W1", "confirmed": False, "status": "ready_for_review",
                 "bill_record_id": "bill:1", "bill_code": "0101", "bill_title": "测试清单", "bill_unit": "m2",
-                "quota_lines": [{"role": "main", "code": "1-1", "title": "测试定额", "unit": "10m2"}],
+                "quota_lines": [{"record_id": "quota:1", "role": "main", "code": "1-1", "title": "测试定额", "unit": "10m2", "evidence_refs": ["R2"]}],
+                "evidence_refs": ["R1"], "evidence_pages": ["清单第1页", "定额第2页"], "evidence_located": True, "unresolved_question_ids": [], "hard_conflicts": [],
             }],
         }
         self.assertEqual(len(proposal_csv(proposal_result)), 1)
@@ -59,6 +60,8 @@ class ExportTests(unittest.TestCase):
         proposal_result["proposals"][0]["confirmed"] = True
         self.assertEqual(len(proposal_csv(proposal_result)), 3)
         self.assertEqual(len(confirmed_proposal_payload(proposal_result)["proposals"]), 1)
+        self.assertIn("假设/换算", proposal_csv(proposal_result)[0])
+        self.assertIn("证据", proposal_csv(proposal_result)[0])
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from .pricing_models import VALID_PROPOSAL_STATUSES, VALID_QUOTA_ROLES
-from .pricing_pipeline import validate_pricing_result
+from .pricing_pipeline import proposal_confirmable, validate_pricing_result
 
 
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.I | re.S)
@@ -86,6 +86,7 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         for value in result.get("proposals") or []
         if isinstance(value, dict)
     }
+    local_bills = {str(value.get("record_id") or ""): value for value in result.get("bills") or []}
     pending_work_ids = {
         str(value.get("work_item_id") or "")
         for value in result.get("clarification_questions") or []
@@ -101,6 +102,10 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         normalized.setdefault("bill_unit", "")
         normalized.setdefault("match_level", "medium")
         normalized.setdefault("confirmed", False)
+        selected_bill = local_bills.get(str(normalized.get("bill_record_id") or ""), {})
+        normalized["bill_code"] = str(selected_bill.get("code") or normalized.get("bill_code") or "")
+        normalized["bill_title"] = str(selected_bill.get("title") or normalized.get("bill_title") or "")
+        normalized["bill_unit"] = str(selected_bill.get("unit") or normalized.get("bill_unit") or "")
         normalized["unresolved_question_ids"] = [
             str(value.get("id") or "")
             for value in local_questions
@@ -112,6 +117,11 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         if str(normalized.get("work_item_id") or "") in pending_work_ids and status == "ready_for_review":
             schema_errors.append(f"{normalized.get('work_item_id')} 仍有本地关键缺失条件，AI 不得标记为可确认")
         local_proposal = local_proposals.get(str(normalized.get("work_item_id") or ""), {})
+        normalized["hard_conflicts"] = list(local_proposal.get("hard_conflicts") or [])
+        normalized["review_candidates"] = list(local_proposal.get("review_candidates") or [])
+        normalized["evidence_refs"] = list(local_proposal.get("evidence_refs") or normalized.get("evidence_refs") or [])
+        normalized["evidence_pages"] = list(local_proposal.get("evidence_pages") or [])
+        normalized["evidence_located"] = bool(local_proposal.get("evidence_located"))
         if local_proposal.get("status") == "ready_for_review" and status != "ready_for_review":
             schema_errors.append(f"{normalized.get('work_item_id')} 的本地方案已可复核，AI 不得随机降级")
         if (
@@ -127,6 +137,8 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
                 continue
             if str(line.get("role") or "") not in VALID_QUOTA_ROLES:
                 schema_errors.append(f"定额角色不合法：{str(line.get('role') or '') or '空'}")
+        if status == "ready_for_review" and not proposal_confirmable(normalized):
+            schema_errors.append(f"{normalized.get('work_item_id')} 未通过本地统一确认门禁")
         normalized_proposals.append(normalized)
     proposal_work_ids = [str(value.get("work_item_id") or "") for value in normalized_proposals]
     if set(proposal_work_ids) != local_work_ids:

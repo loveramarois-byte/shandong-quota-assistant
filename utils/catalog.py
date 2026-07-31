@@ -6,6 +6,7 @@ import re
 import sqlite3
 import threading
 import time
+from functools import lru_cache
 from typing import Iterable
 
 from .formatting import enrich_item
@@ -86,7 +87,8 @@ def _jieba_cut(text: str) -> list[str]:
         return jieba.lcut(text, HMM=False)
 
 
-def query_terms(query: str) -> list[str]:
+@lru_cache(maxsize=256)
+def _cached_query_terms(query: str) -> tuple[str, ...]:
     normalized = normalize_query(query)
     try:
         raw_terms = _jieba_cut(normalized)
@@ -109,7 +111,11 @@ def query_terms(query: str) -> list[str]:
     # so FTS/LIKE recall and title ranking remain sensitive to trade wording.
     for span in re.findall(r"[\u3400-\u9fff]{2,}", normalized):
         terms.extend(span[index:index + 2] for index in range(len(span) - 1))
-    return list(dict.fromkeys(terms or [normalized]))[:24]
+    return tuple(list(dict.fromkeys(terms or [normalized]))[:24])
+
+
+def query_terms(query: str) -> list[str]:
+    return list(_cached_query_terms(str(query or "")))
 
 
 def _row_to_item(row: sqlite3.Row, score: float) -> dict:
@@ -260,20 +266,26 @@ def _search_chunks_fts(connection: sqlite3.Connection, query: str, *, edition: s
             term for term in terms
             if len(term) >= 3 and all("\u3400" <= char <= "\u9fff" for char in term)
         ][:4]
-        if focused_terms:
+        if focused_terms and len(rows) < limit:
             by_id = {row["chunk_id"]: row for row in rows}
             for term in focused_terms:
                 by_id.update({row["chunk_id"]: row for row in fetch(f'"{term}"')})
             rows = list(by_id.values())
         # FTS trigram cannot retrieve two-character trade terms such as 暗配/给水.
         # Supplement from indexed metadata fields, then keep the normal ranker in charge.
+        short_trade_terms = DECISIVE_TITLE_TERMS | {
+            "涂料", "抹灰", "保温", "橡塑", "给水", "排水", "防水", "乔木", "灌木",
+            "钢筋", "混凝土", "暗配", "明配", "水稳", "沥青", "回填", "拆除",
+            "道路", "水泥", "碎石",
+        }
         short_title_terms = list(dict.fromkeys(
             term
             for term in terms
             if len(term) == 2
             and all("\u3400" <= char <= "\u9fff" for char in term)
             and term not in STOP_TERMS
-        ))
+            and term in short_trade_terms
+        ))[:6]
         if short_title_terms and chunk_types == ["quota_item"]:
             # Search the compact structured catalog for two-character terms;
             # the large chunks table has no title index and is much slower.
@@ -490,6 +502,51 @@ def _direct_code_lookup(
     return None
 
 
+def _fast_link_backed_bills(
+    connection: sqlite3.Connection,
+    quotas: list[dict],
+    *,
+    quota_edition: str,
+    standard_edition: str,
+    discipline: str | None,
+    limit: int,
+) -> tuple[list[dict], list[dict]]:
+    """Recover bill candidates from precise quota hits when bill wording is generic or legacy."""
+    pairs: list[tuple[int, str]] = []
+    for quota in quotas[: max(8, limit * 2)]:
+        match = re.match(r"quota:(\d+):(\d+)", str(quota.get("record_id") or ""))
+        if not match or not quota.get("code"):
+            continue
+        key = (int(match.group(1)), str(quota["code"]))
+        pairs.append(key)
+    if not pairs:
+        return [], []
+    where = " OR ".join("(l.quota_kind_id=? AND l.quota_code=?)" for _ in pairs)
+    params: list[object] = [standard_edition]
+    for kind_id, code in pairs:
+        params.extend((kind_id, code))
+    discipline_sql = " AND b.discipline=?" if discipline else ""
+    if discipline:
+        params.append(discipline)
+    rows = list(connection.execute(
+        "SELECT DISTINCT l.bill_item_id,l.quota_kind_id,l.quota_code "
+        "FROM bill_quota_links l JOIN bill_items b ON b.item_id=l.bill_item_id AND b.standard_edition=l.link_edition "
+        f"WHERE l.link_edition=? AND ({where}) AND b.standard_edition=?{discipline_sql} LIMIT ?",
+        [params[0], *[value for pair in pairs for value in pair], standard_edition, *([discipline] if discipline else []), max(limit * 4, 24)],
+    ))
+    bill_ids = list(dict.fromkeys(int(row["bill_item_id"]) for row in rows))
+    if not bill_ids:
+        return [], []
+    fields = "c.chunk_id,c.chunk_type,c.edition,c.discipline,c.code,c.title,c.source_path,c.pdf_page,c.text,c.metadata_json"
+    chunk_rows = list(connection.execute(
+        f"SELECT {fields} FROM chunks c WHERE c.chunk_type='bill_item' AND c.edition=? AND c.chunk_id IN ({','.join('?' for _ in bill_ids)})",
+        [standard_edition, *[f"bill:{standard_edition}:{value}" for value in bill_ids]],
+    ))
+    bills = [_row_to_item(row, 0.0) for row in chunk_rows]
+    links = _load_links(connection, bills, quota_edition, standard_edition, discipline, limit=8)
+    return bills, links
+
+
 def search_catalog(
     query: str,
     *,
@@ -540,6 +597,14 @@ def search_catalog(
         timing["guidance_ms"] = round((time.perf_counter() - stage_started) * 1000, 1)
         stage_started = time.perf_counter()
         links = _load_links(connection, bills, quota_edition, standard_edition, discipline, limit=4)
+        if quotas and discipline == "installation":
+            recovered_bills, recovered_links = _fast_link_backed_bills(
+                connection, quotas, quota_edition=quota_edition, standard_edition=standard_edition, discipline=discipline, limit=limit
+            )
+            if recovered_links:
+                original_ids = {str(item.get("record_id") or "") for item in bills}
+                bills = [*bills, *[item for item in recovered_bills if str(item.get("record_id") or "") not in original_ids]][:12]
+                links = list({str(item.get("record_id") or ""): item for item in [*recovered_links, *links] if item.get("record_id")}.values())
         _raise_if_cancelled(cancel_event)
         timing["links_ms"] = round((time.perf_counter() - stage_started) * 1000, 1)
     except sqlite3.OperationalError as exc:
@@ -728,7 +793,7 @@ USER_DESCRIPTION
 目标定额版本：山东 {result['quota_edition']}；工程量清单计价依据：山东 {result['standard_edition']}；专业筛选：{result.get('discipline') or '全部专业'}
 版本口径：定额版本和清单计价依据由用户分别选定，不得把年份相邻或历史默认映射当成适用依据；只有候选偏离当前所选口径时才提示版本风险。
 结构化条件解析：{json.dumps(result.get('conditions') or {}, ensure_ascii=False)}
-本轮可信状态：{result.get('decision_status') or 'needs_more_conditions'}；匹配等级：{result.get('match_level') or 'low'}（不是正确率）
+本轮可信状态：{result.get('decision_status') or 'needs_more_conditions'}；条件吻合度：{result.get('match_level') or 'low'}（不是正确率）
 
 检索资料：
 {context or '没有找到足够的资料，请明确告诉用户需要补充什么。'}

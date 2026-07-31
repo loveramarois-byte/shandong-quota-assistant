@@ -59,6 +59,46 @@ _DISCIPLINE_SIGNALS = {
     ),
 }
 
+_OBJECT_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("涂饰", ("涂料", "涂饰", "刷漆", "乳胶漆", "喷涂", "涂刷")),
+    ("抹灰", ("抹灰", "抹面")),
+    ("保温", ("保温", "橡塑", "绝热", "隔热")),
+    ("给水管道", ("给水管", "给水管道")),
+    ("排水管道", ("排水管", "排水管道")),
+    ("配管", ("配管", "穿线管", "电线管", "导管")),
+    ("电缆", ("电缆",)),
+    ("风管", ("风管",)),
+    ("防水", ("防水", "卷材", "涂膜")),
+    ("混凝土", ("混凝土", "现浇", "预制")),
+    ("砌筑", ("砌筑", "砖墙", "砌体", "实心砖", "空心砖")),
+    ("土方", ("土方", "沟槽", "基坑", "挖土", "回填")),
+    ("乔木", ("乔木",)),
+    ("灌木", ("灌木",)),
+)
+_ACTION_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("安装", ("安装", "敷设", "铺设", "铺贴", "配管")),
+    ("试验", ("试验", "液压", "水压", "气密", "吹扫", "冲洗", "充气保护")),
+    ("拆除", ("拆除", "拆卸", "安拆")),
+    ("涂刷", ("涂刷", "喷涂", "涂饰", "涂料", "刷漆")),
+    ("抹灰", ("抹灰", "抹面")),
+    ("保温", ("保温", "绝热", "隔热")),
+    ("浇筑", ("浇筑", "现浇", "灌注")),
+    ("栽植", ("栽植", "种植")),
+    ("开挖", ("开挖", "挖土", "挖沟槽", "挖基坑")),
+)
+_MATERIAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("橡塑", ("橡塑",)),
+    ("挤塑板", ("挤塑板", "xps")),
+    ("聚氨酯", ("聚氨酯",)),
+    ("改性沥青", ("改性沥青", "sbs")),
+    ("水泥砂浆", ("水泥砂浆",)),
+    ("混合砂浆", ("混合砂浆",)),
+    ("涂料", ("涂料", "乳胶漆")),
+    ("混凝土", ("混凝土",)),
+    ("实心砖", ("实心砖",)),
+)
+_NON_MAIN_ACTION_TERMS = ("试验", "液压", "水压", "气密", "吹扫", "冲洗", "充气保护", "拆除", "安拆")
+
 
 def infer_discipline(description: str) -> str | None:
     """Return one high-confidence discipline; ambiguous wording stays explicit."""
@@ -107,6 +147,69 @@ def _normalized_trade_text(value: str) -> str:
     return text
 
 
+def _family_hits(text: str, groups: tuple[tuple[str, tuple[str, ...]], ...]) -> set[str]:
+    normalized = _normalized_trade_text(text)
+    return {label for label, aliases in groups if any(_normalized_trade_text(alias) in normalized for alias in aliases)}
+
+
+def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: bool) -> list[str]:
+    """Hard compatibility gate: a lexical hit may rank a candidate, but never authorise it."""
+    source = _normalized_trade_text(work_item.search_text())
+    target = _normalized_trade_text(f"{candidate.get('title') or ''} {candidate.get('condition_text') or ''}")
+    source_objects = _family_hits(source, _OBJECT_FAMILIES)
+    target_objects = _family_hits(target, _OBJECT_FAMILIES)
+    source_actions = _family_hits(source, _ACTION_FAMILIES)
+    target_actions = _family_hits(target, _ACTION_FAMILIES)
+    source_materials = _family_hits(source, _MATERIAL_GROUPS)
+    target_materials = _family_hits(target, _MATERIAL_GROUPS)
+    conflicts: list[str] = []
+
+    exclusive_objects = {"涂饰", "抹灰", "保温", "给水管道", "排水管道", "配管", "电缆", "风管", "防水", "砌筑", "乔木", "灌木"}
+    decisive = source_objects & exclusive_objects
+    generic_pipe_ok = bool(
+        decisive & {"给水管道", "排水管道"}
+        and re.search(r"(?:^|[^风])管(?:道)?", target)
+        and not any(term in target for term in _NON_MAIN_ACTION_TERMS)
+    )
+    if decisive and not (decisive & target_objects) and not generic_pipe_ok:
+        conflicts.append("作业对象不一致：施工描述为" + "/".join(sorted(decisive)) + "，候选未体现该对象")
+    if main and source_actions & {"安装", "保温", "涂刷", "抹灰"} and target_actions & {"试验", "拆除"}:
+        conflicts.append("施工动作冲突：主体施工不得套用试验、拆除或安拆子目")
+    if main and source_actions & {"涂刷", "抹灰", "保温"} and target_objects & {"混凝土"}:
+        conflicts.append("施工动作冲突：面层或保温做法不得套用混凝土实体子目")
+    material_required = source_materials - {"涂料" if "涂饰" in source_objects else ""}
+    if main and material_required and not (material_required & target_materials):
+        conflicts.append("材料不一致：候选未体现“" + "/".join(sorted(material_required)) + "”")
+    if main and any(term in target for term in _NON_MAIN_ACTION_TERMS) and not any(term in source for term in _NON_MAIN_ACTION_TERMS):
+        conflicts.append("候选为试验、拆除或保护工序，不是施工主体")
+    if re.search(r"外墙|室外", source) and re.search(r"内墙|室内", target):
+        conflicts.append("施工部位冲突：室外/外墙做法不得套用室内/内墙子目")
+    if re.search(r"内墙|室内", source) and re.search(r"外墙|室外", target):
+        conflicts.append("施工部位冲突：室内/内墙做法不得套用室外/外墙子目")
+    if re.search(r"直埋|埋地", target) and not re.search(r"直埋|埋地", source):
+        conflicts.append("施工部位冲突：候选为直埋/埋地做法，施工描述未说明直埋或埋地")
+    if source_objects & {"给水管道", "排水管道"} and re.search(r"制粉|原煤|送粉|烟道|风道|煤管|通风|燃气|蒸汽|油管|气体驱动", target):
+        conflicts.append("介质用途冲突：给排水管道不得套用制粉、风道、燃气、蒸汽或工艺管道子目")
+    return list(dict.fromkeys(conflicts))
+
+
+def proposal_confirmable(proposal: dict[str, Any]) -> bool:
+    """Single confirmation/export gate shared by pipeline, AI and UI."""
+    lines = [value for value in proposal.get("quota_lines") or [] if isinstance(value, dict)]
+    main_lines = [value for value in lines if value.get("role") == "main"]
+    return bool(
+        proposal.get("status") == "ready_for_review"
+        and str(proposal.get("bill_record_id") or "").strip()
+        and str(proposal.get("bill_code") or "").strip()
+        and len(main_lines) == 1
+        and str(main_lines[0].get("record_id") or "").strip()
+        and not (proposal.get("hard_conflicts") or [])
+        and not (proposal.get("unresolved_question_ids") or [])
+        and bool(proposal.get("evidence_located"))
+        and bool(proposal.get("evidence_pages") or proposal.get("evidence_refs") or main_lines[0].get("evidence_refs"))
+    )
+
+
 def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
     title = _normalized_trade_text(str(bill.get("title") or ""))
     code_query = re.sub(r"\s+", "", work_item.source_span)
@@ -115,6 +218,15 @@ def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
         return 1000
     score = 0.0
     semantic_hit = False
+    source_families = _family_hits(work_item.search_text(), _OBJECT_FAMILIES)
+    target_families = _family_hits(title, _OBJECT_FAMILIES)
+    family_overlap = source_families & target_families
+    if family_overlap:
+        score += 90
+        semantic_hit = True
+    elif source_families & {"给水管道", "排水管道"} and re.search(r"(?:^|[^风])管(?:道)?", title):
+        score += 72
+        semantic_hit = True
     if work_item.object and _normalized_trade_text(work_item.object) in title:
         score += 100
         semantic_hit = True
@@ -135,13 +247,18 @@ def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
         score -= 18
     if bill.get("conflicts"):
         score -= 100
+    hard_conflicts = semantic_conflicts(work_item, bill, main=False)
+    if hard_conflicts:
+        bill["hard_conflicts"] = hard_conflicts
+        bill["conflicts"] = list(dict.fromkeys([*(bill.get("conflicts") or []), *hard_conflicts]))
+        score -= 500
     return score if semantic_hit else score - 120
 
 
 def select_bill_candidate(work_item: WorkItem, bills: list[dict[str, Any]]) -> dict[str, Any] | None:
     scored = [(value, _bill_relevance(value, work_item)) for value in bills]
     scored.sort(key=lambda pair: (-pair[1], -float(pair[0].get("score") or 0), str(pair[0].get("code") or "")))
-    if not scored or scored[0][1] < 60:
+    if not scored or scored[0][1] < 60 or scored[0][0].get("hard_conflicts"):
         return None
     selected, score = scored[0]
     selected["proposal_bill_score"] = round(score, 3)
@@ -175,10 +292,34 @@ def _link_relevance(link: dict[str, Any], work_item: WorkItem) -> float:
     link["match_reasons"] = list(dict.fromkeys([*(link.get("match_reasons") or []), *reasons])) or ["清单关联规则召回"]
     link["missing_conditions"] = list(dict.fromkeys([*(link.get("missing_conditions") or []), *missing]))
     link["conflicts"] = list(dict.fromkeys([*(link.get("conflicts") or []), *conflicts]))
+    hard_conflicts = semantic_conflicts(work_item, link, main=quota_role(str(link.get("title") or "")) == "main")
+    if hard_conflicts:
+        link["hard_conflicts"] = hard_conflicts
+        link["conflicts"] = list(dict.fromkeys([*link["conflicts"], *hard_conflicts]))
     return score + condition_score - 80 * bool(link["conflicts"])
 
 
-def _question_from_hint(work_item_id: str, hint: str, index: int) -> ClarificationQuestion:
+def _facet_values(links: list[dict[str, Any]], values: tuple[str, ...]) -> tuple[str, ...]:
+    titles = [str(value.get("title") or "") for value in links[:60]]
+    return tuple(value for value in values if any(value.lower() in title.lower() for title in titles))
+
+
+def _material_facets(links: list[dict[str, Any]]) -> tuple[str, ...]:
+    text = " ".join(str(value.get("title") or "") for value in links[:80])
+    facets = []
+    for label, pattern in (
+        ("钢管", r"钢管|钢导管"),
+        ("塑料管", r"塑料[^ ]{0,6}管|PVC|PPR|PE管"),
+        ("复合管", r"复合管"),
+        ("铜管", r"铜管"),
+    ):
+        if re.search(pattern, text, re.I):
+            facets.append(label)
+    return tuple(facets)
+
+
+def _question_from_hint(work_item_id: str, hint: str, index: int, facets: dict[str, tuple[str, ...]] | None = None) -> ClarificationQuestion:
+    facets = facets or {}
     mappings = (
         ("cushion_location", r"垫层.*(?:部位|位置|用途)|用于哪个部位", "该垫层用于哪个部位？", ("基础垫层", "楼地面垫层", "其他部位", "不确定")),
         ("material_application", r"未明确体现|按回填土还是|材料处理口径", "资料中的关联项未体现该材料，应按哪种做法处理？", ("按主体项目处理", "拆成独立材料做法", "不确定")),
@@ -186,16 +327,18 @@ def _question_from_hint(work_item_id: str, hint: str, index: int) -> Clarificati
         ("depth", r"深度|挖深|槽深|坑深", "本项施工深度是多少？", ("2m以内", "2~4m", "4m以上", "不确定")),
         ("method", r"人工|机械|施工方法", "本项采用哪种施工方式？", ("人工", "机械", "人工配合机械", "不确定")),
         ("distance", r"运距|运输距离", "本项运输距离是多少？", ("不外运", "1km以内", "1km以上", "不确定")),
-        ("material", r"材料|防水类型|卷材|砂浆类型|管材", "本项使用的材料类型是什么？", ("按施工描述", "另行补充", "不确定")),
-        ("thickness", r"厚度|厚", "本项设计厚度是多少？", ("按施工描述", "另行补充", "不确定")),
-        ("diameter", r"直径|管径|DN", "本项管径或直径是多少？", ("按施工描述", "另行补充", "不确定")),
+        ("material", r"材料|防水类型|卷材|砂浆类型|管材", "本项使用的材料类型是什么？", facets.get("material") or ("钢管", "塑料管", "钢导管", "不确定")),
+        ("thickness", r"厚度|厚", "本项设计厚度属于哪个分档？", facets.get("thickness") or ("10mm以内", "10~30mm", "30mm以上", "不确定")),
+        ("plant_spec", r"土球|胸径|苗木规格", "该苗木采用哪个土球或胸径规格？", facets.get("plant_spec") or ("土球20cm以内", "土球20~40cm", "土球40cm以上", "不确定")),
+        ("diameter", r"直径|管径|DN", "本项管径或直径属于哪个分档？", facets.get("diameter") or ("DN25以内", "DN25~50", "DN50以上", "不确定")),
+        ("layer_combination", r"层数|遍数|每增一遍|增减层", "本项设计遍数如何组合？", ("主项已含设计遍数", "主项加每增一遍", "按定额说明人工确认", "不确定")),
         ("cross_section", r"电缆截面|截面分档", "本项电缆截面是多少？", ("10mm2以内", "10~50mm2", "50mm2以上", "不确定")),
         ("location", r"部位|位置|室内|室外", "本项施工部位在哪里？", ("室内", "室外", "地下或埋地", "不确定")),
     )
     for field, pattern, question, options in mappings:
         if re.search(pattern, hint):
             return ClarificationQuestion(f"Q{index}", work_item_id, field, question, options, hint)
-    return ClarificationQuestion(f"Q{index}", work_item_id, "critical_condition", "还有哪项关键施工条件需要补充？", ("补充说明", "不确定"), hint)
+    return ClarificationQuestion(f"Q{index}", work_item_id, "critical_condition", "请补充候选所需的关键施工条件。", ("人工输入规格", "不确定"), hint)
 
 
 def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], selected_links: list[dict[str, Any]], start: int) -> list[ClarificationQuestion]:
@@ -206,6 +349,11 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
     questions: list[ClarificationQuestion] = []
     seen_fields: set[str] = set()
     known_fields = set(_attribute_values(work_item))
+    all_links = [*(search_result.get("links") or selected_links), *(search_result.get("quotas") or [])]
+    facets = {
+        "material": _material_facets(all_links),
+        "plant_spec": _facet_values(all_links, ("土球直径20cm以内", "土球直径40cm以内", "土球直径60cm以内", "裸根")),
+    }
     if work_item.material:
         known_fields.add("material")
     if work_item.location:
@@ -215,11 +363,14 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
             work_item.id,
             "垫层用途部位未明确，会改变清单及定额选择",
             start,
+            facets,
         )
         questions.append(question)
         seen_fields.add(question.field)
     for hint in dict.fromkeys(str(value) for value in hints if value):
-        question = _question_from_hint(work_item.id, hint, start + len(questions))
+        if work_item.object in {"乔木", "灌木"} and re.search(r"管径|直径", hint) and not re.search(r"土球|胸径", hint):
+            continue
+        question = _question_from_hint(work_item.id, hint, start + len(questions), facets)
         if question.field in seen_fields or question.field in known_fields:
             continue
         seen_fields.add(question.field)
@@ -300,6 +451,12 @@ def _assemble_proposal(
     if re.fullmatch(r"\s*\d{9,12}(?:-\d{3})?\s*", work_item.source_span):
         extra_hints.append("只提供了清单编码，请补充会影响定额组合的施工做法和规格")
     main_options = by_role.get("main") or []
+    if work_item.object in {"乔木", "灌木"} and not re.search(r"胸径|地径|冠幅|土球|裸根", work_item.source_span):
+        extra_hints.append("候选涉及苗木土球或胸径规格，请补充苗木规格")
+    if _family_hits(work_item.search_text(), _OBJECT_FAMILIES) & {"给水管道", "排水管道"} and not re.search(r"钢管|塑料管|复合管|铜管|PPR|PVC|PE管", work_item.source_span, re.I):
+        extra_hints.append("给排水管材未明确，请补充钢管、塑料管或复合管等真实管材")
+    if int(attributes.get("layers") or 1) > 1 and not by_role.get("adjustment"):
+        extra_hints.append("候选未形成层数增减项，请确认设计遍数如何组合")
     method_facets = [value for value in ("热熔", "冷粘", "自粘", "明配", "暗配", "人工", "机械") if any(value in str(link.get("title") or "") for link in main_options[:12])]
     if len(method_facets) > 1 and not any(value in work_item.source_span for value in method_facets):
         extra_hints.append("候选区分" + "/".join(method_facets[:4]) + "施工方法，请补充施工方法")
@@ -308,7 +465,7 @@ def _assemble_proposal(
         extra_hints.append("候选区分" + "/".join(material_facets[:4]) + "材料类型，请补充材料类型")
     if work_item.object and "电缆" in work_item.object and "截面" not in work_item.source_span and any("截面" in str(link.get("title") or "") for link in main_options[:30]):
         extra_hints.append("候选涉及电缆截面分档，请补充电缆截面")
-    if work_item.material and selected:
+    if work_item.material and work_item.material not in {"涂料"} and selected:
         material = _normalized_trade_text(work_item.material)
         if not any(material in _normalized_trade_text(str(link.get("title") or "")) for link in selected):
             extra_hints.append(f"本地关联定额未明确体现“{work_item.material}”，请确认材料处理口径")
@@ -339,6 +496,21 @@ def _assemble_proposal(
             source_link_record_id=str(link.get("record_id") or ""),
         ))
 
+    review_candidates: list[QuotaSelection] = []
+    if not lines:
+        for link in viable_links[:3]:
+            review_candidates.append(QuotaSelection(
+                record_id=str(link.get("quota_record_id") or ""),
+                code=str(link.get("code") or ""),
+                title=str(link.get("title") or ""),
+                unit=str(link.get("unit") or ""),
+                role="alternative",
+                factor=float(link["factor"]) if isinstance(link.get("factor"), (int, float)) else None,
+                reason="候选已由清单关联召回，但未通过主方案组合门槛",
+                evidence_refs=tuple(value for value in (references.get(str(link.get("record_id") or "")),) if value),
+                source_link_record_id=str(link.get("record_id") or ""),
+            ))
+
     status = "ready_for_review"
     if "不确定" in work_item.source_span and lines:
         status = "multiple_valid_options"
@@ -348,7 +520,19 @@ def _assemble_proposal(
         status = "no_reliable_match"
     match_level = "high" if status == "ready_for_review" and lines else "medium" if lines else "low"
     evidence_refs = [references.get(bill_id)] + [value for line in lines for value in line.evidence_refs]
+    evidence_items = [bill, *selected]
+    evidence_pages = tuple(dict.fromkeys(
+        f"{('清单' if item is bill else '定额')}第{item.get('pdf_page')}页"
+        for item in evidence_items
+        if item.get("source_path") and item.get("pdf_page")
+    ))
+    evidence_located = bool(lines) and len(evidence_pages) >= 2
     assumptions: list[str] = [] if links else ["本地关联表没有可验证定额组合，未将全文候选直接拼入方案。"]
+    hard_conflicts = list(dict.fromkeys(
+        value
+        for candidate in [bill, *selected]
+        for value in (candidate.get("hard_conflicts") or [])
+    ))
     if selected_main and _requires_thickness_conversion(bill.get("unit"), selected_main.get("unit")):
         thickness = _thickness_mm(work_item)
         factor = _thickness_conversion_factor(bill.get("unit"), selected_main.get("unit"), work_item)
@@ -364,9 +548,13 @@ def _assemble_proposal(
         bill_title=str(bill.get("title") or ""),
         bill_unit=str(bill.get("unit") or ""),
         quota_lines=tuple(lines),
+        review_candidates=tuple(review_candidates),
         assumptions=tuple(assumptions),
+        hard_conflicts=tuple(hard_conflicts),
         unresolved_question_ids=tuple(value.id for value in questions),
         evidence_refs=tuple(dict.fromkeys(value for value in evidence_refs if value)),
+        evidence_pages=evidence_pages,
+        evidence_located=evidence_located,
         match_level=match_level,
         status=status,
     ), questions
@@ -391,7 +579,7 @@ def assemble_pricing_result(
         questions.extend(value.to_dict() for value in item_questions)
 
     statuses = {value["status"] for value in proposals}
-    if not proposals or statuses == {"no_reliable_match"}:
+    if not proposals or "no_reliable_match" in statuses:
         decision_status = "no_reliable_match"
     elif "needs_clarification" in statuses:
         decision_status = "needs_clarification"
@@ -414,6 +602,10 @@ def assemble_pricing_result(
         "proposals": proposals,
         "decision_status": decision_status,
         "match_level": "high" if decision_status == "ready_for_review" else "medium" if proposals and decision_status != "no_reliable_match" else "low",
+        "progress": {
+            "ready": sum(1 for value in proposals if value.get("status") == "ready_for_review"),
+            "total": len(proposals),
+        },
         "conditions": copied_results[0][1].get("conditions") if len(copied_results) == 1 else {},
         "timing": {"local_ms": round(float(elapsed_ms), 1)} if elapsed_ms is not None else {},
         "search_backend": "work_item_pipeline",
@@ -524,13 +716,27 @@ def validate_pricing_result(result: dict[str, Any]) -> dict[str, Any]:
         if work_item_id not in work_item_ids:
             errors.append(f"方案引用了不存在的施工事项：{work_item_id or '空'}")
         status = str(proposal.get("status") or "")
+        if proposal.get("confirmed") and not proposal_confirmable(proposal):
+            errors.append(f"{work_item_id} 未通过统一确认门禁")
         if status not in VALID_PROPOSAL_STATUSES:
             errors.append(f"{work_item_id} 的方案状态不合法：{status or '空'}")
         bill_id = str(proposal.get("bill_record_id") or "")
         bill = bills.get(bill_id) if bill_id else None
+        work_item_data = next((value for value in result.get("work_items") or [] if str(value.get("id") or "") == work_item_id), {})
+        semantic_item = WorkItem(
+            id=work_item_id,
+            source_span=str(work_item_data.get("source_span") or ""),
+            discipline=work_item_data.get("discipline"),
+            action=str(work_item_data.get("action") or ""),
+            object=str(work_item_data.get("object") or ""),
+            location=str(work_item_data.get("location") or ""),
+            material=str(work_item_data.get("material") or ""),
+        )
         if bill_id and bill is None:
             errors.append(f"{work_item_id} 的清单记录不在本轮白名单：{bill_id}")
         if bill:
+            for conflict in semantic_conflicts(semantic_item, bill, main=False):
+                errors.append(f"{work_item_id} 的清单语义冲突：{conflict}")
             if standard_edition and str(bill.get("edition") or "") != standard_edition:
                 errors.append(f"{work_item_id} 的清单版本越界")
             if expected_discipline and bill.get("discipline") != expected_discipline:
@@ -555,6 +761,8 @@ def validate_pricing_result(result: dict[str, Any]) -> dict[str, Any]:
                 errors.append(f"{work_item_id} 的清单与定额没有本地关联：{record_id}")
                 continue
             if link:
+                for conflict in semantic_conflicts(semantic_item, link, main=role == "main"):
+                    errors.append(f"{work_item_id} 的主定额语义冲突：{conflict}")
                 if quota_edition and str(link.get("quota_edition") or "") != quota_edition:
                     errors.append(f"{work_item_id} 的定额版本越界")
                 if standard_edition and str(link.get("standard_edition") or link.get("edition") or "") != standard_edition:
@@ -585,6 +793,8 @@ def validate_pricing_result(result: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"{work_item_id} 的定额组合必须且只能有一个主项")
         if status == "ready_for_review" and (not bill_id or not proposal.get("quota_lines")):
             errors.append(f"{work_item_id} 缺少通过复核所需的清单或主定额")
+        if status == "ready_for_review" and proposal.get("hard_conflicts"):
+            errors.append(f"{work_item_id} 存在语义硬冲突，不得进入可复核状态")
         if status == "needs_clarification" and not proposal.get("unresolved_question_ids"):
             warnings.append(f"{work_item_id} 标记待补条件，但没有结构化问题")
     return {"valid": not errors, "errors": list(dict.fromkeys(errors)), "warnings": list(dict.fromkeys(warnings))}
@@ -665,7 +875,7 @@ def proposal_plain_text(result: dict[str, Any], *, confirmed_only: bool = False)
     work_items = {str(value.get("id") or ""): value for value in result.get("work_items") or []}
     lines = ["事项\t类型\t角色\t编码\t名称\t单位\t状态"]
     for proposal in result.get("proposals") or []:
-        if confirmed_only and not proposal.get("confirmed"):
+        if confirmed_only and (not proposal.get("confirmed") or not proposal_confirmable(proposal)):
             continue
         work_item = work_items.get(str(proposal.get("work_item_id") or ""), {})
         span = str(work_item.get("source_span") or proposal.get("work_item_id") or "")

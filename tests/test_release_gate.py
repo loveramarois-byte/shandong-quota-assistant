@@ -41,7 +41,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("Get-HardLinkCount $stagedDatabase", self.script)
 
     def test_release_version_is_consistent_across_runtime_and_packaging(self):
-        self.assertEqual(APP_VERSION, "0.7.4")
+        self.assertEqual(APP_VERSION, "0.7.5")
         self.assertEqual(self.catalog_manifest["app_version"], APP_VERSION)
         installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
         version_info = (PROJECT_ROOT / "packaging" / "windows_version_info.txt").read_text(encoding="utf-8-sig")
@@ -101,6 +101,11 @@ class ReleaseGateTests(unittest.TestCase):
     def test_release_manifest_only_collects_current_build_artifacts(self):
         self.assertIn("Get-ChildItem -LiteralPath $bundleRoot -Recurse -File", self.script)
         self.assertNotIn("Get-ChildItem -LiteralPath $releaseRoot -Recurse -File", self.script)
+
+    def test_evidence_source_json_is_expanded_for_windows_powershell_5(self):
+        self.assertIn("foreach ($item in $parsedSources)", self.script)
+        self.assertIn("$registeredSources += [string]$item", self.script)
+        self.assertNotIn("$registeredSources = @(Get-Content", self.script)
 
 
 if __name__ == "__main__":

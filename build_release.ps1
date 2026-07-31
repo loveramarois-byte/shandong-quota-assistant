@@ -202,8 +202,15 @@ Copy-Item -LiteralPath (Join-Path $projectRoot "使用说明.txt") -Destination 
 $evidenceSourceCount = 0
 if ($AuthorizedInternalDistribution -or $AuthorizedPublicDistribution) {
     $sourceListPath = Join-Path $workRoot "evidence-sources.json"
-    & $python -c 'import json,sqlite3,sys; c=sqlite3.connect(sys.argv[1]); p=[r[0] for r in c.execute("select distinct source_path from chunks where source_path is not null and length(source_path)>0 order by source_path")]; c.close(); open(sys.argv[2],"w",encoding="utf-8").write(json.dumps(p,ensure_ascii=False))' $database $sourceListPath
-    $registeredSources = @(Get-Content -LiteralPath $sourceListPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    & $python (Join-Path $projectRoot "tools\write_evidence_sources.py") $database $sourceListPath
+    # Windows PowerShell 5 can wrap a JSON array as one nested array when @(...)
+    # captures pipeline output. Expand each value explicitly so every source path
+    # is validated and copied independently.
+    $parsedSources = Get-Content -LiteralPath $sourceListPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $registeredSources = @()
+    foreach ($item in $parsedSources) {
+        $registeredSources += [string]$item
+    }
     if ($LASTEXITCODE -ne 0 -or $registeredSources.Count -eq 0) {
         throw "未能读取原书证据文件清单"
     }

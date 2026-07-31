@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from utils.pricing_pipeline import analyze_pricing_description, assemble_pricing_result, infer_discipline, merge_clarification_context, validate_pricing_result
+from utils.pricing_pipeline import analyze_pricing_description, assemble_pricing_result, infer_discipline, merge_clarification_context, proposal_confirmable, validate_pricing_result
 from utils.work_items import extract_work_item
 
 
@@ -20,6 +20,8 @@ def _candidate(record_id: str, code: str, title: str, kind: str, **extra):
         "match_reasons": extra.pop("match_reasons", ["测试命中"]),
         "missing_conditions": extra.pop("missing_conditions", []),
         "conflicts": extra.pop("conflicts", []),
+        "source_path": extra.pop("source_path", "D:/fixtures/source.pdf"),
+        "pdf_page": extra.pop("pdf_page", 1),
         **extra,
     }
 
@@ -207,6 +209,52 @@ class PricingPipelineTests(unittest.TestCase):
         }
 
         self.assertIsNone(merge_clarification_context(previous, "电气配管DN20暗配；电缆敷设"))
+
+    def test_water_supply_install_cannot_select_protection_bill(self):
+        item = extract_work_item("室内给水管道安装DN25", item_id="W1", discipline="installation")
+        wrong_bill = _candidate("bill:2024:1780", "030813011-000", "管道安拆后的充气保护", "bill_item", edition="2024", discipline="installation", unit="项")
+        analysis = assemble_pricing_result(item.source_span, [(item, {"bills": [wrong_bill], "quotas": [], "links": [], "guidance": [], "hints": []})], quota_edition="2025", standard_edition="2024", discipline="installation")
+        proposal = analysis["proposals"][0]
+        self.assertEqual(proposal["status"], "no_reliable_match")
+        self.assertFalse(proposal["bill_record_id"] )
+        self.assertFalse(proposal_confirmable(proposal))
+
+    def test_pipe_insulation_cannot_select_hydraulic_test(self):
+        item = extract_work_item("管道橡塑保温厚30mm", item_id="W1", discipline="installation")
+        bill = _candidate("bill:2024:1689", "030801020-000", "低压直埋保温管道", "bill_item", edition="2024", discipline="installation", unit="m")
+        wrong = _candidate("link:2024:20623", "8-5-1", "低中压管道液压试验 公称直径50mm以内", "bill_quota_link", quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"], quota_record_id="quota:172:12881", discipline="installation", unit="100m")
+        analysis = assemble_pricing_result(item.source_span, [(item, {"bills": [bill], "quotas": [], "links": [wrong], "guidance": [], "hints": []})], quota_edition="2025", standard_edition="2024", discipline="installation")
+        proposal = analysis["proposals"][0]
+        self.assertNotEqual(proposal["status"], "ready_for_review")
+        self.assertFalse(proposal["quota_lines"] )
+        self.assertFalse(proposal_confirmable(proposal))
+
+    def test_wall_paint_cannot_select_concrete_wall(self):
+        item = extract_work_item("外墙涂料两遍", item_id="W1", discipline="building")
+        bill = _candidate("bill:2024:86", "010502009-000", "地下室外墙", "bill_item", edition="2024", unit="m3")
+        wrong = _candidate("link:2024:1051", "5-1-25", "现浇混凝土 地下室外墙", "bill_quota_link", quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"], quota_record_id="quota:171:508", unit="10m3")
+        analysis = assemble_pricing_result(item.source_span, [(item, {"bills": [bill], "quotas": [], "links": [wrong], "guidance": [], "hints": []})], quota_edition="2025", standard_edition="2024", discipline="building")
+        proposal = analysis["proposals"][0]
+        self.assertEqual(proposal["status"], "no_reliable_match")
+        self.assertFalse(proposal_confirmable(proposal))
+
+    def test_landscape_without_size_requires_real_specification_choice(self):
+        item = extract_work_item("栽植乔木20株", item_id="W1", discipline="landscape")
+        bill = _candidate("bill:2024:2947", "050103001-000", "栽植乔木", "bill_item", edition="2024", discipline="landscape", unit="株")
+        main = _candidate("link:2024:32974", "1-2-26", "栽植乔木(带土球) 土球直径20cm以内", "bill_quota_link", quota_edition="2025", standard_edition="2024", bill_record_id=bill["record_id"], quota_record_id="quota:174:152", discipline="landscape", unit="株")
+        analysis = assemble_pricing_result(item.source_span, [(item, {"bills": [bill], "quotas": [], "links": [main], "guidance": [], "hints": []})], quota_edition="2025", standard_edition="2024", discipline="landscape")
+        self.assertEqual(analysis["decision_status"], "needs_clarification")
+        question = analysis["clarification_questions"][0]
+        self.assertEqual(question["field"], "plant_spec")
+        self.assertIn("土球直径20cm以内", question["options"] )
+
+    def test_whole_order_uses_worst_item_status(self):
+        ready = assemble_pricing_result("SBS卷材防水两道", [(self.item, {"bills": [self.bill], "quotas": [], "links": [self.main, self.adjustment], "guidance": [], "hints": []})], quota_edition="2025", standard_edition="2024", discipline="building")
+        second = extract_work_item("外墙涂料两遍", item_id="W2", discipline="building")
+        mixed = assemble_pricing_result("SBS卷材防水两道；外墙涂料两遍", [(self.item, {"bills": [self.bill], "quotas": [], "links": [self.main, self.adjustment], "guidance": [], "hints": []}), (second, {"bills": [], "quotas": [], "links": [], "guidance": [], "hints": []})], quota_edition="2025", standard_edition="2024", discipline="building")
+        self.assertEqual(ready["decision_status"], "ready_for_review")
+        self.assertEqual(mixed["decision_status"], "no_reliable_match")
+        self.assertEqual(mixed["progress"], {"ready": 1, "total": 2})
 
 
 if __name__ == "__main__":

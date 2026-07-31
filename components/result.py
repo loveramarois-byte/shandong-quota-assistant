@@ -11,7 +11,7 @@ from themes.tokens import ThemeTokens
 from utils.evidence import open_source_page, resolve_source_path
 from utils.formatting import discipline_label, normalize_unit
 from utils.paths import resource_path
-from utils.pricing_pipeline import proposal_plain_text
+from utils.pricing_pipeline import proposal_confirmable, proposal_plain_text
 from utils.svg import svg_image
 from .button import DSButton, IconButton
 
@@ -624,7 +624,11 @@ class ProposalCard(ctk.CTkFrame):
         status_text, tone = _PROPOSAL_STATUS.get(str(self.proposal.get("status") or ""), ("待复核", "warning"))
         tone_color = getattr(c, tone)
         self.status_label = self._label(header, text=status_text, text_color=tone_color, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="e", _tone=tone, _size=self.tokens.typography.caption, _weight="semibold")
-        ready = self.proposal.get("status") == "ready_for_review"
+        ready = proposal_confirmable(self.proposal)
+        if self.proposal.get("status") == "ready_for_review" and not ready:
+            status_text, tone = "证据待定位", "warning"
+            tone_color = getattr(c, tone)
+            self.status_label.configure(text=status_text, text_color=tone_color)
         if not ready:
             self.status_label.grid(row=0, column=1, sticky="e", padx=(0, 8))
         self.confirm_button = DSButton(header, tokens=self.tokens, text="已确认" if self.proposal.get("confirmed") else "确认", variant="primary", width=68, height=30, command=self._toggle_confirm)
@@ -658,10 +662,16 @@ class ProposalCard(ctk.CTkFrame):
         else:
             self.empty_quota = self._label(self.content, text="尚无通过清单关联校验的定额组合", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.meta), anchor="w", _tone="text_muted")
             self.empty_quota.pack(fill="x", pady=(2, 8))
+            review_candidates = self.proposal.get("review_candidates") or []
+            if review_candidates:
+                review_caption = self._label(self.content, text="待人工选择候选（尚不可确认）", text_color=c.warning, font=self.tokens.font(self.tokens.typography.caption, "semibold"), anchor="w", _tone="warning", _size=self.tokens.typography.caption, _weight="semibold")
+                review_caption.pack(fill="x", pady=(4, 5))
+                for line in review_candidates[:3]:
+                    self._selection_row("候选", str(line.get("code") or "未确认"), str(line.get("title") or "未命名定额"), str(line.get("unit") or ""), "warning", factor=line.get("factor"))
 
         assumptions = [str(value).strip() for value in self.proposal.get("assumptions") or [] if str(value).strip()]
         if assumptions:
-            self.assumption_label = self._label(self, text="换算说明 · " + " ".join(assumptions[:2]), text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=self._wrap_width, _tone="text_muted", _size=self.tokens.typography.caption)
+            self.assumption_label = self._label(self, text="假设 / 换算 · " + " ".join(assumptions[:2]), text_color=c.warning, font=self.tokens.font(self.tokens.typography.caption), anchor="w", justify="left", wraplength=self._wrap_width, _tone="warning", _size=self.tokens.typography.caption)
             self.assumption_label.pack(fill="x", padx=16, pady=(4, 8))
         else:
             self.assumption_label = None
@@ -721,6 +731,9 @@ class ProposalCard(ctk.CTkFrame):
             self.on_change()
 
     def _toggle_confirm(self) -> None:
+        if not proposal_confirmable(self.proposal):
+            self.proposal["confirmed"] = False
+            return
         self.proposal["confirmed"] = not bool(self.proposal.get("confirmed"))
         self.confirm_button.configure(text="已确认" if self.proposal["confirmed"] else "确认")
         if self.on_change:
@@ -1043,6 +1056,13 @@ class ResultPanel(ctk.CTkFrame):
             return
         self.proposals = proposals
         self.result["clarification_questions"] = questions
+        statuses = {str(value.get("status") or "") for value in proposals}
+        self.result["decision_status"] = (
+            "no_reliable_match" if "no_reliable_match" in statuses
+            else "needs_clarification" if "needs_clarification" in statuses
+            else "multiple_valid_options" if "multiple_valid_options" in statuses
+            else "ready_for_review"
+        )
         if self.proposal_area is not None:
             self.proposal_title.configure(text="套价建议")
         self._render_proposals()
@@ -1169,6 +1189,9 @@ class ResultPanel(ctk.CTkFrame):
 
     def _count_summary(self) -> str:
         counts = []
+        if self.proposals:
+            ready = sum(1 for value in self.proposals if value.get("status") == "ready_for_review")
+            counts.append(f"{ready}/{len(self.proposals)} 事项可确认")
         for key, label in (("bills", "清单"), ("quotas", "定额"), ("links", "关联"), ("guidance", "规则")):
             count = len(self.result.get(key) or [])
             if count:
@@ -1188,13 +1211,20 @@ class ResultPanel(ctk.CTkFrame):
             "no_reliable_match": "暂无可靠组合",
         }
         if match_level:
-            counts.append(f"{status_labels.get(self.result.get('decision_status'), '候选状态')} · 匹配等级 { {'high': '高', 'medium': '中', 'low': '低'}.get(str(match_level), '低') }")
+            counts.append(f"{status_labels.get(self.result.get('decision_status'), '候选状态')} · 条件吻合度 { {'high': '高', 'medium': '中', 'low': '低'}.get(str(match_level), '低') }")
         return " · ".join(counts) if counts else "没有找到可靠候选，建议补充规格、深度、土类或运距。"
 
     def current_result(self) -> dict:
         value = deepcopy(self.result)
         if self.proposals:
             value["proposals"] = deepcopy(self.proposals)
+            statuses = {str(item.get("status") or "") for item in value["proposals"]}
+            value["decision_status"] = (
+                "no_reliable_match" if "no_reliable_match" in statuses
+                else "needs_clarification" if "needs_clarification" in statuses
+                else "multiple_valid_options" if "multiple_valid_options" in statuses
+                else "ready_for_review"
+            )
         return value
 
     def _condition_labels(self) -> list[str]:

@@ -17,8 +17,8 @@
 不需要安装 Python，也不需要自己准备数据库：
 
 1. 打开 [GitHub Releases](https://github.com/loveramarois-byte/shandong-quota-assistant/releases/latest) 或 [Gitee 发行版](https://gitee.com/bbbbo-liu/shandong-quota-assistant/releases)。
-2. 下载 `ShandongQuotaAssistant-Setup-0.7.4.exe` 和同版本的全部 `.bin` 文件，放在同一个文件夹。
-3. 双击 `ShandongQuotaAssistant-Setup-0.7.4.exe` 安装。未签名版本可能显示 Windows“未知发布者”提示，请先核对 Release 中的 SHA-256。
+2. 下载 `ShandongQuotaAssistant-Setup-0.7.5.exe` 和同版本的全部 `.bin` 文件，放在同一个文件夹。
+3. 双击 `ShandongQuotaAssistant-Setup-0.7.5.exe` 安装。未签名版本可能显示 Windows“未知发布者”提示，请先核对 Release 中的 SHA-256。
 4. 安装完成即可使用本地检索；需要 AI 时，再在设置中填写自己的 DeepSeek、智谱或兼容接口。
 
 完整版包含山东 2016/2025 定额、2013/2024 清单、清单定额关联以及已登记原书证据。资料权利说明与适用边界见 [DATA_NOTICE.md](legal/DATA_NOTICE.md)。
@@ -35,6 +35,9 @@
 - **关键条件澄清**：只追问会改变方案的条件；用户的短回答会合并回原事项并局部重算语义上下文。
 - **稳定决策边界**：专业规则先确定必问条件，AI 不能随机新增、删除澄清项或降级本地可复核方案。
 - **确定性校验**：AI 只能返回 JSON 和本轮 record ID；专业、版本、白名单及清单定额关联不通过时不会进入可确认方案。
+- **错误套项熔断**：对象、动作、材料、介质用途或施工部位出现硬冲突时，统一禁止确认、复制和导出。
+- **整单最差状态**：复合描述显示“可确认事项 / 全部事项”，任何未解决事项都会阻止整单被误标为完成。
+- **真实澄清选项**：材料、管径、土球/胸径等选项来自本轮候选分面，不再显示空泛的占位选择。
 - **本地优先**：SQLite FTS5 全文检索，本地候选不依赖网络或 AI。
 - **条件排序**：根据施工方式、土类、深度、材料和部位等条件调整候选顺序。
 - **原书证据链**：候选项使用稳定记录 ID 和 `[R#]` 引用，逐条显示 PDF 文件、页码与定位状态，可从 AI 回答直接打开原书页。

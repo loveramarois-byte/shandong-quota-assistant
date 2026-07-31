@@ -127,9 +127,13 @@ class PricingProposal:
     bill_title: str = ""
     bill_unit: str = ""
     quota_lines: tuple[QuotaSelection, ...] = field(default_factory=tuple)
+    review_candidates: tuple[QuotaSelection, ...] = field(default_factory=tuple)
     assumptions: tuple[str, ...] = field(default_factory=tuple)
+    hard_conflicts: tuple[str, ...] = field(default_factory=tuple)
     unresolved_question_ids: tuple[str, ...] = field(default_factory=tuple)
     evidence_refs: tuple[str, ...] = field(default_factory=tuple)
+    evidence_pages: tuple[str, ...] = field(default_factory=tuple)
+    evidence_located: bool = False
     match_level: str = "low"
     status: str = "no_reliable_match"
     confirmed: bool = False
@@ -142,9 +146,13 @@ class PricingProposal:
             "bill_title": self.bill_title,
             "bill_unit": self.bill_unit,
             "quota_lines": [value.to_dict() for value in self.quota_lines],
+            "review_candidates": [value.to_dict() for value in self.review_candidates],
             "assumptions": list(self.assumptions),
+            "hard_conflicts": list(self.hard_conflicts),
             "unresolved_question_ids": list(self.unresolved_question_ids),
             "evidence_refs": list(self.evidence_refs),
+            "evidence_pages": list(self.evidence_pages),
+            "evidence_located": self.evidence_located,
             "match_level": self.match_level,
             "status": self.status,
             "confirmed": self.confirmed,

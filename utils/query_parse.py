@@ -196,6 +196,8 @@ def rank_conditions(item: dict[str, Any], conditions: QueryConditions) -> tuple[
         else:
             score -= 12
             missing.append(f"子目未标直径分档，需核对 DN{conditions.diameter_mm:g} 适用规格")
+    elif _limit_mm(title, r"直径|管径|公称直径|外径") is not None:
+        missing.append("未说明管径或直径分档")
 
     if conditions.strength_grade:
         title_grades = {re.sub(r"\s+", "", value).upper() for value in re.findall(r"(?:C\s*\d{2,3}|M\s*\d{1,3}|HRB\s*\d{3})", title, re.I)}
