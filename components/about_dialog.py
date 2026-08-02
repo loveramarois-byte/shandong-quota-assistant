@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import webbrowser
+
 import customtkinter as ctk
 
 from themes.tokens import ThemeTokens
@@ -22,9 +24,11 @@ DISCLAIMER = (
 class AboutDialog(ctk.CTkToplevel):
     """Version, independent filter scope, shortcuts and diagnostics export."""
 
-    def __init__(self, master, *, tokens: ThemeTokens, info: dict, on_export_diagnostics=None, **kwargs):
+    def __init__(self, master, *, tokens: ThemeTokens, info: dict, on_export_diagnostics=None, on_check_updates=None, **kwargs):
         self.tokens = tokens
         self.on_export_diagnostics = on_export_diagnostics
+        self.on_check_updates = on_check_updates
+        self._update_url = ""
         super().__init__(master, fg_color=tokens.colors.background, **kwargs)
         self.title("关于 山东定额助手")
         self.geometry("540x620")
@@ -47,6 +51,14 @@ class AboutDialog(ctk.CTkToplevel):
         body.pack(fill="both", expand=True)
         ctk.CTkLabel(body, text="山东定额助手", text_color=c.text, font=self.tokens.font(self.tokens.typography.section, "semibold"), anchor="w").pack(anchor="w", pady=(22, 4), **pad)
         ctk.CTkLabel(body, text=f"应用版本 v{info.get('app_version', '-')}", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w").pack(anchor="w", **pad)
+        update_row = ctk.CTkFrame(body, fg_color="transparent")
+        update_row.pack(fill="x", pady=(8, 0), **pad)
+        update_row.grid_columnconfigure(0, weight=1)
+        self.update_status = ctk.CTkLabel(update_row, text="可自动检查 GitHub / Gitee 是否有新版本", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
+        self.update_status.grid(row=0, column=0, sticky="w")
+        if self.on_check_updates:
+            self.update_button = DSButton(update_row, tokens=self.tokens, text="检查更新", variant="ghost", width=82, height=28, command=self._check_updates)
+            self.update_button.grid(row=0, column=1, padx=(8, 0), sticky="e")
 
         rows = [
             ("资料库路径", info.get("database", "-")),
@@ -83,3 +95,34 @@ class AboutDialog(ctk.CTkToplevel):
     def _export_diagnostics(self) -> None:
         if self.on_export_diagnostics:
             self.on_export_diagnostics()
+
+    def _check_updates(self) -> None:
+        self.set_update_checking()
+        if self.on_check_updates:
+            self.on_check_updates()
+
+    def set_update_checking(self) -> None:
+        if hasattr(self, "update_button"):
+            self.update_button.set_loading(True, "检查中…")
+        self.update_status.configure(text="正在检查版本…", text_color=self.tokens.colors.text_muted)
+
+    def set_update_result(self, release=None) -> None:
+        if hasattr(self, "update_button"):
+            self.update_button.set_loading(False)
+        if release is None:
+            self._update_url = ""
+            self.update_status.configure(text="当前已经是最新版本，或暂时无法连接更新服务。", text_color=self.tokens.colors.text_muted)
+            if hasattr(self, "update_button"):
+                self.update_button.configure(text="重新检查", command=self._check_updates)
+            return
+        self._update_url = str(release.url or "")
+        self.update_status.configure(text=f"发现新版本 v{release.version}（{release.source}）", text_color=self.tokens.colors.success)
+        if hasattr(self, "update_button"):
+            self.update_button.configure(text="打开下载页", command=self._open_update_url)
+
+    def _open_update_url(self) -> None:
+        if self._update_url:
+            try:
+                webbrowser.open(self._update_url, new=2)
+            except OSError:
+                self.update_status.configure(text=f"请在浏览器打开：{self._update_url}", text_color=self.tokens.colors.text_secondary)
