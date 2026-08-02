@@ -98,9 +98,19 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
     @staticmethod
     def _dispatch_windows_wheel(event):
         candidates: list[PointerScrollableFrame] = []
+        event_widget = getattr(event, "widget", None)
         for frame in tuple(PointerScrollableFrame._instances):
             try:
-                if frame.winfo_exists() and frame._pointer_belongs_here():
+                if not frame.winfo_exists():
+                    continue
+                # Tk already tells us which child received the wheel. Walking
+                # that widget tree avoids a winfo_containing call for every
+                # scroll frame on every wheel tick, which is noticeable on a
+                # large message feed.
+                belongs = bool(event_widget is not None and frame._check_if_valid_scroll(event_widget))
+                if not belongs:
+                    belongs = frame._pointer_belongs_here()
+                if belongs:
                     candidates.append(frame)
             except (RuntimeError, tk.TclError):
                 continue
