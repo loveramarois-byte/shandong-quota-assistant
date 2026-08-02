@@ -235,6 +235,18 @@ class SessionStoreTests(unittest.TestCase):
         self.assertEqual(sessions.load_session(first["id"])["title"], "新名字")
         self.assertIn(second["id"], {item["id"] for item in listing})
 
+    def test_list_reads_header_without_parsing_large_session_body(self):
+        session = self._create('带“引号”的会话')
+        turn = sessions.create_turn(session, "测试摘要读取", quota_edition="2025", standard_edition="2024", discipline="building")
+        sessions.set_turn_local_result(session, turn["turn_id"], _result("测试摘要读取", "1-2-9", "quota:171:33"), ai_enabled=False)
+        sessions.save_session(session)
+
+        with mock.patch.object(sessions, "load_session", side_effect=AssertionError("fast summary path should be used")):
+            listing = sessions.list_sessions()
+
+        self.assertEqual(listing[0]["id"], session["id"])
+        self.assertEqual(listing[0]["title"], '带“引号”的会话')
+
     def test_export_markdown_keeps_turn_boundaries_and_disclaimer(self):
         session = self._create("导出测试")
         turn = sessions.create_turn(session, "挖沟槽", quota_edition="2025", standard_edition="2024", discipline="building")
