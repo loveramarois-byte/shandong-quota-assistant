@@ -40,6 +40,7 @@ from utils.settings import DISCIPLINE_LABEL_TO_CODE, DISCIPLINE_OPTIONS, load_se
 from utils.single_instance import SingleInstanceGuard
 from utils.svg import svg_image
 from utils.windows_theme import apply_window_chrome
+from utils.updater import ReleaseInfo, check_latest, should_check
 from components.result import result_markdown
 
 DISCIPLINE_CODE_TO_LABEL = {code: label for label, code in DISCIPLINE_LABEL_TO_CODE.items()}
@@ -109,6 +110,7 @@ class QuotaApp(ctk.CTk):
     def __init__(self) -> None:
         setup_logging()
         self.log = logging.getLogger("app")
+        self._boot_started = time.perf_counter()
         self.settings = load_settings()
         self.theme_name = self.settings.get("theme", "light")
         self.tokens: ThemeTokens = get_theme(self.theme_name)
@@ -155,7 +157,14 @@ class QuotaApp(ctk.CTk):
             self.tokens.content_max_width,
         )
         self._last_layout_size: tuple[int, int] | None = None
+        self._startup_session_summaries: list[dict] | None = None
+        self._catalog_warmup_started = False
+        self._first_query_started = False
+        self._update_check_inflight = False
+        self._latest_release: ReleaseInfo | None = None
+        self._about_dialog = None
         self._build()
+        self.log.info("ui ready in %.1fms", (time.perf_counter() - self._boot_started) * 1000)
         self.after(60, lambda: apply_window_chrome(self, self.tokens))
         self._refresh_ai_presentation()
         # Keep keyboard submission reliable when Windows UIA focuses an outer CTk pane.
@@ -164,15 +173,49 @@ class QuotaApp(ctk.CTk):
         self.bind("<F1>", lambda _e: self._open_about(), add="+")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.bind("<Configure>", self._schedule_layout_update, add="+")
-        threading.Thread(target=warm_search, name="catalog-prewarm", daemon=True).start()
-        threading.Thread(target=self._load_library_stats, name="library-stats", daemon=True).start()
         self._poll_job = self.after(120, self._poll_events)
         self._show_welcome_state()
         if self.demo_mode:
             self.feed.add_warning("当前使用完全合成的演示资料，只用于体验流程，不可用于真实工程。")
         self.composer.textbox.focus_set()
-        self.after(200, self._restore_latest_session)
+        # Keep the first frame stable: disk, SQLite and network work starts only
+        # after the input is usable. This avoids the old slideshow-like startup.
+        self.after(140, self._load_session_summaries_async)
+        self.after(650, self._start_library_stats)
+        self.after(1400, self._start_catalog_warmup)
+        self.after(1800, lambda: self._start_update_check(force=False))
         self.log.info("app started, version=%s", APP_VERSION)
+
+    def _load_session_summaries_async(self) -> None:
+        if self._closing:
+            return
+
+        def worker() -> None:
+            started = time.perf_counter()
+            try:
+                sessions = session_store.list_sessions()
+            except Exception:
+                sessions = []
+            self.events.put(("sessions_list", sessions))
+            self.log.info("session summaries loaded count=%s in %.1fms", len(sessions), (time.perf_counter() - started) * 1000)
+
+        threading.Thread(target=worker, name="session-summaries", daemon=True).start()
+
+    def _start_library_stats(self) -> None:
+        if not self._closing:
+            threading.Thread(target=self._load_library_stats, name="library-stats", daemon=True).start()
+
+    def _start_catalog_warmup(self) -> None:
+        if self._closing or self._catalog_warmup_started or self._first_query_started:
+            return
+        self._catalog_warmup_started = True
+
+        def worker() -> None:
+            started = time.perf_counter()
+            warm_search()
+            self.log.info("catalog warmup done in %.1fms", (time.perf_counter() - started) * 1000)
+
+        threading.Thread(target=worker, name="catalog-prewarm", daemon=True).start()
 
     def _load_library_stats(self) -> None:
         started = time.perf_counter()
@@ -232,7 +275,7 @@ class QuotaApp(ctk.CTk):
         self.composer = Composer(self.main, tokens=self.tokens, on_send=self._send, on_cancel=self._cancel_active_task, send_image=self._icon("send"))
         self.composer.grid(row=3, column=0, padx=self._content_padding, pady=(5, 23), sticky="ew")
         self.composer.set_enter_send(bool(self.settings.get("enter_send")))
-        self.sidebar.refresh_sessions(session_store.list_sessions(), None)
+        self.sidebar.refresh_sessions([], None)
 
     def _build_header(self) -> None:
         c = self.colors
@@ -569,14 +612,6 @@ class QuotaApp(ctk.CTk):
 
         ConfirmModal(self, tokens=self.tokens, title="删除分析", detail="该记录将移到本地回收区，并立即从历史列表隐藏。确认删除？", on_confirm=do_delete)
 
-    def _restore_latest_session(self) -> None:
-        # Do not yank the screen away from a user who already started working.
-        if self.tasks.searching() is not None or self.session is not None or self._request_id > 0:
-            return
-        sessions = session_store.list_sessions()
-        if sessions:
-            self._select_session(sessions[0]["id"])
-
     def _primary_changed(self, turn_id: str, kind: str, item: dict) -> None:
         session = self._ensure_session()
         if session is None:
@@ -601,6 +636,7 @@ class QuotaApp(ctk.CTk):
     def _send(self) -> None:
         if self.tasks.searching() is not None:
             return
+        self._first_query_started = True
         description = self.composer.get_text()
         if not description:
             self.composer.show_error()
@@ -930,6 +966,25 @@ class QuotaApp(ctk.CTk):
 
     # ------------------------------------------------------------------ dialogs
 
+    def _start_update_check(self, *, force: bool = False) -> None:
+        if self._closing or self._update_check_inflight:
+            return
+        last_checked = self.settings.get("update_last_checked", 0.0)
+        if not force and not should_check(last_checked):
+            return
+        self._update_check_inflight = True
+        self.settings["update_last_checked"] = time.time()
+        try:
+            save_settings(self.settings)
+        except OSError:
+            log_exception("update check timestamp save failed")
+
+        def worker() -> None:
+            release = check_latest(current_version=APP_VERSION, timeout=3.0)
+            self.events.put(("update_result", (release, force)))
+
+        threading.Thread(target=worker, name="version-check", daemon=True).start()
+
     def _open_settings(self) -> None:
         SettingsDialog(self, tokens=self.tokens, settings=dict(self.settings), on_save=self._save_settings)
 
@@ -966,7 +1021,15 @@ class QuotaApp(ctk.CTk):
             "search_backend": "fts（可用 LIKE 回退）",
             "logs": str(logs_dir()),
         }
-        AboutDialog(self, tokens=self.tokens, info=info, on_export_diagnostics=self._export_diagnostics)
+        self._about_dialog = AboutDialog(
+            self,
+            tokens=self.tokens,
+            info=info,
+            on_export_diagnostics=self._export_diagnostics,
+            on_check_updates=lambda: self._start_update_check(force=True),
+        )
+        if self._latest_release is not None:
+            self._about_dialog.set_update_result(self._latest_release)
 
     def _export_diagnostics(self) -> None:
         target = exports_dir() / f"诊断包_{time.strftime('%Y%m%d_%H%M%S')}.zip"
@@ -1025,6 +1088,25 @@ class QuotaApp(ctk.CTk):
                 if kind == "library_stats":
                     if not self._closing:
                         self.sidebar.set_library_stats(payload)
+                    continue
+                if kind == "sessions_list":
+                    self._startup_session_summaries = list(payload or [])
+                    if not self._closing:
+                        self.sidebar.refresh_sessions(self._startup_session_summaries, None)
+                    continue
+                if kind == "update_result":
+                    release, manual = payload
+                    self._update_check_inflight = False
+                    self._latest_release = release
+                    if release is not None:
+                        self.sidebar.set_update_available(release.version)
+                        self._show_toast(f"发现新版本 v{release.version}，可在“关于”中打开下载页", "info")
+                    if self._about_dialog is not None:
+                        try:
+                            if self._about_dialog.winfo_exists():
+                                self._about_dialog.set_update_result(release)
+                        except Exception:
+                            self._about_dialog = None
                     continue
                 request_id, cancel, value = payload
                 if not isinstance(value, dict):
