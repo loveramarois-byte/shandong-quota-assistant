@@ -54,7 +54,9 @@ class ThemeTokens:
     control_height: int = 40
     control_height_sm: int = 32
     sidebar_width: int = 204
-    content_max_width: int = 880
+    # Wide desktop breathing room without leaving a conspicuous unused rail
+    # on 150% DPI screens. Compact windows still fall back to the minimum edge.
+    content_max_width: int = 1080
     icon_sm: int = 16
     icon_md: int = 18
     transition_fast: int = 150

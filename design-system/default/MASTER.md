@@ -1,6 +1,6 @@
 # 山东定额助手 · Design System
 
-**Version:** 0.8.5
+**Version:** 0.8.6
 **Product:** Windows AI 套价辅助工具
 **Design dials:** variance 2/10 · motion 2/10 · density 3/10
 
@@ -18,7 +18,7 @@
 - 暖中性背景，不用纯白、荧光色、AI 紫色渐变或发光。
 - 表面层级只使用背景差、1px 淡边框和极轻分隔；避免厚重阴影。
 - 圆角控制在 5/8/10/12px，不使用大胶囊容器。
-- 单列内容最大宽度 880px；长文保持约 60–70 个字符的阅读宽度。
+- 单列内容最大宽度 1080px；长文保持约 60–70 个字符的阅读宽度。
 - SVG 图标统一为线性、相同描边，不用 emoji 充当控件图标。
 
 ## Color tokens
@@ -64,7 +64,7 @@
 - 4/8px 基础节奏：4, 8, 12, 16, 20, 24, 32, 40。
 - Control height: 40px；compact control: 32px。
 - Radius: 5 / 8 / 10 / 12px。
-- Sidebar: 204px；content max width: 880px。
+- Sidebar: 204px；content max width: 1080px。
 
 ## Core components
 
