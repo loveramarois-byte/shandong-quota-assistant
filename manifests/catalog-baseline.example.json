@@ -1,6 +1,6 @@
 {
   "captured_at": "YYYY-MM-DDTHH:MM:SSZ",
-  "app_version": "0.8.6",
+  "app_version": "0.8.7",
   "catalog_build_id": "YOUR_CATALOG_BUILD_ID",
   "catalog_schema_version": 3,
   "sqlite_application_id": 0,
