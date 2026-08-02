@@ -13,6 +13,8 @@ class ProviderConfig:
     requires_api_key: bool
     key_hint: str
     fallback_models: tuple[str, ...] = ()
+    novice_hint: str = ""
+    key_url: str = ""
 
 
 PROVIDERS: dict[str, ProviderConfig] = {
@@ -25,6 +27,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
         requires_api_key=False,
         key_hint="通常不用填；ccSwitch 开启鉴权时再填写",
         fallback_models=("gpt-5.6-sol", "gpt-5.6-terra"),
+        novice_hint="电脑上的 ccSwitch 已启动即可，通常不需要 API Key。",
     ),
     "deepseek": ProviderConfig(
         key="deepseek",
@@ -34,6 +37,8 @@ PROVIDERS: dict[str, ProviderConfig] = {
         models_path="/models",
         requires_api_key=True,
         key_hint="粘贴 DeepSeek 控制台创建的 API Key",
+        novice_hint="在 DeepSeek 控制台创建 Key，粘贴到这里即可。",
+        key_url="https://platform.deepseek.com/api_keys",
     ),
     "zhipu": ProviderConfig(
         key="zhipu",
@@ -43,6 +48,8 @@ PROVIDERS: dict[str, ProviderConfig] = {
         models_path="/models",
         requires_api_key=True,
         key_hint="粘贴智谱开放平台创建的 API Key",
+        novice_hint="在智谱开放平台创建 Key，粘贴到这里即可。",
+        key_url="https://open.bigmodel.cn/usercenter/apikeys",
     ),
 }
 
