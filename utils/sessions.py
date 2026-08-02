@@ -18,6 +18,9 @@ CATALOG_BUILD_ID = "unregistered-catalog"
 PROMPT_VERSION = "pricing-json-v1"
 _LAST_UPDATED_AT = 0.0
 _WRITE_LOCK = threading.RLock()
+_SUMMARY_ID_RE = re.compile(r'"id"\s*:\s*("(?:\\.|[^"\\])*")')
+_SUMMARY_TITLE_RE = re.compile(r'"title"\s*:\s*("(?:\\.|[^"\\])*")')
+_SUMMARY_UPDATED_RE = re.compile(r'"updated_at"\s*:\s*([-+0-9.eE]+)')
 
 
 class SessionDeletedError(RuntimeError):
@@ -416,20 +419,44 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _read_session_summary(path: Path) -> dict[str, Any] | None:
+    """Read only the small top-level header instead of parsing result snapshots."""
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            prefix = stream.read(4096)
+        id_match = _SUMMARY_ID_RE.search(prefix)
+        title_match = _SUMMARY_TITLE_RE.search(prefix)
+        updated_match = _SUMMARY_UPDATED_RE.search(prefix)
+        if not (id_match and title_match and updated_match):
+            return None
+        session_id = str(json.loads(id_match.group(1)))
+        if session_id != path.stem or not re.fullmatch(r"[a-f0-9]{8,64}", session_id):
+            return None
+        title = str(json.loads(title_match.group(1)) or "未命名检索")[:60]
+        updated_at = float(updated_match.group(1))
+        return {"id": session_id, "title": title, "updated_at": updated_at}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
 def list_sessions() -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for path in sessions_dir().glob("*.json"):
         session_id = path.stem
         if _tombstone_file(session_id).exists():
             continue
-        session = load_session(session_id)
-        if session is None:
+        summary = _read_session_summary(path)
+        if summary is not None:
+            result.append(summary)
             continue
-        try:
-            updated_at = float(session.get("updated_at") or 0)
-        except (TypeError, ValueError):
-            updated_at = 0.0
-        result.append({"id": session["id"], "title": str(session.get("title") or "未命名检索")[:60], "updated_at": updated_at})
+        # Legacy or unusually formatted files retain the validated slow path.
+        session = load_session(session_id)
+        if session is not None:
+            try:
+                updated_at = float(session.get("updated_at") or 0)
+            except (TypeError, ValueError):
+                updated_at = 0.0
+            result.append({"id": session["id"], "title": str(session.get("title") or "未命名检索")[:60], "updated_at": updated_at})
     result.sort(key=lambda item: -item["updated_at"])
     return result
 

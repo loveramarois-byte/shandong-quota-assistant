@@ -30,6 +30,7 @@ DEFAULTS: dict[str, Any] = {
     "ai_base_url": "",
     "ai_model": "",
     "ai_timeout": 0,
+    "update_last_checked": 0.0,
     # Legacy keys remain readable so existing ccSwitch users migrate without
     # losing their endpoint and model.
     "ccswitch_base_url": "",
@@ -101,6 +102,10 @@ def sanitize_settings(settings: dict[str, Any]) -> dict[str, Any]:
         and catalog_consent_version >= _AI_CONSENT_VERSION
     )
     cleaned["enter_send"] = bool(cleaned.get("enter_send", False))
+    try:
+        cleaned["update_last_checked"] = max(0.0, float(cleaned.get("update_last_checked") or 0.0))
+    except (TypeError, ValueError, OverflowError):
+        cleaned["update_last_checked"] = 0.0
     if cleaned.get("theme") not in {"light", "dark"}:
         cleaned["theme"] = "light"
     cleaned["ai_provider"] = normalize_provider(settings.get("ai_provider") or cleaned.get("ai_provider"))

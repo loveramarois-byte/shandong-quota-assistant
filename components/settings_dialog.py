@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import webbrowser
 
 import customtkinter as ctk
 
@@ -98,7 +99,7 @@ class SettingsDialog(ctk.CTkToplevel):
             anchor="w",
             justify="left",
             wraplength=530,
-            height=24,
+            height=42,
         )
         self.error_label.pack(fill="x", padx=28, pady=(8, 0))
 
@@ -144,7 +145,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._section_title(body, "AI 连接", pad)
         ctk.CTkLabel(
             body,
-            text="选择服务商并连接模型",
+            text="三步完成：选择服务商 → 粘贴 Key → 点击“连接并获取模型”",
             text_color=c.text_muted,
             font=caption_font,
             anchor="w",
@@ -169,6 +170,18 @@ class SettingsDialog(ctk.CTkToplevel):
         self.provider.grid(row=row, column=1, columnspan=2, sticky="ew", pady=7)
         row += 1
 
+        self.provider_hint = ctk.CTkLabel(
+            form,
+            text=initial_config.novice_hint,
+            text_color=c.text_muted,
+            font=caption_font,
+            anchor="w",
+            justify="left",
+            wraplength=430,
+        )
+        self.provider_hint.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 3))
+        row += 1
+
         ctk.CTkLabel(form, text="API Key", text_color=c.text_secondary, font=label_font, anchor="w", width=86).grid(row=row, column=0, sticky="w", pady=7)
         self.api_key = ctk.CTkEntry(form, show="•", placeholder_text=initial_config.key_hint, fg_color=c.elevated, border_color=c.border, text_color=c.text, font=label_font)
         self.api_key.grid(row=row, column=1, sticky="ew", pady=7)
@@ -176,7 +189,10 @@ class SettingsDialog(ctk.CTkToplevel):
         self.key_visibility_button.grid(row=row, column=2, padx=(6, 0), pady=7)
         row += 1
         self.key_status = ctk.CTkLabel(form, text="", text_color=c.text_muted, font=caption_font, anchor="w")
-        self.key_status.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 5))
+        self.key_status.grid(row=row, column=1, sticky="w", pady=(0, 5))
+        self.key_help_button = DSButton(form, tokens=self.tokens, text="获取 Key", variant="ghost", width=68, height=26, command=self._open_key_help)
+        self.key_help_button.grid(row=row, column=2, padx=(6, 0), pady=(0, 5))
+        self.key_help_button.set_enabled(bool(initial_config.key_url))
         row += 1
 
         ctk.CTkLabel(form, text="模型", text_color=c.text_secondary, font=label_font, anchor="w", width=86).grid(row=row, column=0, sticky="w", pady=7)
@@ -237,6 +253,16 @@ class SettingsDialog(ctk.CTkToplevel):
         self.timeout.grid(row=1, column=1, sticky="w", pady=5)
         self._refresh_key_status()
 
+    def _open_key_help(self) -> None:
+        config = provider_config(self._provider_key())
+        if config.key_url:
+            try:
+                webbrowser.open(config.key_url, new=2)
+            except OSError:
+                self._show_error(f"请在浏览器打开 {config.key_url}")
+        else:
+            self._show_error("ccSwitch 是本机服务：先启动 ccSwitch，再回到这里点击连接。")
+
     def _provider_key(self) -> str:
         return provider_key_from_label(self.provider.get())
 
@@ -254,6 +280,8 @@ class SettingsDialog(ctk.CTkToplevel):
         self.base_url.insert(0, endpoint)
         self.api_key.delete(0, "end")
         self.api_key.configure(placeholder_text=config.key_hint)
+        self.provider_hint.configure(text=config.novice_hint)
+        self.key_help_button.set_enabled(bool(config.key_url))
         self.model.configure(values=["先点击右侧获取模型"])
         self.model.set("先点击右侧获取模型")
         self._refresh_key_status()
@@ -498,9 +526,10 @@ class SettingsDialog(ctk.CTkToplevel):
                     self.model.set(model)
                     note = " · 使用兼容模型" if detail.get("fallback") else ""
                     self.error_label.configure(
-                        text=f"连接成功 · {self.provider.get()} · {model}{note}",
+                        text=f"连接成功 · {self.provider.get()} · {model}{note}。勾选两项发送许可后保存即可启用 AI。",
                         text_color=self.tokens.colors.success,
                     )
+                    self.ai_enabled.select()
                 else:
                     self._show_error("连接未返回可用模型。请检查服务地址后重试。")
             else:

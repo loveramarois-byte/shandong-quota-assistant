@@ -130,6 +130,9 @@ class Sidebar(ctk.CTkFrame):
         self.settings_button.pack(side="left")
         self.about_button = DSButton(footer_buttons, tokens=self.tokens, text="关于", image=self.about_image, compound="left", variant="ghost", width=72, height=30, command=self.on_open_about)
         self.about_button.pack(side="left", padx=(4, 0))
+        self.update_button = DSButton(self.footer, tokens=self.tokens, text="", variant="ghost", width=166, height=28, command=self.on_open_about, anchor="w")
+        self.update_button.grid(row=4, column=0, sticky="w", pady=(5, 0))
+        self.update_button.grid_remove()
 
     def _build_library_card(self) -> None:
         c = self.tokens.colors
@@ -153,6 +156,13 @@ class Sidebar(ctk.CTkFrame):
             text="本地资料库 · 已就绪" if self.library_available else "资料库未连接",
             text_color=self.tokens.colors.success if self.library_available else self.tokens.colors.text_muted,
         )
+
+    def set_update_available(self, version: str | None) -> None:
+        if not version:
+            self.update_button.grid_remove()
+            return
+        self.update_button.configure(text=f"发现 v{version} 更新")
+        self.update_button.grid()
 
     def refresh_sessions(self, sessions: list[dict], active_id: str | None = None) -> None:
         for row in self._session_rows:
@@ -232,6 +242,7 @@ class Sidebar(ctk.CTkFrame):
         self.delete_button.apply_theme(tokens)
         self.settings_button.apply_theme(tokens)
         self.about_button.apply_theme(tokens)
+        self.update_button.apply_theme(tokens)
         self.library_info.configure(text_color=c.success if self.library_available else c.text_muted, font=tokens.font(tokens.typography.caption))
         for row in self._session_rows:
             row.apply_theme(tokens)
