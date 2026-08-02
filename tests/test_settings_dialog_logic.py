@@ -47,6 +47,16 @@ class SettingsDialogRequestTests(unittest.TestCase):
                 probe_request_id=3,
             )
         )
+        self.assertTrue(
+            accepts(
+                action="connect",
+                request_id=3,
+                provider="deepseek",
+                current_provider="deepseek",
+                model_request_id=8,
+                probe_request_id=3,
+            )
+        )
 
     def test_polling_continues_while_a_later_request_is_still_pending(self):
         should_continue = getattr(settings_dialog, "should_continue_connection_poll", None)

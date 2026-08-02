@@ -11,6 +11,7 @@ import argparse
 from collections import Counter
 from dataclasses import asdict, dataclass
 import json
+import math
 from pathlib import Path
 import sys
 import time
@@ -22,16 +23,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.main import ai_connection_state, centered_content_padding, initial_window_bounds
-from components.message import logical_wrap_width
-from components.result import proposal_decision_summary
+from components.message import WelcomePrompt, logical_wrap_width
+from components.result import COLLAPSED_RESULT_ACTIONS, proposal_decision_summary
+from components.settings_dialog import AI_CONNECT_ACTION_LABEL
 from components.scrollable import normalized_wheel_pixels, pixel_scroll_fraction
 from themes.tokens import DARK, LIGHT
-from utils.ai_providers import provider_config
+from utils.ai_providers import effective_base_url, provider_config
 from utils.catalog import library_stats, warm_search
+from utils.ccswitch import EmptyModelListError, fetch_models, probe_ccswitch
 from utils.paths import APP_VERSION, catalog_manifest_path, database_path, resource_path
 from utils.pricing_pipeline import analyze_pricing_description, proposal_plain_text
 from utils.query_parse import parse_query_conditions
-from utils.settings import sanitize_settings
+from utils.secrets import load_api_key
+from utils.settings import load_settings, sanitize_settings
 from utils.work_items import segment_description
 
 
@@ -42,6 +46,17 @@ class DrillCase:
     title: str
     runner: str
     data: dict[str, Any]
+    axes: tuple[str, ...]
+
+
+AXIS_LABELS = {
+    "ease_of_use": "易用性",
+    "maturity": "成熟度",
+    "novice": "新手使用",
+    "api_connectivity": "API 连通性",
+    "ui_clarity": "UI 直观性",
+    "simplicity": "简洁一目了然",
+}
 
 
 def _pricing_cases() -> list[DrillCase]:
@@ -137,51 +152,141 @@ def _pricing_cases() -> list[DrillCase]:
         }
         if query == "屋顶防水，材料还没定":
             data.update(expected_status="needs_clarification", expected_question_field="material")
+        axes = ("ease_of_use", "maturity", "novice") if group == "小白" else ("ease_of_use", "maturity")
         cases.append(DrillCase(
             id=f"P{index:03d}",
             category=f"实际检索/{group}",
             title=query,
             runner="pricing",
             data=data,
+            axes=axes,
         ))
     return cases
 
 
 def _state_cases() -> list[DrillCase]:
-    checks: list[tuple[str, str, Callable[[], tuple[bool, str]]]] = [
-        ("AI/未连接", "未配置 AI 时仍明确保留本地模式", lambda: (ai_connection_state({"ai_enabled": False})[0] is False, ai_connection_state({"ai_enabled": False})[1])),
-        ("AI/DeepSeek", "DeepSeek 连接状态可读", lambda: (ai_connection_state({"ai_enabled": True, "ai_provider": "deepseek", "ai_model": "deepseek-chat"})[0], ai_connection_state({"ai_enabled": True, "ai_provider": "deepseek", "ai_model": "deepseek-chat"})[1])),
-        ("AI/智谱", "智谱连接状态可读", lambda: ("智谱" in provider_config("zhipu").label, provider_config("zhipu").label)),
-        ("AI/ccSwitch", "ccSwitch 连接状态可读", lambda: ("ccSwitch" in provider_config("ccswitch").label, provider_config("ccswitch").label)),
-        ("设置/默认专业", "小白默认不会落入全部专业", lambda: (sanitize_settings({"discipline": "全部专业"})["discipline"] == "建筑", sanitize_settings({"discipline": "全部专业"})["discipline"])),
-        ("设置/模型", "关闭 AI 时清理模型误导", lambda: (sanitize_settings({"ai_enabled": False, "ai_model": "x"})["ai_enabled"] is False, "AI 已关闭")),
-        ("输入/DN", "DN25 可提取管径", lambda: (parse_query_conditions("给水管DN25").diameter_mm == 25, str(parse_query_conditions("给水管DN25").diameter_mm))),
-        ("输入/厚度", "18cm 可提取为 180mm", lambda: (parse_query_conditions("基层厚度18cm").thickness_mm == 180, str(parse_query_conditions("基层厚度18cm").thickness_mm))),
-        ("输入/分项", "三条口语事项可正确拆分", lambda: (len(segment_description("屋面防水；外墙保温；内墙刷漆", discipline="building")) == 3, str(len(segment_description("屋面防水；外墙保温；内墙刷漆", discipline="building"))))),
-        ("输入/原文", "施工描述原文不被改写丢失", lambda: (segment_description("JDG20电气配管暗配", discipline="installation")[0].source_span == "JDG20电气配管暗配", segment_description("JDG20电气配管暗配", discipline="installation")[0].source_span)),
-        ("结果/结论", "首屏结论优先给主清单与主定额", _check_result_summary),
-        ("结果/导出", "本地方案可生成可复制文本", _check_plain_export),
-        ("布局/窗口", "150% DPI 初始窗口不重复缩放", lambda: (initial_window_bounds(2560, 1440, 1.5)[:2] == (1360, 860), str(initial_window_bounds(2560, 1440, 1.5)[:2]))),
-        ("布局/窄窗", "窄窗口保留最小内容边距", lambda: (centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width) >= 20, str(centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width)))),
-        ("布局/长文", "长结果在高 DPI 下限制可读行宽", lambda: (logical_wrap_width(932, 1.5) == 600, str(logical_wrap_width(932, 1.5)))),
-        ("滚动/标准滚轮", "标准滚轮步长稳定", lambda: (normalized_wheel_pixels(-120) > 0, str(normalized_wheel_pixels(-120)))),
-        ("滚动/高精度滚轮", "高精度滚轮保留细粒度", lambda: (normalized_wheel_pixels(30) == -14, str(normalized_wheel_pixels(30)))),
-        ("滚动/边缘", "滚动到边缘时停止并允许父容器接管", lambda: (pixel_scroll_fraction((0.0, 0.25), -56, 250) is None, str(pixel_scroll_fraction((0.0, 0.25), -56, 250)))),
-        ("主题/浅色", "浅色主题不使用纯白页面背景", lambda: (LIGHT.colors.background.upper() != "#FFFFFF", LIGHT.colors.background)),
-        ("主题/深色", "深色主题不使用纯黑页面背景", lambda: (DARK.colors.background.upper() != "#000000", DARK.colors.background)),
-        ("主题/字号", "正文与辅助文字达到可读下限", lambda: (LIGHT.typography.body >= 14 and LIGHT.typography.caption >= 11, f"{LIGHT.typography.body}/{LIGHT.typography.caption}")),
-        ("资源/字体", "Inter 四个字重随包提供", lambda: (all(resource_path("assets", "fonts", f"Inter-{weight}.ttf").exists() for weight in ("Regular", "Medium", "SemiBold", "Bold")), "Inter")),
-        ("资源/图标", "核心操作使用 SVG 图标", lambda: (all(resource_path("assets", "icons", f"{name}.svg").exists() for name in ("send", "copy", "settings", "plus")), "SVG")),
-        ("运行/数据库", "完整结构化资料库可读", lambda: (database_path().exists() and database_path().stat().st_size > 100_000_000, f"{database_path().stat().st_size}")),
-        ("运行/清单", "资料库发布清单存在", lambda: (catalog_manifest_path() is not None, str(catalog_manifest_path()))),
+    checks: list[tuple[str, str, Callable[[], tuple[bool, str]], tuple[str, ...]]] = [
+        ("AI/未连接", "未配置 AI 时明确保留本地模式", lambda: (ai_connection_state({"ai_enabled": False})[0] is False, ai_connection_state({"ai_enabled": False})[1]), ("api_connectivity", "ease_of_use")),
+        ("AI/DeepSeek", "已配置 DeepSeek 完成真实模型读取与对话", lambda: _api_check("deepseek", require_connected=True), ("api_connectivity", "maturity")),
+        ("AI/智谱", "未配置智谱时准确显示未配置", lambda: _api_check("zhipu"), ("api_connectivity", "novice")),
+        ("AI/ccSwitch", "ccSwitch 可用或给出明确恢复路径", lambda: _api_check("ccswitch"), ("api_connectivity", "novice")),
+        ("设置/默认专业", "小白默认不会落入全部专业", lambda: (sanitize_settings({"discipline": "全部专业"})["discipline"] == "建筑", sanitize_settings({"discipline": "全部专业"})["discipline"]), ("novice", "simplicity")),
+        ("设置/一键连接", "AI 配置只有一个主连接动作", lambda: (AI_CONNECT_ACTION_LABEL == "连接并获取模型", AI_CONNECT_ACTION_LABEL), ("api_connectivity", "novice", "ease_of_use")),
+        ("欢迎/示例", "欢迎页示例不超过三项", lambda: (len(WelcomePrompt.EXAMPLES) <= 3, str(len(WelcomePrompt.EXAMPLES))), ("novice", "ui_clarity", "simplicity")),
+        ("结果/动作", "结果折叠态只保留两个直观动作", lambda: (COLLAPSED_RESULT_ACTIONS == ("复制方案", "查看依据"), " / ".join(COLLAPSED_RESULT_ACTIONS)), ("ease_of_use", "ui_clarity", "simplicity")),
+        ("输入/DN", "DN25 可提取管径", lambda: (parse_query_conditions("给水管DN25").diameter_mm == 25, str(parse_query_conditions("给水管DN25").diameter_mm)), ("novice", "ease_of_use")),
+        ("输入/厚度", "18cm 可提取为 180mm", lambda: (parse_query_conditions("基层厚度18cm").thickness_mm == 180, str(parse_query_conditions("基层厚度18cm").thickness_mm)), ("novice", "ease_of_use")),
+        ("输入/分项", "三条口语事项可正确拆分", lambda: (len(segment_description("屋面防水；外墙保温；内墙刷漆", discipline="building")) == 3, str(len(segment_description("屋面防水；外墙保温；内墙刷漆", discipline="building")))), ("novice", "ease_of_use")),
+        ("输入/原文", "施工描述原文不被改写丢失", lambda: (segment_description("JDG20电气配管暗配", discipline="installation")[0].source_span == "JDG20电气配管暗配", segment_description("JDG20电气配管暗配", discipline="installation")[0].source_span), ("maturity",)),
+        ("结果/结论", "首屏结论优先给主清单与主定额", _check_result_summary, ("ui_clarity", "simplicity")),
+        ("结果/导出", "本地方案可生成可复制文本", _check_plain_export, ("ease_of_use", "maturity")),
+        ("布局/窗口", "150% DPI 初始窗口不重复缩放", lambda: (initial_window_bounds(2560, 1440, 1.5)[:2] == (1360, 860), str(initial_window_bounds(2560, 1440, 1.5)[:2])), ("ui_clarity", "maturity")),
+        ("布局/窄窗", "窄窗口保留最小内容边距", lambda: (centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width) >= 20, str(centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width))), ("ui_clarity", "simplicity")),
+        ("布局/长文", "长结果在高 DPI 下限制可读行宽", lambda: (logical_wrap_width(932, 1.5) == 600, str(logical_wrap_width(932, 1.5))), ("ui_clarity",)),
+        ("滚动/标准滚轮", "标准滚轮步长稳定", lambda: (normalized_wheel_pixels(-120) > 0, str(normalized_wheel_pixels(-120))), ("ease_of_use", "maturity")),
+        ("滚动/高精度滚轮", "高精度滚轮保留细粒度", lambda: (normalized_wheel_pixels(30) == -14, str(normalized_wheel_pixels(30))), ("ease_of_use", "maturity")),
+        ("滚动/边缘", "滚动到边缘时允许父容器接管", lambda: (pixel_scroll_fraction((0.0, 0.25), -56, 250) is None, str(pixel_scroll_fraction((0.0, 0.25), -56, 250))), ("ease_of_use", "maturity")),
+        ("主题/对比度", "浅色与深色正文对比度均达 4.5:1", _check_theme_contrast, ("ui_clarity", "maturity")),
+        ("主题/字号", "正文与辅助文字达到可读下限", lambda: (LIGHT.typography.body >= 14 and LIGHT.typography.caption >= 11, f"{LIGHT.typography.body}/{LIGHT.typography.caption}"), ("ui_clarity", "novice")),
+        ("资源/视觉", "Inter 字重与核心 SVG 图标随包提供", _check_visual_assets, ("maturity", "ui_clarity")),
+        ("运行/数据库", "完整结构化资料库可读", lambda: (database_path().exists() and database_path().stat().st_size > 100_000_000, f"{database_path().stat().st_size}"), ("maturity",)),
+        ("运行/清单", "资料库发布清单存在", lambda: (catalog_manifest_path() is not None, str(catalog_manifest_path())), ("maturity",)),
     ]
     return [
-        DrillCase(id=f"S{index:03d}", category=category, title=title, runner="state", data={"check": check})
-        for index, (category, title, check) in enumerate(checks, start=1)
+        DrillCase(id=f"S{index:03d}", category=category, title=title, runner="state", data={"check": check}, axes=axes)
+        for index, (category, title, check, axes) in enumerate(checks, start=1)
     ]
 
 
 _LAST_PRICING_RESULT: dict[str, Any] | None = None
+_API_STATUS: dict[str, dict[str, Any]] = {}
+
+
+def _safe_error(exc: Exception) -> str:
+    text = " ".join(str(exc).replace("\r", " ").replace("\n", " ").split())
+    return text[:180] or type(exc).__name__
+
+
+def _probe_saved_providers() -> dict[str, dict[str, Any]]:
+    """Exercise real model-list and chat endpoints without retaining secrets or replies."""
+    settings = load_settings()
+    active_provider = str(settings.get("ai_provider") or "")
+    outcomes: dict[str, dict[str, Any]] = {}
+    for provider in ("deepseek", "zhipu", "ccswitch"):
+        config = provider_config(provider)
+        key = load_api_key(provider)
+        if config.requires_api_key and not key:
+            outcomes[provider] = {"configured": False, "status": "unconfigured", "models": 0, "elapsed_ms": 0.0}
+            continue
+        configured_base = str(settings.get("ai_base_url") or "") if provider == active_provider else ""
+        configured_model = str(settings.get("ai_model") or "") if provider == active_provider else ""
+        endpoint = effective_base_url(provider, configured_base)
+        started = time.perf_counter()
+        try:
+            used_fallback = False
+            try:
+                models = fetch_models(provider=provider, base_url=endpoint, api_key=key, timeout=12)
+            except EmptyModelListError:
+                if not config.fallback_models:
+                    raise
+                used_fallback = True
+                models = list(config.fallback_models)
+            model = configured_model if configured_model in models else models[0]
+            probe_ccswitch(endpoint, model=model, timeout=12, provider=provider, api_key=key)
+            outcomes[provider] = {
+                "configured": True,
+                "status": "connected",
+                "models": len(models),
+                "selected_model": model,
+                "fallback_models": used_fallback,
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+            }
+        except Exception as exc:  # noqa: BLE001 - connectivity report must describe recovery state
+            outcomes[provider] = {
+                "configured": True,
+                "status": "unavailable",
+                "models": 0,
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+                "recovery": "检查服务地址、API Key、网络与模型权限后重试",
+                "error": _safe_error(exc),
+            }
+    return outcomes
+
+
+def _api_check(provider: str, *, require_connected: bool = False) -> tuple[bool, str]:
+    outcome = _API_STATUS.get(provider) or {}
+    status = str(outcome.get("status") or "unknown")
+    if require_connected:
+        return status == "connected", f"{status} · {outcome.get('models', 0)} models"
+    passed = status in {"connected", "unconfigured"} or (status == "unavailable" and bool(outcome.get("recovery")))
+    return passed, status if status != "unavailable" else f"{status} · {outcome.get('recovery')}"
+
+
+def _relative_luminance(color: str) -> float:
+    values = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    channels = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in values]
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast_ratio(foreground: str, background: str) -> float:
+    left, right = sorted((_relative_luminance(foreground), _relative_luminance(background)), reverse=True)
+    return (left + 0.05) / (right + 0.05)
+
+
+def _check_theme_contrast() -> tuple[bool, str]:
+    ratios = (
+        _contrast_ratio(LIGHT.colors.text, LIGHT.colors.background),
+        _contrast_ratio(LIGHT.colors.text_secondary, LIGHT.colors.background),
+        _contrast_ratio(DARK.colors.text, DARK.colors.background),
+        _contrast_ratio(DARK.colors.text_secondary, DARK.colors.background),
+    )
+    return min(ratios) >= 4.5, " / ".join(f"{value:.2f}:1" for value in ratios)
+
+
+def _check_visual_assets() -> tuple[bool, str]:
+    fonts = all(resource_path("assets", "fonts", f"Inter-{weight}.ttf").exists() for weight in ("Regular", "Medium", "SemiBold", "Bold"))
+    icons = all(resource_path("assets", "icons", f"{name}.svg").exists() for name in ("send", "copy", "settings", "plus"))
+    return fonts and icons, f"fonts={fonts}, svg={icons}"
 
 
 def _check_result_summary() -> tuple[bool, str]:
@@ -280,7 +385,11 @@ def _pricing_run(case: DrillCase) -> tuple[bool, list[str], dict[str, Any]]:
 
 
 def run(output: Path | None = None) -> dict[str, Any]:
+    global _API_STATUS
     started = time.perf_counter()
+    api_started = time.perf_counter()
+    _API_STATUS = _probe_saved_providers()
+    api_probe_ms = round((time.perf_counter() - api_started) * 1000, 1)
     warm_started = time.perf_counter()
     warm_search()
     warm_ms = round((time.perf_counter() - warm_started) * 1000, 1)
@@ -301,22 +410,49 @@ def run(output: Path | None = None) -> dict[str, Any]:
             "id": case.id,
             "category": case.category,
             "title": case.title,
+            "axes": list(case.axes),
             "passed": bool(passed),
             "errors": errors,
             "details": details,
         })
     failures = [value for value in results if not value["passed"]]
+    axis_scores: dict[str, dict[str, Any]] = {}
+    for axis, label in AXIS_LABELS.items():
+        scoped = [value for value in results if axis in value["axes"]]
+        passed_count = sum(bool(value["passed"]) for value in scoped)
+        axis_scores[axis] = {
+            "label": label,
+            "cases": len(scoped),
+            "passed": passed_count,
+            "score": round((passed_count / len(scoped)) * 100, 1) if scoped else 0.0,
+        }
+    latencies = sorted(
+        float(value.get("details", {}).get("elapsed_ms") or 0)
+        for value in results
+        if value["id"].startswith("P")
+    )
+    midpoint = len(latencies) // 2
+    p50 = (latencies[midpoint] if len(latencies) % 2 else (latencies[midpoint - 1] + latencies[midpoint]) / 2) if latencies else 0.0
+    p95 = latencies[max(0, math.ceil(len(latencies) * 0.95) - 1)] if latencies else 0.0
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "app_version": APP_VERSION,
         "platform": sys.platform,
         "catalogue": library_stats(),
         "warmup_ms": warm_ms,
+        "api_probe_ms": api_probe_ms,
+        "api_connectivity": _API_STATUS,
         "case_count": len(results),
         "passed": len(results) - len(failures),
         "failed": len(failures),
         "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         "category_counts": dict(Counter(value["category"].split("/")[0] for value in results)),
+        "axis_scores": axis_scores,
+        "latency_ms": {
+            "p50": round(p50, 1),
+            "p95": round(p95, 1),
+            "max": round(max(latencies), 1) if latencies else 0.0,
+        },
         "scope_note": "100 次是在 Windows 实机和完整结构化山东资料库上执行的产品回归；它验证流程、召回、专业边界和关键样例，不等于工程计价准确率证明。",
         "results": results,
     }

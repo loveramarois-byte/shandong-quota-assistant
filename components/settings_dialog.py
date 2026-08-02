@@ -20,6 +20,9 @@ from .button import DSButton
 from .scrollable import PointerScrollableFrame
 
 
+AI_CONNECT_ACTION_LABEL = "连接并获取模型"
+
+
 def is_current_connection_result(
     *,
     action: str,
@@ -101,7 +104,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         buttons = ctk.CTkFrame(self, fg_color="transparent")
         buttons.pack(fill="x", padx=28, pady=(8, 20))
-        self.test_button = DSButton(buttons, tokens=self.tokens, text="测试连接", variant="secondary", width=96, command=self._test_connection)
+        self.test_button = DSButton(buttons, tokens=self.tokens, text=AI_CONNECT_ACTION_LABEL, variant="secondary", width=132, command=self._connect_ai)
         self.test_button.pack(side="left")
         DSButton(buttons, tokens=self.tokens, text="保存", width=78, command=self._save).pack(side="right")
         DSButton(buttons, tokens=self.tokens, text="取消", variant="secondary", width=78, command=self._close).pack(side="right", padx=(0, 8))
@@ -190,7 +193,7 @@ class SettingsDialog(ctk.CTkToplevel):
         )
         self.model.set(current_model or "先点击右侧获取模型")
         self.model.grid(row=row, column=1, sticky="ew", pady=7)
-        self.models_button = DSButton(form, tokens=self.tokens, text="获取模型", variant="secondary", width=84, height=32, command=self._fetch_models)
+        self.models_button = DSButton(form, tokens=self.tokens, text="刷新", variant="secondary", width=58, height=32, command=self._fetch_models)
         self.models_button.grid(row=row, column=2, padx=(6, 0), pady=7)
         row += 1
 
@@ -361,6 +364,50 @@ class SettingsDialog(ctk.CTkToplevel):
         value = self.model.get().strip()
         return "" if value == "先点击右侧获取模型" else value
 
+    def _connect_ai(self) -> None:
+        """Discover a model and verify it in one novice-friendly action."""
+        endpoint = self._endpoint()
+        timeout = self._read_timeout()
+        if endpoint is None or timeout is None:
+            return
+        provider = self._provider_key()
+        key = self._current_key()
+        config = provider_config(provider)
+        if config.requires_api_key and not key:
+            self._show_error(f"请先填写 {config.label} API Key，再点“连接并获取模型”。", self.api_key)
+            return
+        self.error_label.configure(text="正在连接并读取模型…", text_color=self.tokens.colors.text_muted)
+        self.test_button.set_loading(True, "连接中…")
+        self.models_button.set_enabled(False)
+        self._probe_request_id += 1
+        self._pending_requests += 1
+        request_id = self._probe_request_id
+        previous_model = self._selected_model()
+        configured_model = str(self._settings.get("ai_model") or self._settings.get("ccswitch_model") or "").strip()
+
+        def worker() -> None:
+            used_fallback = False
+            try:
+                try:
+                    models = fetch_models(provider=provider, base_url=endpoint, api_key=key, timeout=timeout or 12)
+                except EmptyModelListError:
+                    if provider != "ccswitch" or not config.fallback_models:
+                        raise
+                    used_fallback = True
+                    models = list(dict.fromkeys(([configured_model] if configured_model else []) + list(config.fallback_models)))
+                model = next((value for value in (previous_model, configured_model) if value in models), models[0])
+                probe_ccswitch(endpoint, model=model, timeout=timeout or 12, provider=provider, api_key=key)
+                self._connection_queue.put(("connect", request_id, provider, True, {
+                    "models": models,
+                    "model": model,
+                    "fallback": used_fallback,
+                }))
+            except Exception as exc:
+                self._connection_queue.put(("connect", request_id, provider, False, str(exc)))
+
+        threading.Thread(target=worker, name=f"{provider}-connect", daemon=True).start()
+        self._ensure_connection_poll()
+
     def _test_connection(self) -> None:
         endpoint = self._endpoint()
         timeout = self._read_timeout()
@@ -440,6 +487,24 @@ class SettingsDialog(ctk.CTkToplevel):
                 self.error_label.configure(text=status, text_color=self.tokens.colors.success)
             else:
                 self._show_error(f"获取模型失败：{detail}")
+        elif action == "connect":
+            self.test_button.set_loading(False)
+            self.models_button.set_enabled(True)
+            if ok and isinstance(detail, dict):
+                models = [str(item) for item in detail.get("models") or []]
+                model = str(detail.get("model") or "")
+                if models and model:
+                    self.model.configure(values=models)
+                    self.model.set(model)
+                    note = " · 使用兼容模型" if detail.get("fallback") else ""
+                    self.error_label.configure(
+                        text=f"连接成功 · {self.provider.get()} · {model}{note}",
+                        text_color=self.tokens.colors.success,
+                    )
+                else:
+                    self._show_error("连接未返回可用模型。请检查服务地址后重试。")
+            else:
+                self._show_error(f"连接失败：{detail}。请检查 API Key、网络和服务地址后重试。")
         else:
             self.test_button.set_loading(False)
             if ok:

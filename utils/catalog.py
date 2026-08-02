@@ -24,6 +24,8 @@ _BILL_CODE_QUERY_RE = re.compile(r"^\s*(\d{9,12})(?:-\d{3})?\s*$")
 _QUOTA_CODE_QUERY_RE = re.compile(r"^\s*(\d{1,2}(?:-\d{1,3}){1,4})\s*$")
 _schema_lock = threading.Lock()
 _validated_database_signature: tuple[str, int, int] | None = None
+_warm_lock = threading.Lock()
+_warm_complete = False
 
 
 class CatalogSearchCancelled(RuntimeError):
@@ -739,24 +741,39 @@ def missing_info_hints(result: dict) -> list[str]:
 
 
 def warm_search() -> None:
-    """Warm jieba and one small FTS lookup so the first click is not penalized."""
-    try:
-        _jieba_cut("挖沟槽土方深度运距")
-    except ImportError:
+    """Warm the real retrieval path once, on the caller's background thread."""
+    global _warm_complete
+    if _warm_complete:
         return
-    try:
-        connection = connect_database()
+    with _warm_lock:
+        if _warm_complete:
+            return
         try:
-            # Touch the FTS index and its row lookup without materializing a result panel.
-            connection.execute(
-                "SELECT c.chunk_id FROM chunks_fts JOIN chunks c ON c.chunk_id=chunks_fts.chunk_id "
-                "WHERE c.edition=? AND chunks_fts MATCH ? LIMIT 1",
-                ("2025", '"挖沟槽土方"'),
-            ).fetchone()
+            _jieba_cut("屋面防水电气配管沟槽土方")
+        except ImportError:
+            _warm_complete = True
+            return
+        try:
+            # Prime the same FTS, structured lookup, ranking and link joins used
+            # by the first real request. The app invokes this from a daemon thread.
+            search_catalog(
+                "屋面卷材防水热熔",
+                quota_edition="2025",
+                standard_edition="2024",
+                discipline="building",
+                limit=3,
+            )
+            search_catalog(
+                "JDG20电气配管暗配",
+                quota_edition="2025",
+                standard_edition="2024",
+                discipline="installation",
+                limit=3,
+            )
+        except (OSError, sqlite3.Error, FileNotFoundError, RuntimeError):
+            pass
         finally:
-            connection.close()
-    except (OSError, sqlite3.Error, FileNotFoundError):
-        return
+            _warm_complete = True
 
 
 def library_stats() -> dict[str, int | None]:

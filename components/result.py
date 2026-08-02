@@ -15,6 +15,9 @@ from utils.pricing_pipeline import proposal_confirmable, proposal_plain_text
 from utils.svg import svg_image
 from .button import DSButton, IconButton
 
+
+COLLAPSED_RESULT_ACTIONS = ("复制方案", "查看依据")
+
 DISCLAIMER = (
     "普通套项以本地结构化山东清单定额库为依据。"
     "涉及换算、系数、争议或未挂页记录时，建议结合现行标准、合同约定、现场条件及原书重点复核；"
@@ -839,11 +842,11 @@ class ResultPanel(ctk.CTkFrame):
         self.header.pack(fill="x", padx=16, pady=(6, 4))
         self.title_row = ctk.CTkFrame(self.header, fg_color="transparent")
         self.title_row.pack(fill="x")
-        self.title_label = ctk.CTkLabel(self.title_row, text="依据与候选", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta, "semibold"), anchor="w")
+        self.title_label = ctk.CTkLabel(self.title_row, text="更多", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption), anchor="w")
         self.title_label.pack(side="left")
-        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text="查看依据", variant="ghost", width=76, height=28, command=self._toggle_details)
+        self.toggle_button = DSButton(self.title_row, tokens=self.tokens, text=COLLAPSED_RESULT_ACTIONS[1], variant="ghost", width=76, height=28, command=self._toggle_details)
         self.toggle_button.pack(side="right")
-        self.copy_pricing_button = DSButton(self.title_row, tokens=self.tokens, text="复制", variant="ghost", width=48, height=28, command=lambda: self._export("candidate_copy"))
+        self.copy_pricing_button = DSButton(self.title_row, tokens=self.tokens, text=COLLAPSED_RESULT_ACTIONS[0], variant="ghost", width=70, height=28, command=lambda: self._export("candidate_copy"))
         self.copy_pricing_button.pack(side="right", padx=(0, 2))
         self.export_frame = ctk.CTkFrame(self.title_row, fg_color="transparent")
         self.export_frame.pack(side="right", padx=(0, 4))
