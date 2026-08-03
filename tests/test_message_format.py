@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from components.message import ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers, thinking_copy
+from components.message import MessageFeed, ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers, thinking_copy, thinking_stage
 from components.result import compact_analysis_content, feedback_tone, proposal_decision_summary, warning_action_stacks, warning_wrap_width
 
 
@@ -116,6 +116,8 @@ class AiMessageFormatTests(unittest.TestCase):
     def test_waiting_copy_has_clear_local_then_ai_stages(self):
         self.assertIn("本地资料", thinking_copy("search")[0])
         self.assertIn("AI", thinking_copy("ai")[0])
+        self.assertEqual(thinking_stage("search"), "第 1 步 · 本地检索")
+        self.assertEqual(thinking_stage("ai"), "第 2 步 · AI 复核")
 
     def test_feedback_uses_semantic_tones_without_a_large_colored_panel(self):
         self.assertEqual(feedback_tone("info"), "accent")
@@ -127,6 +129,23 @@ class AiMessageFormatTests(unittest.TestCase):
         self.assertFalse(warning_action_stacks(420))
         self.assertEqual(warning_wrap_width(320, has_action=True, stacked=True), 296)
         self.assertEqual(warning_wrap_width(420, has_action=True, stacked=False), 292)
+
+    def test_feed_scroll_requests_coalesce_to_the_latest_relevant_entry(self):
+        first, second = object(), object()
+        scheduled = []
+        probe = type("FeedProbe", (), {})()
+        probe.entries = [first, second]
+        probe._pending_scroll_entry = None
+        probe._pending_scroll_to_end = False
+        probe._scroll_job = None
+        probe.after_idle = lambda callback: scheduled.append(callback) or "scroll-job"
+        probe._flush_scheduled_scroll = lambda: None
+
+        MessageFeed._schedule_scroll(probe, first)
+        MessageFeed._schedule_scroll(probe, second)
+
+        self.assertEqual(len(scheduled), 1)
+        self.assertIs(probe._pending_scroll_entry, second)
 
 
 if __name__ == "__main__":

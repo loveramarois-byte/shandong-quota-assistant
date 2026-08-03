@@ -38,11 +38,17 @@ _THINKING_COPY = {
     "search": ("正在查找本地资料", "正在匹配山东清单、定额和专业条件"),
     "ai": ("AI 正在复核", "正在结合本地资料整理可复核建议"),
 }
+_THINKING_STAGE = {"search": "第 1 步 · 本地检索", "ai": "第 2 步 · AI 复核"}
 
 
 def thinking_copy(stage: str) -> tuple[str, str]:
     """Return concise copy for the two visible stages of an analysis turn."""
     return _THINKING_COPY.get(str(stage or "ai"), _THINKING_COPY["ai"])
+
+
+def thinking_stage(stage: str) -> str:
+    """Keep progress explicit without adding a noisy animated indicator."""
+    return _THINKING_STAGE.get(str(stage or "ai"), _THINKING_STAGE["ai"])
 
 
 def _clean_ai_body(value: str) -> str:
@@ -509,8 +515,12 @@ class AiThinkingCard(ctk.CTkFrame):
         copy = ctk.CTkFrame(self.row, fg_color="transparent")
         copy.pack(side="left", fill="x", expand=True)
         heading, detail = thinking_copy(self.stage)
-        self.heading = ctk.CTkLabel(copy, text=heading, text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"), anchor="w")
-        self.heading.pack(anchor="w")
+        heading_row = ctk.CTkFrame(copy, fg_color="transparent")
+        heading_row.pack(fill="x")
+        self.heading = ctk.CTkLabel(heading_row, text=heading, text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"), anchor="w")
+        self.heading.pack(side="left", anchor="w")
+        self.stage_label = ctk.CTkLabel(heading_row, text=thinking_stage(self.stage), text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="e")
+        self.stage_label.pack(side="right", anchor="e")
         self.detail = ctk.CTkLabel(copy, text=detail, text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
         self.detail.pack(anchor="w", pady=(3, 0))
         self.pulse.start()
@@ -520,6 +530,7 @@ class AiThinkingCard(ctk.CTkFrame):
         self.stage = str(stage or "ai")
         heading, detail = thinking_copy(self.stage)
         self.heading.configure(text=heading)
+        self.stage_label.configure(text=thinking_stage(self.stage))
         self.detail.configure(text=detail)
 
     def set_wraplength(self, width: int) -> None:
@@ -533,6 +544,7 @@ class AiThinkingCard(ctk.CTkFrame):
         self.row.configure(fg_color="transparent")
         self.pulse.apply_theme(c.accent, c.subtle)
         self.heading.configure(text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"))
+        self.stage_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
         self.detail.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
 
     def destroy(self) -> None:
@@ -546,6 +558,9 @@ class MessageFeed(PointerScrollableFrame):
         self.messages: list[MessageBubble] = []
         self.entries: list[ctk.CTkWidget] = []
         self._resize_job: str | None = None
+        self._scroll_job: str | None = None
+        self._pending_scroll_entry = None
+        self._pending_scroll_to_end = False
         self._pending_wrap_width = 0
         self._wrap_width = 0
         super().__init__(master, fg_color=tokens.colors.background, scrollbar_button_color=tokens.colors.border, scrollbar_button_hover_color=tokens.colors.border_strong, **kwargs)
@@ -557,7 +572,7 @@ class MessageFeed(PointerScrollableFrame):
         self.messages.append(bubble)
         self.entries.append(bubble)
         self._apply_wrap_to_entry(bubble)
-        self.after_idle(self._scroll_end)
+        self._schedule_scroll(to_end=True)
         return bubble
 
     def add_welcome(self, on_example=None) -> WelcomePrompt:
@@ -576,7 +591,7 @@ class MessageFeed(PointerScrollableFrame):
             panel.pack(fill="x", padx=5, pady=(0, 16))
             self.entries.append(panel)
         self._apply_wrap_to_entry(panel)
-        self.after_idle(lambda: self._scroll_to_widget(panel))
+        self._schedule_scroll(panel)
         return panel
 
     def add_ai_thinking(self, *, before=None, stage: str = "ai") -> AiThinkingCard:
@@ -588,7 +603,7 @@ class MessageFeed(PointerScrollableFrame):
             card.pack(fill="x", padx=5, pady=(0, 16))
             self.entries.append(card)
         self._apply_wrap_to_entry(card)
-        self.after_idle(lambda: self._scroll_to_widget(card))
+        self._schedule_scroll(card)
         return card
 
     def remove_entry(self, entry) -> None:
@@ -612,7 +627,7 @@ class MessageFeed(PointerScrollableFrame):
             copy_text = format_ai_plain_text(sections)
             if before.attach_ai_analysis(sections, validation, on_copy=on_copy, copy_text=copy_text):
                 self._apply_wrap_to_entry(before)
-                self.after_idle(lambda: self._scroll_to_widget(before))
+                self._schedule_scroll(before)
                 return before
         card = AiAnswerCard(self, tokens=self.tokens, text=text, validation=validation, on_copy=on_copy)
         if before is not None and before in self.entries and before.winfo_exists():
@@ -622,7 +637,7 @@ class MessageFeed(PointerScrollableFrame):
             card.pack(fill="x", padx=5, pady=(0, 16))
             self.entries.append(card)
         self._apply_wrap_to_entry(card)
-        self.after_idle(lambda: self._scroll_to_widget(card))
+        self._schedule_scroll(card)
         return card
 
     def add_warning(self, text: str, *, action_text: str = "", command=None, before=None, kind: str = "warning") -> WarningStrip:
@@ -635,7 +650,7 @@ class MessageFeed(PointerScrollableFrame):
             self.entries.append(warning)
         self._apply_wrap_to_entry(warning)
         if before is None:
-            self.after_idle(self._scroll_end)
+            self._schedule_scroll(to_end=True)
         return warning
 
     def _schedule_resize(self, event=None) -> None:
@@ -668,13 +683,34 @@ class MessageFeed(PointerScrollableFrame):
     def _scroll_end(self) -> None:
         self.smooth_moveto(1.0, self.tokens.transition_normal)
 
+    def _schedule_scroll(self, entry=None, *, to_end: bool = False) -> None:
+        """Coalesce related feed updates into one post-layout scroll motion."""
+        if entry is not None and entry in self.entries:
+            self._pending_scroll_entry = entry
+            self._pending_scroll_to_end = False
+        elif to_end and self._pending_scroll_entry is None:
+            self._pending_scroll_to_end = True
+        if self._scroll_job is None:
+            self._scroll_job = self.after_idle(self._flush_scheduled_scroll)
+
+    def _flush_scheduled_scroll(self) -> None:
+        self._scroll_job = None
+        entry = self._pending_scroll_entry
+        to_end = self._pending_scroll_to_end
+        self._pending_scroll_entry = None
+        self._pending_scroll_to_end = False
+        if entry is not None and entry in self.entries:
+            self._scroll_to_widget(entry)
+        elif to_end:
+            self._scroll_end()
+
     def scroll_to_end(self, delay_ms: int = 0) -> None:
         """Scroll after Tk has completed deferred geometry for restored history."""
-        self.after(max(0, int(delay_ms)), self._scroll_end)
+        self.after(max(0, int(delay_ms)), lambda: self._schedule_scroll(to_end=True))
 
     def scroll_to_entry(self, entry, delay_ms: int = 0) -> None:
         if entry in self.entries:
-            self.after(max(0, int(delay_ms)), lambda: self._scroll_to_widget(entry))
+            self.after(max(0, int(delay_ms)), lambda: self._schedule_scroll(entry))
 
     def _scroll_to_widget(self, widget) -> None:
         try:
@@ -685,13 +721,21 @@ class MessageFeed(PointerScrollableFrame):
             pass
 
     def clear(self) -> None:
+        if self._scroll_job:
+            try:
+                self.after_cancel(self._scroll_job)
+            except Exception:
+                pass
+            self._scroll_job = None
+        self._pending_scroll_entry = None
+        self._pending_scroll_to_end = False
         for entry in self.entries:
             entry.destroy()
         self.messages.clear()
         self.entries.clear()
 
     def destroy(self) -> None:
-        for job in (self._resize_job,):
+        for job in (self._resize_job, self._scroll_job):
             if job:
                 try:
                     self.after_cancel(job)
