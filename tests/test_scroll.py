@@ -84,6 +84,14 @@ class WheelNormalizationTests(unittest.TestCase):
         self.assertAlmostEqual(calls[0][1], 0.112)
         self.assertIsNone(frame._wheel_job)
 
+    def test_explicit_scroll_cancel_only_stops_programmatic_motion(self):
+        cancelled = []
+        frame = SimpleNamespace(_cancel_smooth_scroll=lambda: cancelled.append(True))
+
+        PointerScrollableFrame.cancel_scroll_motion(frame)
+
+        self.assertEqual(cancelled, [True])
+
 
 if __name__ == "__main__":
     unittest.main()

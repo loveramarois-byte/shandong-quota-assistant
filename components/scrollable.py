@@ -88,6 +88,21 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
             self.unbind_all("<MouseWheel>")
             self.bind_all("<MouseWheel>", self._dispatch_windows_wheel, add="+")
 
+    def apply_surface_color(self, color: str) -> None:
+        """Update the CTk wrapper and its native canvas in one operation.
+
+        CTkScrollableFrame is a composition of a CTkFrame, a native Tk canvas
+        and this inner frame. Changing only ``fg_color`` can leave the canvas
+        on the previous appearance mode for one or more idle frames, which is
+        especially visible when switching to dark mode.
+        """
+        self.configure(fg_color=color)
+        try:
+            self._parent_canvas.configure(bg=color)
+            tk.Frame.configure(self, bg=color)
+        except (AttributeError, tk.TclError):
+            pass
+
     def _pointer_belongs_here(self) -> bool:
         try:
             widget = self.winfo_containing(self.winfo_pointerx(), self.winfo_pointery())
@@ -208,6 +223,10 @@ class PointerScrollableFrame(ctk.CTkScrollableFrame):
             except tk.TclError:
                 pass
             self._scroll_animation_job = None
+
+    def cancel_scroll_motion(self) -> None:
+        """Stop a programmatic scroll before a resize redraw starts."""
+        self._cancel_smooth_scroll()
 
     def destroy(self):
         self._instances.discard(self)

@@ -189,7 +189,20 @@ $pyinstallerArgs += (Join-Path $projectRoot "run.py")
 & $pyinstaller @pyinstallerArgs
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 构建失败" }
 
-Move-Item -LiteralPath (Join-Path $stageRoot "山东定额助手") -Destination $bundleRoot
+$stagedApp = Join-Path $stageRoot "山东定额助手"
+try {
+    Move-Item -LiteralPath $stagedApp -Destination $bundleRoot -ErrorAction Stop
+} catch {
+    # Windows Defender can briefly hold a freshly-created PyInstaller folder.
+    # Copying the completed tree keeps a valid release build instead of
+    # leaving the source and the published directory out of sync.
+    Write-Warning "移动构建目录失败，改用复制兜底：$($_.Exception.Message)"
+    New-Item -ItemType Directory -Path $bundleRoot -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $stagedApp '*') -Destination $bundleRoot -Recurse -Force
+    if (-not (Test-Path -LiteralPath (Join-Path $bundleRoot '山东定额助手.exe'))) {
+        throw "构建目录复制兜底失败，未找到主程序: $bundleRoot"
+    }
+}
 # jieba ships optional POS/analyse/LAC data that this app never imports. Keep
 # the dictionary used by query_terms, but remove the unused model payload from
 # public bundles so the self-contained installer stays within hosting limits.

@@ -57,22 +57,30 @@ def clean_structured_validation(validation: dict) -> dict:
     return cleaned
 
 def initial_window_bounds(screen_width: int, screen_height: int, window_scaling: float) -> tuple[int, int, int, int, int, int]:
-    """Return stable Tk geometry bounds without double-applying Windows DPI scaling."""
+    """Return geometry values that produce a usable physical workspace.
+
+    CustomTkinter applies the window scaling factor a second time to geometry
+    and minsize values. Some remote/high-DPI monitors report a factor below
+    1.0, which previously turned the 1120px minimum into a 448px window.
+    """
     try:
-        scaling = max(1.0, float(window_scaling))
+        scaling = max(0.4, float(window_scaling))
     except (TypeError, ValueError):
         scaling = 1.0
-    min_physical_width = min(980, max(640, screen_width - 32))
+    # The workspace needs enough room for the conversation and three context
+    # controls after the navigation rail. A smaller minimum lets Windows show
+    # a visually broken half-sidebar / half-form layout on high DPI displays.
+    min_physical_width = min(1120, max(720, screen_width - 32))
     min_physical_height = min(680, max(520, screen_height - 32))
     physical_width = max(min_physical_width, min(1360, screen_width - 96))
     physical_height = max(min_physical_height, min(860, screen_height - 96))
-    # Tk geometry already maps to the DPI-aware window coordinate space. Dividing
-    # again makes a 1360px work area open at about 907px on a 150% display.
-    _ = scaling
-    logical_width = physical_width
-    logical_height = physical_height
-    logical_min_width = min_physical_width
-    logical_min_height = min_physical_height
+    # Normal Windows DPI is already handled by Tk. Only compensate for an
+    # abnormal sub-75% report, which otherwise makes the whole window tiny.
+    geometry_scale = max(0.4, scaling) if scaling < 0.75 else 1.0
+    logical_width = round(physical_width / geometry_scale)
+    logical_height = round(physical_height / geometry_scale)
+    logical_min_width = round(min_physical_width / geometry_scale)
+    logical_min_height = round(min_physical_height / geometry_scale)
     left = max(16, (screen_width - physical_width) // 2)
     top = max(16, (screen_height - physical_height) // 2)
     return logical_width, logical_height, left, top, logical_min_width, logical_min_height
@@ -82,13 +90,20 @@ def centered_content_padding(
     window_width: int,
     sidebar_width: int,
     content_max_width: int,
-    minimum: int = 22,
+    minimum: int = 18,
     window_scaling: float = 1.0,
+    width_is_logical: bool = False,
 ) -> int:
-    """Keep the conversation centered without crushing compact windows."""
+    """Return centered Tk padding using one explicit coordinate system.
+
+    ``winfo_width`` is a physical pixel value on Windows, while geometry
+    strings and grid padding are CustomTkinter logical units. Startup already
+    has a logical geometry width; resize events do not. Callers must state
+    which one they provide so the first frame and the settled frame agree.
+    """
     try:
         scaling = max(1.0, float(window_scaling))
-        logical_width = round(int(window_width) / scaling)
+        logical_width = int(window_width) if width_is_logical else round(int(window_width) / scaling)
         available = max(0, logical_width - int(sidebar_width))
         ideal = (available - int(content_max_width)) // 2
     except (TypeError, ValueError):
@@ -107,6 +122,8 @@ def ai_connection_state(settings: dict) -> tuple[bool, str, str]:
 
 
 class QuotaApp(ctk.CTk):
+    MAX_EVENTS_PER_TICK = 3
+
     def __init__(self) -> None:
         setup_logging()
         self.log = logging.getLogger("app")
@@ -114,7 +131,6 @@ class QuotaApp(ctk.CTk):
         self.settings = load_settings()
         self.theme_name = self.settings.get("theme", "light")
         self.tokens: ThemeTokens = get_theme(self.theme_name)
-        load_inter_fonts(resource_path("assets", "fonts"))
         ctk.set_appearance_mode("Dark" if self.theme_name == "dark" else "Light")
         ctk.set_default_color_theme("blue")
         super().__init__()
@@ -147,6 +163,7 @@ class QuotaApp(ctk.CTk):
         self.session: dict | None = None
         self._toast: Toast | None = None
         self._images: dict[str, ctk.CTkImage] = {}
+        self._themed_labels: list[tuple[ctk.CTkLabel, str, int, str]] = []
         self._closing = False
         self._poll_job: str | None = None
         self._resize_job: str | None = None
@@ -155,7 +172,13 @@ class QuotaApp(ctk.CTk):
             width,
             self.tokens.sidebar_width,
             self.tokens.content_max_width,
+            window_scaling=window_scaling,
+            width_is_logical=True,
         )
+        # Tk/CustomTkinter can report a logical width while the Windows
+        # window is already DPI-scaled. Cap the centered gutter so the header
+        # actions cannot be laid out beyond the visible client area.
+        self._content_padding = min(self._content_padding, 112)
         self._last_layout_size: tuple[int, int] | None = None
         self._startup_session_summaries: list[dict] | None = None
         self._catalog_warmup_started = False
@@ -165,6 +188,10 @@ class QuotaApp(ctk.CTk):
         self._about_dialog = None
         self._build()
         self.log.info("ui ready in %.1fms", (time.perf_counter() - self._boot_started) * 1000)
+        # Font registration used to happen before the first Tk window existed.
+        # Defer the inexpensive private registration until the initial frame is
+        # visible so slow disks cannot make startup feel like a frozen slide.
+        self.after(40, self._load_ui_fonts)
         self.after(60, lambda: apply_window_chrome(self, self.tokens))
         self._refresh_ai_presentation()
         # Keep keyboard submission reliable when Windows UIA focuses an outer CTk pane.
@@ -184,7 +211,92 @@ class QuotaApp(ctk.CTk):
         self.after(650, self._start_library_stats)
         self.after(1400, self._start_catalog_warmup)
         self.after(1800, lambda: self._start_update_check(force=False))
+        # Windows may restore the last physical window size after the first
+        # idle pass. Recheck after mapping so a compact restored window cannot
+        # survive the initial layout.
+        self.after(240, self._enforce_workspace_geometry)
+        self.after(900, self._enforce_workspace_geometry)
         self.log.info("app started, version=%s", APP_VERSION)
+
+    def _load_ui_fonts(self) -> None:
+        if self._closing:
+            return
+        started = time.perf_counter()
+        registered = load_inter_fonts(resource_path("assets", "fonts"))
+        if registered:
+            self._apply_registered_label_theme()
+            # The header subtitle carries a semantic success color when a
+            # provider is connected. Reapply it after the generic label pass.
+            self._refresh_ai_presentation()
+        self.log.info(
+            "private UI fonts registered faces=%s in %.1fms",
+            registered,
+            (time.perf_counter() - started) * 1000,
+        )
+
+    def _register_themed_label(
+        self,
+        label: ctk.CTkLabel,
+        *,
+        color: str,
+        size: int,
+        weight: str = "regular",
+    ) -> ctk.CTkLabel:
+        """Track simple labels so themes cannot leave a stale foreground."""
+        self._themed_labels.append((label, color, size, weight))
+        return label
+
+    def _apply_registered_label_theme(self) -> None:
+        for label, color_key, size, weight in tuple(self._themed_labels):
+            try:
+                if label.winfo_exists():
+                    label.configure(
+                        text_color=getattr(self.colors, color_key),
+                        font=self.tokens.font(size, weight),
+                    )
+            except tk.TclError:
+                continue
+
+    def _enforce_workspace_geometry(self) -> None:
+        """Recover from a too-small restored/remote window before layout starts."""
+        if self._closing:
+            return
+        try:
+            # Tk owns the coordinate conversion used by geometry(), while the
+            # CustomTkinter tracker can still report its pre-map value during
+            # the first callback. Reading tk scaling here keeps the physical
+            # winfo dimensions and logical geometry in the same frame.
+            scaling = max(1.0, float(self.tk.call("tk", "scaling")))
+        except (AttributeError, TypeError, ValueError, tk.TclError):
+            try:
+                scaling = max(1.0, float(ctk.ScalingTracker.get_window_scaling(self)))
+            except (AttributeError, TypeError, ValueError):
+                scaling = 1.0
+        minimum_width = 1120
+        minimum_height = 680
+        geometry_scale = scaling if scaling < 0.75 else 1.0
+        target_width = round(minimum_width / geometry_scale)
+        target_height = round(minimum_height / geometry_scale)
+        try:
+            current_width = int(self.winfo_width())
+            current_height = int(self.winfo_height())
+        except (AttributeError, TypeError, tk.TclError, ValueError):
+            return
+        current_logical_width = round(current_width / scaling) if scaling > 1.05 else current_width
+        current_logical_height = round(current_height / scaling) if scaling > 1.05 else current_height
+        self.log.debug(
+            "geometry check physical=%sx%s logical=%sx%s scale=%.2f target=%sx%s",
+            current_width,
+            current_height,
+            current_logical_width,
+            current_logical_height,
+            scaling,
+            minimum_width,
+            minimum_height,
+        )
+        if current_logical_width < minimum_width or current_logical_height < minimum_height:
+            self.geometry(f"{target_width}x{target_height}")
+        self.minsize(target_width, target_height)
 
     def _load_session_summaries_async(self) -> None:
         if self._closing:
@@ -244,7 +356,8 @@ class QuotaApp(ctk.CTk):
 
     def _build(self) -> None:
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(0, minsize=self.tokens.sidebar_width)
+        self.grid_columnconfigure(1, weight=1, minsize=self.tokens.main_min_width)
         self.sidebar = Sidebar(
             self,
             tokens=self.tokens,
@@ -283,26 +396,51 @@ class QuotaApp(ctk.CTk):
         self.header.grid(row=0, column=0, padx=self._content_padding, sticky="ew")
         self.header.grid_propagate(False)
         self.header.grid_columnconfigure(0, weight=1)
+        self.header.grid_columnconfigure(1, weight=0)
         self.heading = ctk.CTkFrame(self.header, fg_color="transparent")
         self.heading.grid(row=0, column=0, sticky="w", pady=(9, 4))
         title = "AI 套价 · 演示资料" if self.demo_mode else "AI 套价"
-        self.title_label = ctk.CTkLabel(self.heading, text=title, text_color=c.text, font=self.tokens.font(self.tokens.typography.title, "semibold"), anchor="w")
+        self.title_label = self._register_themed_label(
+            ctk.CTkLabel(
+                self.heading,
+                text=title,
+                text_color=c.text,
+                font=self.tokens.font(self.tokens.typography.title, "semibold"),
+                anchor="w",
+            ),
+            color="text",
+            size=self.tokens.typography.title,
+            weight="semibold",
+        )
         self.title_label.pack(anchor="w")
-        self.subtitle_label = ctk.CTkLabel(self.heading, text="正在读取 AI 连接状态", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.meta), anchor="w")
+        self.subtitle_label = self._register_themed_label(
+            ctk.CTkLabel(
+                self.heading,
+                text="正在读取 AI 连接状态",
+                text_color=c.text_secondary,
+                font=self.tokens.font(self.tokens.typography.meta),
+                anchor="w",
+            ),
+            color="text_secondary",
+            size=self.tokens.typography.meta,
+        )
         self.subtitle_label.pack(anchor="w", pady=(4, 0))
         self.status = self.subtitle_label
+        # The actions belong to the header itself. Keeping them in the same
+        # surface avoids a sibling canvas covering them on Windows after a
+        # DPI/theme redraw.
         self.controls = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.controls.grid(row=0, column=1, sticky="e", pady=(9, 4))
+        self.controls.grid(row=0, column=1, sticky="ne", padx=(8, 0), pady=(9, 0))
         self.ai_button = DSButton(self.controls, tokens=self.tokens, text="连接 AI", variant="secondary", width=92, height=34, command=self._open_settings)
         self.ai_button.pack(side="left", padx=(0, 8))
         self.theme_button = DSButton(
             self.controls,
             tokens=self.tokens,
             text="外观",
-            image=self._icon("moon"),
+            image=self._icon("sun" if self.theme_name == "dark" else "moon"),
             compound="left",
             variant="ghost",
-            width=68,
+            width=80,
             height=34,
             command=self._toggle_theme,
         )
@@ -310,19 +448,56 @@ class QuotaApp(ctk.CTk):
 
         self.context_controls = ctk.CTkFrame(self.header, fg_color="transparent")
         self.context_controls.grid(row=1, column=0, sticky="w", pady=(0, 6))
-        self.context_label = ctk.CTkLabel(self.context_controls, text="山东", text_color=c.text_secondary, font=self.tokens.font(self.tokens.typography.caption, "semibold"))
+        self.context_label = self._register_themed_label(
+            ctk.CTkLabel(
+                self.context_controls,
+                text="山东",
+                text_color=c.text_secondary,
+                font=self.tokens.font(self.tokens.typography.caption, "semibold"),
+            ),
+            color="text_secondary",
+            size=self.tokens.typography.caption,
+            weight="semibold",
+        )
         self.context_label.pack(side="left", padx=(0, 10))
-        self.edition_label = ctk.CTkLabel(self.context_controls, text="定额", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
+        self.edition_label = self._register_themed_label(
+            ctk.CTkLabel(
+                self.context_controls,
+                text="定额",
+                text_color=c.text_muted,
+                font=self.tokens.font(self.tokens.typography.caption),
+            ),
+            color="text_muted",
+            size=self.tokens.typography.caption,
+        )
         self.edition_label.pack(side="left", padx=(0, 6))
         self.edition = FilterSelect(self.context_controls, tokens=self.tokens, values=["2025", "2016"], width=78, height=32)
         self.edition.set(str(self.settings.get("quota_edition") or "2025"))
         self.edition.pack(side="left")
-        self.standard_edition_label = ctk.CTkLabel(self.context_controls, text="清单", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
+        self.standard_edition_label = self._register_themed_label(
+            ctk.CTkLabel(
+                self.context_controls,
+                text="清单",
+                text_color=c.text_muted,
+                font=self.tokens.font(self.tokens.typography.caption),
+            ),
+            color="text_muted",
+            size=self.tokens.typography.caption,
+        )
         self.standard_edition_label.pack(side="left", padx=(12, 6))
         self.standard_edition = FilterSelect(self.context_controls, tokens=self.tokens, values=["2024", "2013"], width=78, height=32)
         self.standard_edition.set(str(self.settings.get("standard_edition") or "2024"))
         self.standard_edition.pack(side="left")
-        self.discipline_label = ctk.CTkLabel(self.context_controls, text="专业", text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.caption))
+        self.discipline_label = self._register_themed_label(
+            ctk.CTkLabel(
+                self.context_controls,
+                text="专业",
+                text_color=c.text_muted,
+                font=self.tokens.font(self.tokens.typography.caption),
+            ),
+            color="text_muted",
+            size=self.tokens.typography.caption,
+        )
         self.discipline_label.pack(side="left", padx=(12, 6))
         self.discipline = FilterSelect(self.context_controls, tokens=self.tokens, values=list(DISCIPLINE_OPTIONS), width=88, height=32)
         self.discipline.set(str(self.settings.get("discipline") or "建筑"))
@@ -340,7 +515,6 @@ class QuotaApp(ctk.CTk):
         self.settings["theme"] = self.theme_name
         save_settings(self.settings)
         self.tokens = get_theme(self.theme_name)
-        ctk.set_appearance_mode("Dark" if self.theme_name == "dark" else "Light")
         c = self.colors
         self.configure(fg_color=c.background)
         self.main.configure(fg_color=c.background)
@@ -356,7 +530,7 @@ class QuotaApp(ctk.CTk):
         self.standard_edition.apply_theme(self.tokens)
         self.discipline.apply_theme(self.tokens)
         self.theme_button.apply_theme(self.tokens)
-        self.theme_button.configure(image=self._icon("sun" if self.theme_name == "dark" else "moon"))
+        self.theme_button.configure(image=self._icon("moon" if self.theme_name == "dark" else "sun"))
         self.ai_button.apply_theme(self.tokens)
         self.sidebar.set_new_image(self._icon("plus"))
         self.sidebar.set_action_images(
@@ -367,17 +541,14 @@ class QuotaApp(ctk.CTk):
             about=self._icon("info", (15, 15)),
         )
         self.composer.set_send_image(self._icon("send"))
-        for label, color, font in (
-            (self.title_label, c.text, self.tokens.font(self.tokens.typography.title, "semibold")),
-            (self.subtitle_label, c.text_secondary, self.tokens.font(self.tokens.typography.meta)),
-            (self.context_label, c.text_secondary, self.tokens.font(self.tokens.typography.caption, "semibold")),
-            (self.edition_label, c.text_muted, self.tokens.font(self.tokens.typography.caption)),
-            (self.standard_edition_label, c.text_muted, self.tokens.font(self.tokens.typography.caption)),
-            (self.discipline_label, c.text_muted, self.tokens.font(self.tokens.typography.caption)),
-            (self.status, c.text_secondary, self.tokens.font(self.tokens.typography.meta)),
-        ):
-            label.configure(text_color=color, font=font)
+        self._apply_registered_label_theme()
         self._refresh_ai_presentation()
+        # Apply the native appearance mode after explicit design tokens. This
+        # lets transparent CTk children inherit the newly selected surfaces,
+        # while the scrollable canvases are synchronised by their components.
+        ctk.set_appearance_mode("Dark" if self.theme_name == "dark" else "Light")
+        self.feed.apply_surface_color(c.background)
+        self.sidebar.session_list.apply_surface_color(c.sidebar)
         self.after_idle(lambda: apply_window_chrome(self, self.tokens))
 
     def _refresh_ai_presentation(self) -> None:
@@ -691,7 +862,7 @@ class QuotaApp(ctk.CTk):
                 session.get("turns", []).remove(turn)
             except ValueError:
                 pass
-            self.feed.add_warning("本轮未能写入本地记录，检索没有启动。请释放磁盘空间或修复目录权限后重试。")
+            self.feed.add_warning("本轮未能写入本地记录，检索没有启动。请释放磁盘空间或修复目录权限后重试。", kind="error")
             return
         cancel = threading.Event()
         revision = int(session.get("revision") or 0)
@@ -707,6 +878,9 @@ class QuotaApp(ctk.CTk):
         self._last_local = None
         self._last_panel = None
         self._last_ai_text = None
+        # Show work immediately. The same card is promoted to AI review when
+        # local evidence arrives, avoiding a delete-and-recreate layout jump.
+        self._turn_thinking[turn_id] = self.feed.add_ai_thinking(stage="search")
         self._set_status("查库中…", "busy")
         self._refresh_task_controls()
         threading.Thread(target=self._worker, args=(request_id, revision, cancel, session_id, turn_id, effective_description, edition, standard_edition, discipline, ai_enabled, ai_config), daemon=True).start()
@@ -860,7 +1034,7 @@ class QuotaApp(ctk.CTk):
         if phase == TaskPhase.SEARCHING:
             self._set_status("本地检索已取消")
             self._show_toast("检索已取消", "info")
-            self.feed.add_warning("本轮本地检索已取消，可修改条件后重新分析。")
+            self.feed.add_warning("本轮本地检索已取消，可修改条件后重新分析。", kind="info")
         else:
             self._clear_turn_thinking(task.token.turn_id)
             self._set_status("本地套价草案已返回 · AI 已取消")
@@ -869,6 +1043,7 @@ class QuotaApp(ctk.CTk):
                 "AI 分析已取消；本地方案与资料依据仍可继续复核。",
                 action_text="重试 AI",
                 command=lambda tid=task.token.turn_id: self._retry_ai(tid),
+                kind="info",
             )
 
     def _friendly_ai_error(self, detail: str) -> str:
@@ -1044,7 +1219,11 @@ class QuotaApp(ctk.CTk):
                     bundle.write(log_file, "app.log")
                 bundle.writestr("version.txt", f"app_version={APP_VERSION}\ndatabase={db_text}\n")
                 recent = session_store.list_sessions()[:10]
-                lines = [f"{item['id']}\t{item['title']}\t{time.strftime('%Y-%m-%d %H:%M', time.localtime(item['updated_at']))}" for item in recent]
+                lines = [
+                    f"{item['id']}\t{str(item.get('title') or '').replace(chr(13), ' ').replace(chr(10), ' ').strip()}\t"
+                    f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(item['updated_at']))}"
+                    for item in recent
+                ]
                 bundle.writestr("recent_sessions.txt", "\n".join(lines))
             self._show_toast(f"诊断包已导出：{target.name}", "info")
         except (OSError, FileNotFoundError):
@@ -1068,7 +1247,7 @@ class QuotaApp(ctk.CTk):
             if is_current:
                 self._set_status("记录未保存", "error")
                 self._show_toast("结果未能写入本地记录，请检查磁盘空间和目录权限", "error")
-                self.feed.add_warning("本轮结果因本地存储失败未被接纳；修复存储问题后请重新分析。")
+                self.feed.add_warning("本轮结果因本地存储失败未被接纳；修复存储问题后请重新分析。", kind="error")
             return False
         if is_current:
             self._refresh_session_list()
@@ -1083,8 +1262,10 @@ class QuotaApp(ctk.CTk):
         if self._closing:
             return
         try:
-            while True:
+            processed = 0
+            while processed < self.MAX_EVENTS_PER_TICK:
                 kind, payload = self.events.get_nowait()
+                processed += 1
                 if kind == "library_stats":
                     if not self._closing:
                         self.sidebar.set_library_stats(payload)
@@ -1168,19 +1349,26 @@ class QuotaApp(ctk.CTk):
                         )
                         status = "本地套价草案已返回 · AI 分析中，可能需要几十秒" if ai_enabled else "本地套价草案已返回"
                         self._set_status(status, "busy" if ai_enabled else "neutral")
+                        thinking = self._turn_thinking.get(turn_id)
                         panel = self.feed.add_result(
                             result,
                             on_primary_changed=lambda selected_kind, item, tid=turn_id: self._primary_changed(tid, selected_kind, item),
                             on_export=self._export_result,
                             on_clarify=self._clarification_selected,
                             collapsed=ai_enabled,
+                            before=thinking if ai_enabled else None,
                         )
                         self._turn_panels[turn_id] = panel
                         self._last_panel = panel
                         self._active_turn_id = turn_id
                         if ai_enabled:
+                            set_stage = getattr(thinking, "set_stage", None)
+                            if callable(set_stage):
+                                set_stage("ai")
+                            else:
+                                self._turn_thinking[turn_id] = self.feed.add_ai_thinking(before=panel, stage="ai")
+                        else:
                             self._clear_turn_thinking(turn_id)
-                            self._turn_thinking[turn_id] = self.feed.add_ai_thinking(before=panel)
                     self._refresh_task_controls()
                     continue
                 if kind == "ai_error":
@@ -1196,6 +1384,7 @@ class QuotaApp(ctk.CTk):
                             action_text="重试 AI",
                             command=lambda tid=turn_id: self._retry_ai(tid),
                             before=self._turn_panels.get(turn_id),
+                            kind="warning",
                         )
                 elif kind == "ai_skipped":
                     self._clear_turn_thinking(turn_id)
@@ -1210,7 +1399,7 @@ class QuotaApp(ctk.CTk):
                     if self._save_event_session(event_session, is_current=is_current) and is_current:
                         self._set_status("检索失败", "error")
                         self._show_toast(str(value.get("message") or "本地检索失败"), "error")
-                        self.feed.add_warning(str(value.get("message") or "本地检索失败"))
+                        self.feed.add_warning(str(value.get("message") or "本地检索失败"), kind="error")
                 else:
                     self._clear_turn_thinking(turn_id)
                     ai_text = str(value.get("text") or "")
@@ -1242,7 +1431,10 @@ class QuotaApp(ctk.CTk):
             pass
         if not self._closing:
             try:
-                self._poll_job = self.after(120, self._poll_events)
+                # A short follow-up drains a burst without forcing all result
+                # cards through one Tk paint frame; idle polling stays quiet.
+                delay = 16 if not self.events.empty() else 120
+                self._poll_job = self.after(delay, self._poll_events)
             except tk.TclError:
                 self._poll_job = None
 
@@ -1253,14 +1445,21 @@ class QuotaApp(ctk.CTk):
         if size == self._last_layout_size:
             return
         self._last_layout_size = size
+        # A live smooth scroll competes with Windows' resize paint loop and
+        # creates the slideshow-like drag users noticed on lower-end PCs.
+        sidebar = getattr(self, "sidebar", None)
+        for scrollable in (getattr(self, "feed", None), getattr(sidebar, "session_list", None)):
+            cancel_motion = getattr(scrollable, "cancel_scroll_motion", None)
+            if callable(cancel_motion):
+                cancel_motion()
         if self._resize_job:
             self.after_cancel(self._resize_job)
-        self._resize_job = self.after(80, self._apply_responsive_layout)
+        self._resize_job = self.after(120, self._apply_responsive_layout)
 
     def _apply_responsive_layout(self) -> None:
         self._resize_job = None
         try:
-            window_scaling = max(1.0, float(ctk.ScalingTracker.get_window_scaling(self)))
+            window_scaling = max(0.4, float(ctk.ScalingTracker.get_window_scaling(self)))
         except (AttributeError, TypeError, ValueError):
             window_scaling = 1.0
         padding = centered_content_padding(
@@ -1268,7 +1467,9 @@ class QuotaApp(ctk.CTk):
             self.tokens.sidebar_width,
             self.tokens.content_max_width,
             window_scaling=window_scaling,
+            width_is_logical=False,
         )
+        padding = min(padding, 112)
         if padding == self._content_padding:
             return
         self._content_padding = padding

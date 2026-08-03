@@ -34,6 +34,15 @@ _AI_SECTION_ALIASES = {
     "待补条件": "待确认",
 }
 _AI_SECTION_ORDER = ("结论", "建议候选", "备选", "依据", "工程量与换算", "风险", "待确认", "AI 分析")
+_THINKING_COPY = {
+    "search": ("正在查找本地资料", "正在匹配山东清单、定额和专业条件"),
+    "ai": ("AI 正在复核", "正在结合本地资料整理可复核建议"),
+}
+
+
+def thinking_copy(stage: str) -> tuple[str, str]:
+    """Return concise copy for the two visible stages of an analysis turn."""
+    return _THINKING_COPY.get(str(stage or "ai"), _THINKING_COPY["ai"])
 
 
 def _clean_ai_body(value: str) -> str:
@@ -183,8 +192,9 @@ class WelcomePrompt(ctk.CTkFrame):
 
     def _build(self) -> None:
         c = self.tokens.colors
-        self.shell = ctk.CTkFrame(self, fg_color="transparent")
-        self.shell.pack(fill="x", padx=12, pady=(64, 28))
+        self.shell = ctk.CTkFrame(self, width=760, fg_color="transparent")
+        self.shell.pack(fill="none", anchor="center", pady=(64, 28))
+        self.shell.pack_propagate(False)
         self.kicker = ctk.CTkLabel(
             self.shell,
             text="山东清单与定额",
@@ -235,7 +245,9 @@ class WelcomePrompt(ctk.CTkFrame):
         self.hint.pack(anchor="w", pady=(13, 0))
 
     def set_wraplength(self, width: int) -> None:
-        self.description.configure(wraplength=max(320, min(640, width - 24)))
+        shell_width = max(560, min(760, int(width) - 120))
+        self.shell.configure(width=shell_width)
+        self.description.configure(wraplength=max(320, min(640, shell_width - 24)))
 
     def apply_theme(self, tokens: ThemeTokens) -> None:
         self.tokens = tokens
@@ -477,8 +489,9 @@ class AiAnswerCard(ctk.CTkFrame):
 class AiThinkingCard(ctk.CTkFrame):
     """Prominent in-feed state while AI turns local evidence into a conclusion."""
 
-    def __init__(self, master, *, tokens: ThemeTokens, **kwargs):
+    def __init__(self, master, *, tokens: ThemeTokens, stage: str = "ai", **kwargs):
         self.tokens = tokens
+        self.stage = str(stage or "ai")
         self._wraplength = 400
         super().__init__(master, fg_color="transparent", **kwargs)
         c = tokens.colors
@@ -495,11 +508,19 @@ class AiThinkingCard(ctk.CTkFrame):
         self.pulse.pack(side="left", padx=(0, 10))
         copy = ctk.CTkFrame(self.row, fg_color="transparent")
         copy.pack(side="left", fill="x", expand=True)
-        self.heading = ctk.CTkLabel(copy, text="AI 正在分析", text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"), anchor="w")
+        heading, detail = thinking_copy(self.stage)
+        self.heading = ctk.CTkLabel(copy, text=heading, text_color=c.text, font=tokens.font(tokens.typography.section, "semibold"), anchor="w")
         self.heading.pack(anchor="w")
-        self.detail = ctk.CTkLabel(copy, text="正在核对清单、定额和本地关联", text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
+        self.detail = ctk.CTkLabel(copy, text=detail, text_color=c.text_muted, font=tokens.font(tokens.typography.caption), anchor="w")
         self.detail.pack(anchor="w", pady=(3, 0))
         self.pulse.start()
+
+    def set_stage(self, stage: str) -> None:
+        """Update the waiting message without rebuilding or moving the card."""
+        self.stage = str(stage or "ai")
+        heading, detail = thinking_copy(self.stage)
+        self.heading.configure(text=heading)
+        self.detail.configure(text=detail)
 
     def set_wraplength(self, width: int) -> None:
         self._wraplength = max(320, width)
@@ -546,16 +567,20 @@ class MessageFeed(PointerScrollableFrame):
         self._apply_wrap_to_entry(welcome)
         return welcome
 
-    def add_result(self, result: dict, on_primary_changed=None, on_export=None, on_clarify=None, *, collapsed: bool = True) -> ResultPanel:
+    def add_result(self, result: dict, on_primary_changed=None, on_export=None, on_clarify=None, *, collapsed: bool = True, before=None) -> ResultPanel:
         panel = ResultPanel(self, tokens=self.tokens, result=result, on_primary_changed=on_primary_changed, on_export=on_export, on_clarify=on_clarify, collapsed=collapsed)
-        panel.pack(fill="x", padx=5, pady=(0, 16))
-        self.entries.append(panel)
+        if before is not None and before in self.entries and before.winfo_exists():
+            panel.pack(fill="x", padx=5, pady=(0, 16), before=before)
+            self.entries.insert(self.entries.index(before), panel)
+        else:
+            panel.pack(fill="x", padx=5, pady=(0, 16))
+            self.entries.append(panel)
         self._apply_wrap_to_entry(panel)
         self.after_idle(lambda: self._scroll_to_widget(panel))
         return panel
 
-    def add_ai_thinking(self, *, before=None) -> AiThinkingCard:
-        card = AiThinkingCard(self, tokens=self.tokens)
+    def add_ai_thinking(self, *, before=None, stage: str = "ai") -> AiThinkingCard:
+        card = AiThinkingCard(self, tokens=self.tokens, stage=stage)
         if before is not None and before in self.entries and before.winfo_exists():
             card.pack(fill="x", padx=5, pady=(0, 16), before=before)
             self.entries.insert(self.entries.index(before), card)
@@ -600,8 +625,8 @@ class MessageFeed(PointerScrollableFrame):
         self.after_idle(lambda: self._scroll_to_widget(card))
         return card
 
-    def add_warning(self, text: str, *, action_text: str = "", command=None, before=None) -> WarningStrip:
-        warning = WarningStrip(self, tokens=self.tokens, text=text, action_text=action_text, command=command)
+    def add_warning(self, text: str, *, action_text: str = "", command=None, before=None, kind: str = "warning") -> WarningStrip:
+        warning = WarningStrip(self, tokens=self.tokens, text=text, action_text=action_text, command=command, kind=kind)
         if before is not None and before in self.entries and before.winfo_exists():
             warning.pack(fill="x", padx=5, pady=(0, 16), before=before)
             self.entries.insert(self.entries.index(before), warning)
@@ -676,6 +701,7 @@ class MessageFeed(PointerScrollableFrame):
 
     def apply_theme(self, tokens: ThemeTokens) -> None:
         self.tokens = tokens
-        self.configure(fg_color=tokens.colors.background, scrollbar_button_color=tokens.colors.border, scrollbar_button_hover_color=tokens.colors.border_strong)
+        self.apply_surface_color(tokens.colors.background)
+        self.configure(scrollbar_button_color=tokens.colors.border, scrollbar_button_hover_color=tokens.colors.border_strong)
         for entry in self.entries:
             entry.apply_theme(tokens)

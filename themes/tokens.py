@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 class Colors:
     background: str
     sidebar: str
+    sidebar_border: str
     surface: str
     elevated: str
     subtle: str
@@ -53,10 +54,14 @@ class ThemeTokens:
     radius_lg: int = 12
     control_height: int = 40
     control_height_sm: int = 32
-    sidebar_width: int = 204
-    # Wide desktop breathing room without leaving a conspicuous unused rail
-    # on 150% DPI screens. Compact windows still fall back to the minimum edge.
-    content_max_width: int = 1080
+    # The rail is deliberately wide enough for Chinese session names at the
+    # common 125%-150% Windows scale. The conversation remains the primary
+    # surface, but no longer competes with a clipped navigation column.
+    sidebar_width: int = 232
+    main_min_width: int = 760
+    # Keep the work surface readable on wide monitors while preserving a
+    # little room for result tables and evidence actions.
+    content_max_width: int = 860
     icon_sm: int = 16
     icon_md: int = 18
     transition_fast: int = 150
@@ -76,7 +81,8 @@ LIGHT = ThemeTokens(
     name="light",
     colors=Colors(
         background="#F7F6F2",
-        sidebar="#EFEEE9",
+        sidebar="#EFEDE7",
+        sidebar_border="#C8C4BC",
         surface="#F2F0EA",
         elevated="#FCFBF8",
         subtle="#ECEAE4",
@@ -108,6 +114,7 @@ DARK = ThemeTokens(
     colors=Colors(
         background="#1E1D1A",
         sidebar="#181714",
+        sidebar_border="#4A463E",
         surface="#25231F",
         elevated="#2B2924",
         subtle="#302E29",

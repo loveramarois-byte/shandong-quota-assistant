@@ -99,6 +99,29 @@ def compact_analysis_content(sections: list[tuple[str, str]]) -> tuple[str, list
     return summary or "本轮分析没有形成可读结论。", details
 
 
+def feedback_tone(kind: str) -> str:
+    """Map user-facing feedback kinds to semantic color tokens."""
+    return {"info": "accent", "error": "danger"}.get(str(kind or "").lower(), "warning")
+
+
+def warning_action_stacks(width: int | float) -> bool:
+    """Keep a retry action from squeezing explanatory text on narrow panes."""
+    try:
+        return int(width) < 340
+    except (TypeError, ValueError):
+        return False
+
+
+def warning_wrap_width(width: int | float, *, has_action: bool, stacked: bool = False) -> int:
+    """Reserve only the space that the current action layout actually uses."""
+    try:
+        available = int(width)
+    except (TypeError, ValueError):
+        available = 320
+    reserve = 24 if not has_action or stacked else 128
+    return max(160, available - reserve)
+
+
 def proposal_decision_summary(result: dict, proposals: list[dict] | None = None) -> str:
     """Build the first-screen decision from validated proposal data, not AI prose."""
     current = proposals if proposals is not None else list(result.get("proposals") or [])
@@ -1351,29 +1374,47 @@ class ResultPanel(ctk.CTkFrame):
 
 
 class WarningStrip(ctk.CTkFrame):
-    def __init__(self, master, *, tokens: ThemeTokens, text: str, action_text: str = "", command=None, **kwargs):
+    def __init__(self, master, *, tokens: ThemeTokens, text: str, action_text: str = "", command=None, kind: str = "warning", **kwargs):
         self.tokens = tokens
+        self.kind = feedback_tone(kind)
+        self._action_stacked = False
         super().__init__(master, fg_color="transparent", border_width=0, corner_radius=0, **kwargs)
         # CTkFrame defaults to 200px tall; keep this document-style strip content-sized.
-        body = ctk.CTkFrame(self, fg_color="transparent", height=1)
-        body.pack(fill="x", padx=0, pady=8)
-        body.grid_columnconfigure(1, weight=1)
-        self.rule = ctk.CTkFrame(body, width=2, height=1, fg_color=tokens.colors.warning, corner_radius=0)
+        self.body = ctk.CTkFrame(self, fg_color="transparent", height=1)
+        self.body.pack(fill="x", padx=0, pady=8)
+        self.body.grid_columnconfigure(1, weight=1)
+        self.rule = ctk.CTkFrame(self.body, width=2, height=1, fg_color=getattr(tokens.colors, self.kind), corner_radius=0)
         self.rule.grid(row=0, column=0, sticky="ns", padx=(0, 10))
-        self.label = ctk.CTkLabel(body, text=text, text_color=tokens.colors.text_secondary, font=tokens.font(tokens.typography.meta), anchor="w", justify="left", wraplength=440)
+        self.label = ctk.CTkLabel(self.body, text=text, text_color=tokens.colors.text_secondary, font=tokens.font(tokens.typography.meta), anchor="w", justify="left", wraplength=440)
         self.label.grid(row=0, column=1, sticky="ew", padx=(0, 10))
         self.action_button = None
         if action_text and command:
-            self.action_button = DSButton(body, tokens=tokens, text=action_text, variant="ghost", width=88, height=28, corner_radius=7, command=command)
+            self.action_button = DSButton(self.body, tokens=tokens, text=action_text, variant="ghost", width=88, height=28, corner_radius=5, command=command)
             self.action_button.grid(row=0, column=2, sticky="e")
 
     def apply_theme(self, tokens: ThemeTokens) -> None:
         self.tokens = tokens
+        self.kind = feedback_tone(self.kind)
         self.configure(fg_color="transparent", border_width=0)
-        self.rule.configure(fg_color=tokens.colors.warning)
+        self.rule.configure(fg_color=getattr(tokens.colors, self.kind))
         self.label.configure(text_color=tokens.colors.text_secondary, font=tokens.font(tokens.typography.meta))
         if self.action_button:
             self.action_button.apply_theme(tokens)
 
     def set_wraplength(self, width: int) -> None:
-        self.label.configure(wraplength=max(260, width - (120 if self.action_button else 24)))
+        stacked = bool(self.action_button and warning_action_stacks(width))
+        if self.action_button and stacked != self._action_stacked:
+            self._action_stacked = stacked
+            if stacked:
+                self.rule.grid_configure(rowspan=2)
+                self.action_button.grid_configure(row=1, column=1, sticky="w", pady=(6, 0))
+            else:
+                self.rule.grid_configure(rowspan=1)
+                self.action_button.grid_configure(row=0, column=2, sticky="e", pady=0)
+        self.label.configure(
+            wraplength=warning_wrap_width(
+                width,
+                has_action=bool(self.action_button),
+                stacked=stacked,
+            )
+        )

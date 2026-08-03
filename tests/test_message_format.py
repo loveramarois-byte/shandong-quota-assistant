@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from components.message import ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers
-from components.result import compact_analysis_content, proposal_decision_summary
+from components.message import ai_references, evidence_button_text, format_ai_plain_text, logical_wrap_width, parse_ai_items, parse_ai_sections, strip_ai_reference_markers, thinking_copy
+from components.result import compact_analysis_content, feedback_tone, proposal_decision_summary, warning_action_stacks, warning_wrap_width
 
 
 class AiMessageFormatTests(unittest.TestCase):
@@ -112,6 +112,21 @@ class AiMessageFormatTests(unittest.TestCase):
     def test_evidence_buttons_use_readable_source_names(self):
         self.assertEqual(evidence_button_text({"record_id": "bill:2024:76", "pdf_page": 35}), "清单原书 · 第 35 页")
         self.assertEqual(evidence_button_text({"record_id": "quota:171:173", "pdf_page": 42}), "定额原书 · 第 42 页")
+
+    def test_waiting_copy_has_clear_local_then_ai_stages(self):
+        self.assertIn("本地资料", thinking_copy("search")[0])
+        self.assertIn("AI", thinking_copy("ai")[0])
+
+    def test_feedback_uses_semantic_tones_without_a_large_colored_panel(self):
+        self.assertEqual(feedback_tone("info"), "accent")
+        self.assertEqual(feedback_tone("warning"), "warning")
+        self.assertEqual(feedback_tone("error"), "danger")
+
+    def test_narrow_feedback_action_stacks_instead_of_clipping_explanation(self):
+        self.assertTrue(warning_action_stacks(320))
+        self.assertFalse(warning_action_stacks(420))
+        self.assertEqual(warning_wrap_width(320, has_action=True, stacked=True), 296)
+        self.assertEqual(warning_wrap_width(420, has_action=True, stacked=False), 292)
 
 
 if __name__ == "__main__":

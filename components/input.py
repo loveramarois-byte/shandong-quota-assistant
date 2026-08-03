@@ -17,7 +17,8 @@ class FilterSelect(ctk.CTkFrame):
         self.tokens = tokens
         width = int(kwargs.pop("width", 140))
         height = int(kwargs.pop("height", tokens.control_height))
-        corner_radius = int(kwargs.pop("corner_radius", tokens.radius_xs))
+        # Compact selectors should read as controls, not rounded cards.
+        corner_radius = int(kwargs.pop("corner_radius", 3))
         command = kwargs.pop("command", None)
         super().__init__(
             master,
@@ -44,7 +45,7 @@ class FilterSelect(ctk.CTkFrame):
             dropdown_text_color=tokens.colors.text,
             font=tokens.font(tokens.typography.meta),
             dropdown_font=tokens.font(tokens.typography.meta),
-            corner_radius=max(3, corner_radius - 1),
+            corner_radius=max(2, corner_radius - 1),
             dynamic_resizing=False,
         )
         self._menu.place(relx=0.5, rely=0.5, anchor="center")
@@ -152,7 +153,7 @@ class Composer(ctk.CTkFrame):
 
         self.shell = ctk.CTkFrame(self, fg_color=c.elevated, border_color=c.border, border_width=1, corner_radius=self.tokens.radius_md)
         self.shell.pack(fill="x")
-        self.textbox = ctk.CTkTextbox(self.shell, height=58, fg_color="transparent", border_width=0, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.body), wrap="word", activate_scrollbars=False)
+        self.textbox = ctk.CTkTextbox(self.shell, height=58, fg_color=c.elevated, border_width=0, text_color=c.text_muted, font=self.tokens.font(self.tokens.typography.body), wrap="word", activate_scrollbars=False)
         self.textbox.pack(side="left", fill="both", expand=True, padx=(15, 4), pady=8)
         self.textbox.insert("1.0", self.placeholder)
         self.textbox.bind("<FocusIn>", self._clear_placeholder)
@@ -164,7 +165,7 @@ class Composer(ctk.CTkFrame):
         # move the send button or leave a stale CustomTkinter canvas behind.
         self.action_frame = ctk.CTkFrame(
             self.shell,
-            width=150,
+            width=154,
             height=self.tokens.control_height,
             fg_color=c.elevated,
             corner_radius=0,
@@ -172,8 +173,16 @@ class Composer(ctk.CTkFrame):
         self.action_frame.pack(side="right", padx=(4, 10), pady=10, anchor="s")
         self.action_frame.pack_propagate(False)
         self.cancel_button = DSButton(self.action_frame, tokens=self.tokens, text="停止", variant="secondary", width=64, command=self.on_cancel or (lambda: None))
-        self.send_button = DSButton(self.action_frame, tokens=self.tokens, text="分析", variant="primary", image=send_image, compound="left", width=78, command=self.on_send)
-        self.send_button.place(x=72, y=0)
+        self.send_button = DSButton(
+            self.action_frame,
+            tokens=self.tokens,
+            text="分析",
+            variant="primary",
+            width=88,
+            anchor="center",
+            command=self.on_send,
+        )
+        self.send_button.place(relx=1.0, x=-2, y=0, anchor="ne")
         self.textbox.bind("<FocusIn>", lambda _e: self.shell.configure(border_color=self.tokens.colors.accent), add="+")
         self.textbox.bind("<FocusOut>", lambda _e: self.shell.configure(border_color=self.tokens.colors.border), add="+")
 
@@ -301,8 +310,10 @@ class Composer(ctk.CTkFrame):
         self._update_char_count()
 
     def set_send_image(self, image) -> None:
-        self.send_button.configure(image=image)
-        self.send_button._normal_image = image
+        # Keep the primary action optically centered. The send glyph used to
+        # push the two-character label off-center inside a narrow button.
+        self.send_button.configure(image=None, compound="none")
+        self.send_button._normal_image = None
 
     def show_error(self) -> None:
         self.shell.configure(border_color=self.tokens.colors.danger)
@@ -343,7 +354,7 @@ class Composer(ctk.CTkFrame):
         self.chips_frame.configure(fg_color="transparent")
         self.shell.configure(fg_color=c.elevated, border_color=c.border)
         self.action_frame.configure(fg_color=c.elevated)
-        self.textbox.configure(text_color=c.text_muted if self._placeholder_active else c.text, font=tokens.font(tokens.typography.body))
+        self.textbox.configure(fg_color=c.elevated, text_color=c.text_muted if self._placeholder_active else c.text, font=tokens.font(tokens.typography.body))
         self.char_label.configure(text_color=c.text_muted, font=tokens.font(tokens.typography.caption))
         self.condition_toggle.apply_theme(tokens)
         for chip in self._chip_buttons:

@@ -168,19 +168,8 @@ class IconButton(DSButton):
     def _show_tooltip(self, _event=None):
         if self._tooltip_window or not self.tooltip:
             return
-        window = self._tooltip_window = __import__("tkinter").Toplevel(self)
-        window.overrideredirect(True)
-        window.configure(bg=self.tokens.colors.text)
-        __import__("tkinter").Label(
-            window,
-            text=self.tooltip,
-            bg=self.tokens.colors.text,
-            fg=self.tokens.colors.surface,
-            font=self.tokens.font(self.tokens.typography.caption),
-            padx=8,
-            pady=5,
-        ).pack()
-        window.geometry(f"+{self.winfo_rootx()}+{self.winfo_rooty() + self.winfo_height() + 4}")
+        from utils.tooltip import show_tooltip
+        self._tooltip_window = show_tooltip(self, self.tooltip, self.tokens)
 
     def _hide_tooltip(self, _event=None):
         if self._tooltip_window:

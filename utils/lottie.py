@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+import json
+import threading
 import tkinter as tk
 from pathlib import Path
 
 from utils.motion import motion_enabled
 
 
+def lottie_frame_delay(asset: Path, default: int = 120) -> int:
+    """Read lightweight timing metadata from a standard Lottie JSON asset."""
+    try:
+        payload = json.loads(asset.read_text(encoding="utf-8"))
+        frame_rate = float(payload.get("fr") or 0)
+        if frame_rate > 0:
+            return max(80, min(180, int(4000 / frame_rate)))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return int(default)
+
+
 class LottiePulse(tk.Canvas):
     """A tiny Lottie-backed status indicator with a native Canvas fallback.
 
-    The animation asset is parsed at startup to validate its timing metadata.
-    Rendering three dots natively keeps the loading state smooth on Tk's UI
-    thread without introducing a heavyweight browser runtime.
+    The Lottie timing metadata is read off the UI path. Rendering three dots
+    natively keeps the waiting state smooth without a browser runtime.
     """
 
     def __init__(self, master: tk.Misc, asset: Path, color: str, background: str) -> None:
@@ -21,14 +34,18 @@ class LottiePulse(tk.Canvas):
         self.frame_delay = 120
         self._job: str | None = None
         self._step = 0
-        try:
-            from lottie.parsers.tgs import parse_tgs
-
-            animation = parse_tgs(str(asset))
-            self.frame_delay = max(80, min(180, int(1000 / max(1, animation.frame_rate / 4))))
-        except Exception:
-            pass
         self._draw()
+        threading.Thread(
+            target=self._load_timing,
+            args=(asset,),
+            name="lottie-timing",
+            daemon=True,
+        ).start()
+
+    def _load_timing(self, asset: Path) -> None:
+        # This worker never touches Tk. The next animation tick simply picks
+        # up the calculated delay, so the first result card remains instant.
+        self.frame_delay = lottie_frame_delay(asset, self.frame_delay)
 
     def apply_theme(self, color: str, background: str) -> None:
         self.color = color

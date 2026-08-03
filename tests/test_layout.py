@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -33,7 +34,7 @@ class LayoutRefreshTests(unittest.TestCase):
 
         self.assertEqual((width, height), (1360, 860))
         self.assertEqual((left, top), (600, 290))
-        self.assertEqual((min_width, min_height), (980, 680))
+        self.assertEqual((min_width, min_height), (1120, 680))
 
     def test_initial_window_stays_inside_a_small_desktop(self):
         width, height, left, top, min_width, min_height = initial_window_bounds(1366, 768, 1.0)
@@ -43,10 +44,17 @@ class LayoutRefreshTests(unittest.TestCase):
         self.assertGreaterEqual(width, min_width)
         self.assertGreaterEqual(height, min_height)
 
+    def test_low_reported_dpi_does_not_shrink_the_workspace(self):
+        width, height, _left, _top, min_width, min_height = initial_window_bounds(1536, 864, 0.4)
+
+        self.assertGreaterEqual(width, 2800)
+        self.assertGreaterEqual(height, 1700)
+        self.assertEqual((min_width, min_height), (2800, 1700))
+
     def test_conversation_width_is_centered_on_wide_windows(self):
         self.assertEqual(centered_content_padding(1360, 204, 960), 98)
         self.assertEqual(centered_content_padding(1920, 204, 960), 378)
-        self.assertEqual(centered_content_padding(980, 204, 960), 22)
+        self.assertEqual(centered_content_padding(980, 204, 960), 18)
         self.assertEqual(centered_content_padding(2040, 204, 960, window_scaling=1.5), 98)
 
     def test_window_move_with_same_size_does_not_schedule_layout_refresh(self):
@@ -65,6 +73,40 @@ class LayoutRefreshTests(unittest.TestCase):
         QuotaApp._schedule_layout_update(probe, event)
 
         self.assertEqual(probe._last_layout_size, (1100, 820))
+        self.assertEqual(len(probe.scheduled), 1)
+
+
+class EventPollingTests(unittest.TestCase):
+    def test_event_burst_is_split_across_fast_follow_up_ticks(self):
+        received: list[dict] = []
+        scheduled: list[tuple[int, object]] = []
+        events: queue.Queue[tuple[str, object]] = queue.Queue()
+        for index in range(4):
+            events.put(("library_stats", {"index": index}))
+        probe = SimpleNamespace(
+            _closing=False,
+            MAX_EVENTS_PER_TICK=QuotaApp.MAX_EVENTS_PER_TICK,
+            events=events,
+            sidebar=SimpleNamespace(set_library_stats=received.append),
+            after=lambda delay, callback: scheduled.append((delay, callback)) or "poll-job",
+            _poll_events=lambda: None,
+            _poll_job=None,
+        )
+
+        QuotaApp._poll_events(probe)
+
+        self.assertEqual(received, [{"index": 0}, {"index": 1}, {"index": 2}])
+        self.assertEqual(scheduled[-1][0], 16)
+        QuotaApp._poll_events(probe)
+        self.assertEqual(received[-1], {"index": 3})
+        self.assertEqual(scheduled[-1][0], 120)
+
+    def test_resize_probe_without_built_widgets_stays_safe(self):
+        probe = _LayoutProbe((1280, 820))
+        event = SimpleNamespace(widget=probe, width=1120, height=820)
+
+        QuotaApp._schedule_layout_update(probe, event)
+
         self.assertEqual(len(probe.scheduled), 1)
 
 
@@ -126,6 +168,111 @@ class SidebarStateTests(unittest.TestCase):
         self.assertFalse(probe.new_button.enabled)
         self.assertFalse(probe.rename_button.enabled)
         self.assertFalse(probe.delete_button.enabled)
+
+
+class SidebarSessionRefreshTests(unittest.TestCase):
+    class _Row:
+        def __init__(self, session_id: str, *, title: str = "", updated_at: float = 0.0):
+            self.session_id = session_id
+            self.title = title
+            self.updated_at = updated_at
+            self.updated: list[tuple[str, float]] = []
+            self.active: list[bool] = []
+            self.grid_calls: list[dict] = []
+            self.destroyed = False
+
+        def update_session(self, *, title, updated_at):
+            self.updated.append((title, updated_at))
+            self.title = title
+            self.updated_at = updated_at
+
+        def matches_session(self, *, title, updated_at):
+            return (title, updated_at) == (self.title, self.updated_at)
+
+        def set_active(self, value):
+            self.active.append(value)
+
+        def grid(self, **kwargs):
+            self.grid_calls.append(kwargs)
+
+        def destroy(self):
+            self.destroyed = True
+
+    class _EmptyLabel:
+        def __init__(self):
+            self.removed = 0
+            self.gridded: list[dict] = []
+
+        def grid_remove(self):
+            self.removed += 1
+
+        def grid(self, **kwargs):
+            self.gridded.append(kwargs)
+
+    def _probe(self, rows):
+        actions: list[bool] = []
+        return SimpleNamespace(
+            _session_rows=rows,
+            _active_session_id=None,
+            _set_session_actions_visible=actions.append,
+            _session_actions=actions,
+            empty_label=self._EmptyLabel(),
+            session_list=object(),
+            tokens=object(),
+            _select=lambda _session_id: None,
+        )
+
+    def test_same_order_reuses_rows_and_only_updates_active_state(self):
+        first = self._Row("first", title="防水工程", updated_at=10.0)
+        second = self._Row("second", title="屋面工程", updated_at=20.0)
+        probe = self._probe([first, second])
+        sessions = [
+            {"id": "first", "title": "防水工程", "updated_at": 10.0},
+            {"id": "second", "title": "屋面工程", "updated_at": 20.0},
+        ]
+
+        Sidebar.refresh_sessions(probe, sessions, "second")
+
+        self.assertEqual(probe._session_rows, [first, second])
+        self.assertFalse(first.destroyed)
+        self.assertFalse(second.destroyed)
+        self.assertEqual(first.grid_calls, [])
+        self.assertEqual(second.grid_calls, [])
+        self.assertEqual(first.updated, [])
+        self.assertEqual(second.updated, [])
+        self.assertEqual(first.active, [False])
+        self.assertEqual(second.active, [True])
+        self.assertEqual(probe._session_actions, [True])
+
+    def test_changed_order_reuses_rows_and_only_creates_or_destroys_differences(self):
+        first = self._Row("first", title="防水工程", updated_at=10.0)
+        second = self._Row("second", title="屋面工程", updated_at=20.0)
+        removed = self._Row("removed")
+        probe = self._probe([first, second, removed])
+        created: list[SidebarSessionRefreshTests._Row] = []
+
+        def create_row(_master, *, session_id, **_kwargs):
+            row = self._Row(session_id)
+            created.append(row)
+            return row
+
+        sessions = [
+            {"id": "second", "title": "屋面工程（更新）", "updated_at": 30.0},
+            {"id": "new", "title": "保温工程", "updated_at": 40.0},
+            {"id": "first", "title": "防水工程", "updated_at": 10.0},
+        ]
+        with mock.patch("components.sidebar.SessionRow", side_effect=create_row):
+            Sidebar.refresh_sessions(probe, sessions, "new")
+
+        self.assertEqual(probe._session_rows, [second, created[0], first])
+        self.assertFalse(first.destroyed)
+        self.assertFalse(second.destroyed)
+        self.assertTrue(removed.destroyed)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(second.updated, [("屋面工程（更新）", 30.0)])
+        self.assertEqual(second.grid_calls, [{"row": 0, "column": 0, "sticky": "ew", "pady": (0, 2)}])
+        self.assertEqual(first.grid_calls, [{"row": 2, "column": 0, "sticky": "ew", "pady": (0, 2)}])
+        self.assertEqual(created[0].grid_calls, [{"row": 1, "column": 0, "sticky": "ew", "pady": (0, 2)}])
 
 
 class SessionPersistenceUiTests(unittest.TestCase):
