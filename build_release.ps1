@@ -98,12 +98,17 @@ foreach ($required in @($python, $pyinstaller, $database, $catalogManifestPath))
 
 $catalogManifest = Get-Content -LiteralPath $catalogManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $appVersion = [string]$catalogManifest.app_version
-if ($AuthorizedInternalDistribution -or $AuthorizedPublicDistribution) {
+$sourceRevision = Get-SourceRevision
+if ($InternalEvaluation -or $AuthorizedInternalDistribution -or $AuthorizedPublicDistribution) {
     # Keep a running colleague build intact while preparing the next version.
-    $releaseRoot = Join-Path $releaseRoot "v$appVersion"
+    $buildFolder = if ($InternalEvaluation -and $sourceRevision -ne "UNVERSIONED") {
+        "v$appVersion-$($sourceRevision.Substring(0, 7))"
+    } else {
+        "v$appVersion"
+    }
+    $releaseRoot = Join-Path $releaseRoot $buildFolder
     $bundleRoot = Join-Path $releaseRoot $bundleName
 }
-$sourceRevision = Get-SourceRevision
 if (@($InternalEvaluation, $AuthorizedInternalDistribution, $AuthorizedPublicDistribution).Where({ $_ }).Count -gt 1) {
     throw "InternalEvaluation、AuthorizedInternalDistribution 与 AuthorizedPublicDistribution 只能选择一个"
 }
@@ -169,7 +174,7 @@ foreach ($target in @($stageRoot, $workRoot, $bundleRoot)) {
 }
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 
-$fontFiles = @("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf")
+$fontFiles = @("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "NotoSansSC-Regular.otf")
 $pyinstallerArgs = @(
     "--noconfirm", "--clean", "--windowed", "--onedir",
     "--name", "山东定额助手",

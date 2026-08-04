@@ -71,7 +71,7 @@ class ReleaseGateTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.script)
-        self.assertIn('Join-Path $releaseRoot "v$appVersion"', self.script)
+        self.assertIn('"v$appVersion"', self.script)
         self.assertIn("正式发布需要代码签名证书", self.script)
 
     def test_public_full_release_requires_explicit_authorization(self):
@@ -111,6 +111,10 @@ class ReleaseGateTests(unittest.TestCase):
     def test_internal_build_is_separated_from_release_directory(self):
         self.assertIn("build\\internal-evaluation", self.script)
         self.assertIn("仅限内部评估", self.script)
+        self.assertIn('$sourceRevision.Substring(0, 7)', self.script)
+
+    def test_release_bundles_the_cjk_fallback_font(self):
+        self.assertIn('"NotoSansSC-Regular.otf"', self.script)
 
     def test_installer_selection_is_exact_for_the_current_version(self):
         self.assertIn('$expectedInstaller = Join-Path $releaseRoot "山东定额助手-Setup-$appVersion.exe"', self.script)
