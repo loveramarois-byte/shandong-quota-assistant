@@ -311,6 +311,7 @@ class QuotaQtApp(QMainWindow):
         self.tasks = AnalysisTaskRegistry()
         self._cancel: threading.Event | None = None
         self._request_id = 0
+        self._active_request_id: int | None = None
         self._session: dict | None = None
         self._active_turn_id: str | None = None
         self._pending: dict[int, dict] = {}
@@ -544,7 +545,9 @@ class QuotaQtApp(QMainWindow):
         self.feed.add_user(description)
         self.feed.add_status("正在查找本地资料", "按专业、清单标准和定额年度筛选候选项…")
         cancel = threading.Event()
+        self._pending[request_id]["cancel"] = cancel
         self._cancel = cancel
+        self._active_request_id = request_id
         self.composer.send_button.setText("停止")
         self.composer.send_button.clicked.disconnect()
         self.composer.send_button.clicked.connect(self._cancel_active)
@@ -556,8 +559,11 @@ class QuotaQtApp(QMainWindow):
         job.signals.search_error.connect(self.signals.search_error)
         self.pool.start(job)
 
-    def _finish_job(self) -> None:
+    def _finish_job(self, request_id: int | None = None) -> None:
+        if request_id is not None and self._active_request_id != request_id:
+            return
         self._cancel = None
+        self._active_request_id = None
         self.composer.send_button.setText("分析")
         try:
             self.composer.send_button.clicked.disconnect()
@@ -584,6 +590,11 @@ class QuotaQtApp(QMainWindow):
         session_store.set_turn_local_result(session, turn_id, result, ai_enabled=pending["ai_enabled"])
         self._save_session()
         self.feed.add_result(result)
+        # Local evidence is actionable even when the remote AI is still
+        # running. Release the composer now; the AI response remains bound to
+        # this request and will be appended when it arrives.
+        pending["local_ready"] = True
+        self._finish_job(request_id)
         if pending["ai_enabled"]:
             self.feed.add_status("AI 正在复核", "只基于本地候选方案生成解释，不替换本地证据。")
         else:
@@ -596,18 +607,18 @@ class QuotaQtApp(QMainWindow):
         session_store.finish_ai_attempt(session_store_save_target(pending), pending["turn_id"], request_id=request_id, status="completed", response=text, validation=validation)
         self._save_session()
         self.feed.add_ai(text)
-        self._finish_job()
+        self._pending.pop(request_id, None)
 
     def _on_ai_skipped(self, request_id: int) -> None:
-        self._finish_job()
+        self._pending.pop(request_id, None)
 
     def _on_ai_error(self, request_id: int, detail: str) -> None:
         self.feed.add_warning(f"AI 暂不可用：{detail}。本地套价草案仍可继续使用。", error=True)
-        self._finish_job()
+        self._pending.pop(request_id, None)
 
     def _on_search_error(self, request_id: int, detail: str) -> None:
         self.feed.add_warning(f"本地资料检索失败：{detail}", error=True)
-        self._finish_job()
+        self._pending.pop(request_id, None)
 
     def _toggle_theme(self) -> None:
         self.theme_name = "dark" if self.theme_name == "light" else "light"
@@ -626,8 +637,10 @@ class QuotaQtApp(QMainWindow):
         self.ai_status.setText(self._ai_status_text())
 
     def closeEvent(self, event) -> None:
-        if self._cancel:
-            self._cancel.set()
+        for pending in self._pending.values():
+            cancel = pending.get("cancel")
+            if cancel:
+                cancel.set()
         self._save_session()
         event.accept()
 
