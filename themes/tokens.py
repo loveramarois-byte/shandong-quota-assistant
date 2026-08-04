@@ -57,11 +57,11 @@ class ThemeTokens:
     # The rail is deliberately wide enough for Chinese session names at the
     # common 125%-150% Windows scale. The conversation remains the primary
     # surface, but no longer competes with a clipped navigation column.
-    sidebar_width: int = 232
+    sidebar_width: int = 252
     main_min_width: int = 760
     # Keep the work surface readable on wide monitors while preserving a
     # little room for result tables and evidence actions.
-    content_max_width: int = 860
+    content_max_width: int = 820
     icon_sm: int = 16
     icon_md: int = 18
     transition_fast: int = 150
@@ -83,24 +83,24 @@ LIGHT = ThemeTokens(
         # Background is the "floor"; surface/cards float above it; elevated
         # (inputs, dropdowns) sit one level higher still. Dark-to-light order:
         # sidebar < background < surface < elevated.
-        background="#EDEBE5",
-        sidebar="#E4E2DB",
-        sidebar_border="#BFBCB3",
-        surface="#F8F7F3",
+        background="#F4F2ED",
+        sidebar="#ECE9E1",
+        sidebar_border="#D6D1C7",
+        surface="#FBFAF7",
         elevated="#FFFFFF",
-        subtle="#E3E0D8",
-        border="#CCCAC1",
-        border_strong="#B5B2A8",
+        subtle="#E9E6DE",
+        border="#DDD9D0",
+        border_strong="#C8C2B7",
         text="#292824",
-        text_secondary="#5F5C55",
-        text_muted="#7A7670",
-        accent="#5C6557",
-        accent_fill="#50594B",
+        text_secondary="#625F58",
+        text_muted="#817C73",
+        accent="#64705E",
+        accent_fill="#596451",
         on_accent="#FFFFFF",
-        accent_hover="#424B3F",
-        accent_pressed="#363D34",
-        accent_soft="#E4E8DF",
-        focus="#737E6C",
+        accent_hover="#4D5846",
+        accent_pressed="#3F483A",
+        accent_soft="#E1E7DE",
+        focus="#6C7A63",
         success="#58715F",
         success_soft="#E4ECE5",
         warning="#87662D",

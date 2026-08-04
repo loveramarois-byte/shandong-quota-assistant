@@ -11,6 +11,13 @@ Inter font files are included under the SIL Open Font License 1.1.
 - Copyright: 2016 The Inter Project Authors
 - License text: [assets/fonts/LICENSE.txt](assets/fonts/LICENSE.txt)
 
+Noto Sans SC is bundled as the Simplified Chinese fallback font under the SIL
+Open Font License 1.1.
+
+- Project: https://github.com/notofonts/noto-cjk
+- Copyright: 2014-2021 Adobe and Google
+- License text: [assets/fonts/NotoSansSC-LICENSE.txt](assets/fonts/NotoSansSC-LICENSE.txt)
+
 ## Runtime and build dependencies
 
 Packages listed in `requirements.txt` are installed from their respective

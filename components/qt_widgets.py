@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -28,6 +29,9 @@ from PyQt6.QtWidgets import (
 
 def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
     font = QFont("Inter")
+    # Inter is the Latin UI face; keep an explicit CJK fallback so labels do
+    # not become tofu when platform font fallback is disabled.
+    font.setFamilies(["Inter", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
     font.setPixelSize(size)
     font.setWeight(weight)
     return font
@@ -54,9 +58,11 @@ class MessageFeed(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("messageFeed")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 18, 0, 18)
-        self.layout.setSpacing(12)
+        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.layout.setContentsMargins(0, 24, 0, 24)
+        self.layout.setSpacing(14)
         self.layout.addStretch(1)
 
     def _insert(self, widget: QWidget) -> QWidget:
@@ -71,7 +77,7 @@ class MessageFeed(QWidget):
                 item.widget().deleteLater()
 
     def add_welcome(self, examples: list[str], on_example: Callable[[str], None]) -> QWidget:
-        card = PanelCard(elevated=True)
+        card = PanelCard()
         layout = QVBoxLayout(card)
         layout.setContentsMargins(28, 26, 28, 24)
         kicker = QLabel("山东定额助手")
@@ -123,7 +129,7 @@ class MessageFeed(QWidget):
         return self._insert(card)
 
     def add_result(self, result: dict) -> QWidget:
-        card = PanelCard(elevated=True)
+        card = PanelCard()
         layout = QVBoxLayout(card)
         layout.setContentsMargins(22, 19, 22, 18)
         title = QLabel("本地套价草案")
@@ -171,7 +177,7 @@ class MessageFeed(QWidget):
         return self._insert(card)
 
     def add_ai(self, text: str) -> QWidget:
-        card = PanelCard(elevated=True)
+        card = PanelCard()
         layout = QVBoxLayout(card)
         layout.setContentsMargins(22, 19, 22, 19)
         heading = QLabel("AI 复核意见")
@@ -192,15 +198,19 @@ class MessageFeed(QWidget):
         return self._insert(label)
 
 
-class Composer(QWidget):
+class Composer(QFrame):
     send_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("composer")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.setMaximumHeight(150)
         self.edit = QPlainTextEdit(self)
+        self.edit.setObjectName("composerEdit")
         self.edit.setPlaceholderText("描述施工做法，例如：地下室外墙 4mm 厚 SBS 防水卷材")
-        self.edit.setMinimumHeight(78)
-        self.edit.setMaximumHeight(150)
+        self.edit.setMinimumHeight(70)
+        self.edit.setMaximumHeight(120)
         self.edit.setTabChangesFocus(False)
         self.send_button = QPushButton("分析")
         self.send_button.setObjectName("primaryButton")
@@ -213,7 +223,9 @@ class Composer(QWidget):
         layout.setSpacing(8)
         layout.addWidget(self.edit)
         footer = QHBoxLayout()
-        footer.addWidget(QLabel("本地资料优先，AI 仅做复核"), 0, Qt.AlignmentFlag.AlignVCenter)
+        hint = QLabel("本地资料优先 · AI 仅做复核")
+        hint.setObjectName("composerHint")
+        footer.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
         footer.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
         footer.addWidget(self.send_button)
         layout.addLayout(footer)

@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from PyQt6.QtCore import QEventLoop, QTimer
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 
 from app.qt_main import QuotaQtApp
 
@@ -52,6 +52,7 @@ def main() -> int:
     failures: list[dict] = []
     durations: list[float] = []
     proposal_counts: list[int] = []
+    layout_checks = 0
     for index in range(50):
         started = time.perf_counter()
         try:
@@ -73,6 +74,19 @@ def main() -> int:
                 window._refresh_sessions()
             window.scroll.verticalScrollBar().setValue(window.scroll.verticalScrollBar().maximum())
             app.processEvents()
+            layout_checks += 1
+            clipped = [label.text()[:40] for label in window.feed.findChildren(QLabel) if label.isVisible() and label.text().strip() and label.height() <= 0]
+            if clipped:
+                raise AssertionError(f"visible text was compressed to zero height: {clipped}")
+            if window.composer.height() > 150:
+                raise AssertionError(f"composer expanded beyond compact limit: {window.composer.height()}")
+            if window.feed.width() > window.tokens.content_max_width:
+                raise AssertionError(f"feed exceeded readable width: {window.feed.width()}")
+            if window.sidebar.width() != window.tokens.sidebar_width:
+                raise AssertionError(f"sidebar width drifted: {window.sidebar.width()}")
+            bar = window.scroll.verticalScrollBar()
+            if bar.value() != bar.maximum():
+                raise AssertionError(f"scroll did not settle at latest content: {bar.value()} != {bar.maximum()}")
         except Exception as exc:  # noqa: BLE001 - this is a diagnostic harness
             failures.append({"iteration": index + 1, "error": repr(exc)})
             if window._cancel:
@@ -89,6 +103,7 @@ def main() -> int:
         "mean_duration_seconds": round(sum(durations) / len(durations), 3) if durations else 0,
         "proposal_counts": proposal_counts,
         "themes_exercised": ["light", "dark"],
+        "layout_checks": layout_checks,
         "workflow": ["new_session", "input", "local_search", "result_render", "theme_toggle", "session_refresh", "scroll"],
     }
     output = Path(__file__).resolve().parents[1] / "build" / "qt-real-machine-50.json"

@@ -324,7 +324,7 @@ class QuotaQtApp(QMainWindow):
 
     def _build(self) -> None:
         self.setWindowTitle("山东定额助手")
-        self.setMinimumSize(1120, 700)
+        self.setMinimumSize(1080, 680)
         self.resize(1280, 820)
         icon_path = resource_path("assets", "images", "app.ico")
         if icon_path.exists():
@@ -339,9 +339,10 @@ class QuotaQtApp(QMainWindow):
         outer.addWidget(self.sidebar)
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(32, 24, 32, 22)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(28, 20, 28, 20)
+        content_layout.setSpacing(10)
         header = QHBoxLayout()
+        header.setSpacing(8)
         title = QLabel("分析工作台")
         title.setObjectName("pageTitle")
         header.addWidget(title)
@@ -349,9 +350,15 @@ class QuotaQtApp(QMainWindow):
         self.edition = QComboBox(); self.edition.addItems(["2025", "2016"])
         self.standard = QComboBox(); self.standard.addItems(["2024", "2013"])
         self.discipline = QComboBox(); self.discipline.addItems(list(DISCIPLINE_OPTIONS))
+        filter_bar = QFrame()
+        filter_bar.setObjectName("filterBar")
+        filter_layout = QHBoxLayout(filter_bar)
+        filter_layout.setContentsMargins(3, 3, 3, 3)
+        filter_layout.setSpacing(5)
         for widget in (self.edition, self.standard, self.discipline):
-            widget.setMinimumWidth(96)
-            header.addWidget(widget)
+            widget.setMinimumWidth(88)
+            filter_layout.addWidget(widget)
+        header.addWidget(filter_bar)
         self.ai_status = QLabel()
         self.ai_status.setObjectName("statusPill")
         header.addWidget(self.ai_status)
@@ -370,10 +377,13 @@ class QuotaQtApp(QMainWindow):
         self.scroll.setObjectName("feedScroll")
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         viewport = self.scroll.viewport()
         viewport.setObjectName("feedViewport")
         viewport.setAutoFillBackground(True)
         self.feed = MessageFeed()
+        self.feed.setMaximumWidth(self.tokens.content_max_width)
         self.feed.content_added.connect(self._scroll_to_latest)
         self.scroll.setWidget(self.feed)
         content_layout.addWidget(self.scroll, 1)
@@ -385,10 +395,10 @@ class QuotaQtApp(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(240)
+        sidebar.setFixedWidth(self.tokens.sidebar_width)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(18, 22, 18, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 18, 16, 16)
+        layout.setSpacing(10)
         brand = QLabel("山东定额助手\nAI 套价工作台")
         brand.setObjectName("brand")
         layout.addWidget(brand)
@@ -422,36 +432,45 @@ class QuotaQtApp(QMainWindow):
     def _apply_theme(self) -> None:
         c = self.tokens.colors
         self.setStyleSheet(f"""
-        QWidget {{ color: {c.text}; font-family: Inter, 'Microsoft YaHei UI'; font-size: 14px; }}
+        QWidget {{ color: {c.text}; font-family: Inter, 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif; font-size: 14px; }}
         QMainWindow, #root {{ background: {c.background}; }}
         #sidebar {{ background: {c.sidebar}; border-right: 1px solid {c.sidebar_border}; }}
-        #brand {{ color: {c.text}; font-size: 17px; font-weight: 650; line-height: 1.35; }}
-        #sectionLabel {{ color: {c.text_muted}; font-size: 12px; font-weight: 600; padding-top: 8px; }}
-        #pageTitle {{ font-size: 22px; font-weight: 650; }}
+        #brand {{ color: {c.text}; font-size: 16px; font-weight: 650; line-height: 1.35; }}
+        #sectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 650; padding-top: 10px; letter-spacing: 0.04em; }}
+        #pageTitle {{ font-size: 21px; font-weight: 650; }}
+        #filterBar {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 10px; }}
         #secondaryText {{ color: {c.text_secondary}; }}
-        #statusPill {{ color: {c.success}; background: {c.success_soft}; border-radius: 12px; padding: 5px 10px; font-size: 12px; }}
-        #rule {{ color: {c.border}; max-height: 1px; }}
+        #statusPill {{ color: {c.success}; background: {c.success_soft}; border-radius: 9px; padding: 5px 9px; font-size: 11px; }}
+        #rule {{ color: {c.border}; max-height: 1px; opacity: 0.65; }}
         #feedScroll, #feedViewport, #messageFeed {{ background: {c.background}; border: 0; }}
-        QComboBox, QPlainTextEdit {{ background: {c.elevated}; border: 1px solid {c.border}; border-radius: 8px; padding: 8px 10px; selection-background-color: {c.accent_soft}; }}
+        QComboBox {{ background: {c.elevated}; border: 1px solid {c.border}; border-radius: 8px; padding: 6px 9px; min-height: 20px; selection-background-color: {c.accent_soft}; }}
+        QPlainTextEdit {{ background: transparent; border: 0; border-radius: 8px; padding: 7px 8px; selection-background-color: {c.accent_soft}; }}
         QComboBox:focus, QPlainTextEdit:focus {{ border-color: {c.focus}; }}
-        #surfaceCard, #elevatedCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 10px; }}
+        QComboBox::drop-down {{ border: 0; width: 28px; background: transparent; }}
+        QComboBox QAbstractItemView {{ background: {c.elevated}; color: {c.text}; border: 1px solid {c.border}; outline: 0; padding: 4px; selection-background-color: {c.accent_soft}; selection-color: {c.text}; }}
+        QComboBox QAbstractItemView::item {{ min-height: 30px; padding: 6px 10px; color: {c.text}; }}
+        QComboBox QAbstractItemView::item:hover {{ background: {c.subtle}; color: {c.text}; }}
+        #surfaceCard, #elevatedCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; }}
         #elevatedCard {{ background: {c.elevated}; }}
-        #userMessage {{ background: {c.user_surface}; border: 0; border-radius: 10px; }}
-        #statusCard {{ background: {c.subtle}; border: 0; border-radius: 8px; }}
-        #proposalRow {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 7px; }}
-        #quotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 5px; padding: 6px 8px; }}
+        #userMessage {{ background: {c.user_surface}; border: 0; border-radius: 12px; }}
+        #statusCard {{ background: {c.subtle}; border: 0; border-radius: 9px; }}
+        #proposalRow {{ background: transparent; border: 0; border-left: 2px solid {c.border_strong}; border-radius: 0; }}
+        #quotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 6px 8px; }}
         #kicker {{ color: {c.accent}; }}
-        #welcomeTitle {{ font-size: 25px; margin: 4px 0 2px; }}
-        #aiText {{ line-height: 1.55; }}
+        #welcomeTitle {{ font-size: 24px; margin: 4px 0 2px; }}
+        #aiText {{ line-height: 1.62; }}
         #warningText {{ color: {c.warning}; padding: 8px 4px; }}
         #errorText {{ color: {c.danger}; padding: 8px 4px; }}
-        #primaryButton, #newButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 650; }}
+        #composer {{ background: {c.elevated}; border: 1px solid {c.border}; border-radius: 14px; padding: 9px 11px 8px; }}
+        #composerEdit {{ color: {c.text}; min-height: 60px; }}
+        #composerHint {{ color: {c.text_muted}; font-size: 11px; padding-left: 7px; }}
+        #primaryButton, #newButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 0; border-radius: 9px; padding: 7px 15px; min-height: 34px; font-weight: 650; }}
         #primaryButton:hover, #newButton:hover {{ background: {c.accent_hover}; }}
         #primaryButton:pressed, #newButton:pressed {{ background: {c.accent_pressed}; }}
-        #quietButton, #exampleButton {{ color: {c.text_secondary}; background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 7px 10px; }}
+        #quietButton, #exampleButton {{ color: {c.text_secondary}; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 6px 9px; }}
         #quietButton:hover, #exampleButton:hover {{ background: {c.subtle}; color: {c.text}; }}
         #sessionList {{ background: transparent; color: {c.text_secondary}; padding: 4px 0; }}
-        #sessionList::item {{ padding: 9px 10px; border-radius: 7px; margin: 1px 0; }}
+        #sessionList::item {{ padding: 8px 10px; border-radius: 8px; margin: 1px 0; }}
         #sessionList::item:selected {{ background: {c.subtle}; color: {c.text}; }}
         QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; border: 0; }}
         QScrollBar::handle:vertical {{ background: {c.border_strong}; border-radius: 5px; min-height: 28px; }}
@@ -666,7 +685,7 @@ def _safe_library_stats() -> dict:
 
 
 def _load_qt_fonts() -> None:
-    for name in ("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"):
+    for name in ("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "NotoSansSC-Regular.otf"):
         path = resource_path("assets", "fonts", name)
         if path.exists():
             QFontDatabase.addApplicationFont(str(path))
