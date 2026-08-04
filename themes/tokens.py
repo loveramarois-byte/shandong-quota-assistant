@@ -80,17 +80,20 @@ class ThemeTokens:
 LIGHT = ThemeTokens(
     name="light",
     colors=Colors(
-        background="#F7F6F2",
-        sidebar="#EFEDE7",
-        sidebar_border="#C8C4BC",
-        surface="#F2F0EA",
-        elevated="#FCFBF8",
-        subtle="#ECEAE4",
-        border="#DEDBD3",
-        border_strong="#C5C1B7",
+        # Background is the "floor"; surface/cards float above it; elevated
+        # (inputs, dropdowns) sit one level higher still. Dark-to-light order:
+        # sidebar < background < surface < elevated.
+        background="#EDEBE5",
+        sidebar="#E4E2DB",
+        sidebar_border="#BFBCB3",
+        surface="#F8F7F3",
+        elevated="#FFFFFF",
+        subtle="#E3E0D8",
+        border="#CCCAC1",
+        border_strong="#B5B2A8",
         text="#292824",
         text_secondary="#5F5C55",
-        text_muted="#817D74",
+        text_muted="#7A7670",
         accent="#5C6557",
         accent_fill="#50594B",
         on_accent="#FFFFFF",
@@ -104,7 +107,7 @@ LIGHT = ThemeTokens(
         warning_soft="#F4ECD9",
         danger="#A05049",
         danger_soft="#F3E4E1",
-        user_surface="#ECE9E2",
+        user_surface="#E8E6DF",
         user_text="#34312C",
     ),
 )

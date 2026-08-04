@@ -26,6 +26,11 @@ def apply_window_chrome(window, tokens: ThemeTokens) -> None:
         if parent:
             hwnd = ctypes.c_void_p(parent)
         dwm = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        # DWMWA_WINDOW_CORNER_PREFERENCE = 33; value 2 = DWMWCP_ROUND.
+        # Explicit declaration prevents CTk from overriding the Win11 default
+        # and ensures consistent rounded corners across DPI and theme changes.
+        corner = ctypes.c_int(2)
+        dwm(hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))
         dark_mode = ctypes.c_int(1 if tokens.name == "dark" else 0)
         caption = ctypes.c_uint(hex_to_colorref(tokens.colors.sidebar))
         border = ctypes.c_uint(hex_to_colorref(tokens.colors.border))
