@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QLayout,
     QListWidget,
     QListWidgetItem,
+    QComboBox,
     QPushButton,
     QPlainTextEdit,
     QSizePolicy,
@@ -77,6 +78,27 @@ def _svg_pixmap(name: str, color: str, size: int) -> QPixmap:
 
 def svg_icon(name: str, color: str, size: int = 17) -> QIcon:
     return QIcon(_svg_pixmap(name, color, size))
+
+
+class ChevronComboBox(QComboBox):
+    """Combo box with an application-owned, always-visible chevron."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.chevron = QLabel(self)
+        self.chevron.setObjectName("comboChevron")
+        self.chevron.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.chevron.setFixedSize(16, 16)
+        self.chevron.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.set_icon_color("#77736B")
+
+    def set_icon_color(self, color: str) -> None:
+        self.chevron.setPixmap(_svg_pixmap("chevron-down", color, 14))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.chevron.move(self.width() - 24, max(0, (self.height() - self.chevron.height()) // 2))
+        self.chevron.raise_()
 
 
 class SvgIconButton(QPushButton):
@@ -308,6 +330,27 @@ class MessageFeed(QWidget):
                     quota_unit.setObjectName("secondaryText")
                     quota_layout.addWidget(quota_unit)
                 row_layout.addWidget(quota_row)
+            review_candidates = proposal.get("review_candidates") or []
+            if not (proposal.get("quota_lines") or []) and review_candidates:
+                candidate_heading = QLabel("候选定额 · 补充条件后确定")
+                candidate_heading.setObjectName("candidateHeading")
+                row_layout.addWidget(candidate_heading)
+                for quota in review_candidates[:3]:
+                    quota_row = QFrame()
+                    quota_row.setObjectName("candidateQuotaLine")
+                    quota_layout = QHBoxLayout(quota_row)
+                    quota_layout.setContentsMargins(9, 6, 9, 6)
+                    quota_layout.setSpacing(9)
+                    quota_code = QLabel(str(quota.get("code") or "定额"))
+                    quota_code.setObjectName("quotaCode")
+                    quota_layout.addWidget(quota_code)
+                    quota_title = QLabel(str(quota.get("title") or "待确认定额"))
+                    quota_title.setWordWrap(True)
+                    quota_layout.addWidget(quota_title, 1)
+                    quota_unit = QLabel(str(quota.get("unit") or ""))
+                    quota_unit.setObjectName("secondaryText")
+                    quota_layout.addWidget(quota_unit)
+                    row_layout.addWidget(quota_row)
             layout.addWidget(row)
         if not proposals:
             empty = QLabel("没有找到可直接确认的方案，请补充规格、厚度或施工部位。")
@@ -434,11 +477,19 @@ def _result_summary(result: dict) -> str:
 
 def _proposal_meta(proposal: dict) -> str:
     unit = proposal.get("bill_unit") or ""
-    status = {"ready": "可复核", "needs_input": "待补条件", "review": "需复核"}.get(str(proposal.get("status") or ""), "本地资料")
+    status = {
+        "ready_for_review": "可复核",
+        "needs_clarification": "待补条件",
+        "multiple_valid_options": "多个方案",
+        "no_reliable_match": "未匹配",
+    }.get(str(proposal.get("status") or ""), "本地资料")
     return " · ".join(value for value in (str(unit), status) if value)
 
 
 def _proposal_status(proposal: dict) -> str:
-    return {"ready": "建议优先", "needs_input": "待补条件", "review": "需要复核"}.get(
-        str(proposal.get("status") or ""), "本地候选"
-    )
+    return {
+        "ready_for_review": "建议优先",
+        "needs_clarification": "待补条件",
+        "multiple_valid_options": "多个方案",
+        "no_reliable_match": "未匹配",
+    }.get(str(proposal.get("status") or ""), "本地候选")

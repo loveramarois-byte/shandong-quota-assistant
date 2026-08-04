@@ -36,7 +36,8 @@ _CONTINUATION_RE = re.compile(r"^(?:人工|机械|泵送|现浇|商品|现场|�
 
 
 def _first_term(text: str, terms: tuple[str, ...]) -> str:
-    return next((value for value in terms if value.lower() in text.lower()), "")
+    compact = re.sub(r"\s+", "", text).lower()
+    return next((value for value in terms if re.sub(r"\s+", "", value).lower() in compact), "")
 
 
 def _number_source(text: str, pattern: str) -> tuple[float, str, str] | None:

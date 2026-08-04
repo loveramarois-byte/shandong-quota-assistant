@@ -6,6 +6,10 @@ from utils.work_items import extract_work_item, segment_description
 
 
 class WorkItemSegmentationTests(unittest.TestCase):
+    def test_spaced_sbs_name_keeps_the_specific_material(self):
+        item = segment_description("地下室外墙 4mm 厚 SBS 防水卷材", discipline="building")[0]
+        self.assertEqual(item.material, "SBS防水卷材")
+
     def test_compound_description_is_split_into_independent_items(self):
         text = "地下室外墙外侧做4mm SBS防水两道，20厚水泥砂浆保护层，外侧回填三七灰土，机械夯实。"
 

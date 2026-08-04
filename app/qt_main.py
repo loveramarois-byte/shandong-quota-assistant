@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from components.qt_widgets import Composer, MessageFeed, SessionList, SvgIconButton, svg_icon
+from components.qt_widgets import ChevronComboBox, Composer, MessageFeed, SessionList, SvgIconButton, svg_icon
 from controllers.analysis import AnalysisTaskRegistry
 from themes.tokens import ThemeTokens, get_theme
 from utils.ai_providers import provider_config
@@ -148,7 +148,7 @@ class SettingsDialog(QDialog):
         hint.setObjectName("secondaryText")
         hint.setWordWrap(True)
         form.addWidget(hint)
-        self.provider = QComboBox()
+        self.provider = ChevronComboBox()
         self.provider.addItem("ccSwitch", "ccswitch")
         self.provider.addItem("DeepSeek", "deepseek")
         self.provider.addItem("智谱 GLM", "zhipu")
@@ -157,7 +157,7 @@ class SettingsDialog(QDialog):
         self.api_key = QLineEdit()
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.base_url = QLineEdit(str(settings.get("ai_base_url") or provider_config(settings.get("ai_provider")).default_base_url))
-        self.model = QComboBox()
+        self.model = ChevronComboBox()
         self.model.setEditable(True)
         self.model.addItems([str(settings.get("ai_model") or "")])
         self.model.setCurrentText(str(settings.get("ai_model") or ""))
@@ -361,16 +361,23 @@ class QuotaQtApp(QMainWindow):
         title_stack.addWidget(subtitle)
         header.addLayout(title_stack)
         header.addStretch(1)
-        self.edition = QComboBox(); self.edition.addItems(["2025", "2016"])
-        self.standard = QComboBox(); self.standard.addItems(["2024", "2013"])
-        self.discipline = QComboBox(); self.discipline.addItems(list(DISCIPLINE_OPTIONS))
+        self.edition = ChevronComboBox()
+        self.edition.addItem("定额 2025", "2025")
+        self.edition.addItem("定额 2016", "2016")
+        self.standard = ChevronComboBox()
+        self.standard.addItem("清单 2024", "2024")
+        self.standard.addItem("清单 2013", "2013")
+        self.discipline = ChevronComboBox()
+        for label in DISCIPLINE_OPTIONS:
+            self.discipline.addItem(f"专业 {label}", label)
+        self.context_selectors = (self.edition, self.standard, self.discipline)
         filter_bar = QFrame()
         filter_bar.setObjectName("filterBar")
         filter_layout = QHBoxLayout(filter_bar)
         filter_layout.setContentsMargins(3, 3, 3, 3)
         filter_layout.setSpacing(5)
-        for widget in (self.edition, self.standard, self.discipline):
-            widget.setMinimumWidth(88)
+        for widget in self.context_selectors:
+            widget.setMinimumWidth(112)
             filter_layout.addWidget(widget)
         header.addWidget(filter_bar)
         self.ai_status = QLabel()
@@ -490,12 +497,13 @@ class QuotaQtApp(QMainWindow):
         #welcomePanel {{ background: transparent; border: 0; }}
         #welcomeTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 28px; font-weight: 600; }}
         #kicker {{ color: {c.accent}; }}
-        QComboBox, QLineEdit {{ color: {c.text}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 8px; padding: 6px 9px; min-height: 20px; selection-background-color: {c.accent_soft}; }}
+        QComboBox, QLineEdit {{ color: {c.text}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 8px; padding: 6px 28px 6px 9px; min-height: 20px; selection-background-color: {c.accent_soft}; }}
         QPlainTextEdit {{ color: {c.text}; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 8px; selection-background-color: {c.accent_soft}; }}
         QComboBox:hover, QLineEdit:hover {{ border-color: {c.border_strong}; }}
         QComboBox:focus, QLineEdit:focus, QPlainTextEdit:focus {{ border-color: {c.focus}; }}
         QComboBox:disabled, QLineEdit:disabled {{ color: {c.text_muted}; background: {c.subtle}; }}
         QComboBox::drop-down {{ border: 0; width: 28px; background: transparent; }}
+        QComboBox::down-arrow {{ image: none; width: 0; height: 0; }}
         QComboBox QAbstractItemView {{ background: {c.elevated}; color: {c.text}; border: 1px solid {c.border}; outline: 0; padding: 4px; selection-background-color: {c.accent_soft}; selection-color: {c.text}; }}
         QComboBox QAbstractItemView::item {{ min-height: 30px; padding: 6px 10px; color: {c.text}; }}
         QComboBox QAbstractItemView::item:hover {{ background: {c.subtle}; color: {c.text}; }}
@@ -512,6 +520,8 @@ class QuotaQtApp(QMainWindow):
         #rankBadge {{ color: {c.on_accent}; background: {c.accent_fill}; border-radius: 12px; font-size: 11px; font-weight: 700; }}
         #proposalTitle {{ color: {c.text}; }}
         #quotaLine {{ color: {c.text_secondary}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 7px; }}
+        #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 1px dashed {c.border_strong}; border-radius: 7px; }}
+        #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 650; padding-top: 2px; }}
         #quotaCode {{ color: {c.accent}; font-size: 12px; font-weight: 650; }}
         #aiText {{ color: {c.text}; line-height: 1.62; }}
         #warningText {{ color: {c.warning}; background: {c.warning_soft}; border-radius: 8px; padding: 9px 11px; }}
@@ -558,14 +568,16 @@ class QuotaQtApp(QMainWindow):
         self.theme_button.setToolTip("切换到浅色外观" if self.theme_name == "dark" else "切换到深色外观")
         self.theme_button.set_icon_color(icon_color)
         self.settings_button.set_icon_color(icon_color)
+        for selector in self.context_selectors:
+            selector.set_icon_color(icon_color)
         self.new_button.setIcon(svg_icon("plus", c.on_accent, 16))
         self.new_button.setIconSize(QSize(16, 16))
         self.ai_status.setText(self._ai_status_text())
 
     def _set_controls_from_settings(self) -> None:
-        self.edition.setCurrentText(str(self.settings.get("quota_edition") or "2025"))
-        self.standard.setCurrentText(str(self.settings.get("standard_edition") or "2024"))
-        self.discipline.setCurrentText(str(self.settings.get("discipline") or "建筑"))
+        _set_combo_data(self.edition, str(self.settings.get("quota_edition") or "2025"))
+        _set_combo_data(self.standard, str(self.settings.get("standard_edition") or "2024"))
+        _set_combo_data(self.discipline, str(self.settings.get("discipline") or "建筑"))
 
     def _ai_status_text(self) -> str:
         if self.settings.get("ai_enabled") and self.settings.get("ai_model"):
@@ -656,10 +668,11 @@ class QuotaQtApp(QMainWindow):
         session = self._ensure_session(description.replace("\n", " ").strip()[:28])
         self._request_id += 1
         request_id = self._request_id
-        edition = self.edition.currentText()
-        standard = self.standard.currentText()
-        discipline = DISCIPLINE_LABEL_TO_CODE.get(self.discipline.currentText(), "building")
-        self.settings.update({"quota_edition": edition, "standard_edition": standard, "discipline": self.discipline.currentText()})
+        edition = str(self.edition.currentData() or "2025")
+        standard = str(self.standard.currentData() or "2024")
+        discipline_label = str(self.discipline.currentData() or "建筑")
+        discipline = DISCIPLINE_LABEL_TO_CODE.get(discipline_label, "building")
+        self.settings.update({"quota_edition": edition, "standard_edition": standard, "discipline": discipline_label})
         save_settings(self.settings)
         turn = session_store.create_turn(session, description, quota_edition=edition, standard_edition=standard, discipline=discipline, request_id=request_id)
         self._active_turn_id = turn["turn_id"]
@@ -773,6 +786,11 @@ class QuotaQtApp(QMainWindow):
 
 def session_store_save_target(pending: dict) -> dict:
     return pending["session"]
+
+
+def _set_combo_data(combo: QComboBox, value: str) -> None:
+    index = combo.findData(value)
+    combo.setCurrentIndex(index if index >= 0 else 0)
 
 
 def _safe_library_stats() -> dict:

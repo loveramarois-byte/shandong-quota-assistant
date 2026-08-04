@@ -519,7 +519,15 @@ def _assemble_proposal(
     if attributes.get("layers", 1) and int(attributes.get("layers") or 1) > 1 and by_role.get("adjustment"):
         selected.append(by_role["adjustment"][0])
     elif attributes.get("thickness") is not None and by_role.get("adjustment"):
-        selected.append(by_role["adjustment"][0])
+        thickness_adjustment = next(
+            (
+                value for value in by_role["adjustment"]
+                if re.search(r"厚度|厚|增减\s*\d+(?:\.\d+)?\s*(?:mm|毫米|cm|厘米)", str(value.get("title") or ""), re.I)
+            ),
+            None,
+        )
+        if thickness_adjustment is not None:
+            selected.append(thickness_adjustment)
     if attributes.get("distance") is not None and by_role.get("transport"):
         selected.append(by_role["transport"][0])
     if "换算" in work_item.source_span and by_role.get("conversion"):

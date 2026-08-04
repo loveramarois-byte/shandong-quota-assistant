@@ -59,6 +59,19 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertTrue(all(line["source_status"] == "source_page_linked" for line in proposal["quota_lines"]))
         self.assertTrue(analysis["validation"]["valid"])
 
+    def test_material_thickness_does_not_add_an_extra_layer_quota(self):
+        item = extract_work_item("地下室外墙4mm SBS防水卷材", item_id="W1", discipline="building")
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [self.bill], "quotas": [], "links": [self.main, self.adjustment], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        proposal = analysis["proposals"][0]
+        self.assertEqual([line["code"] for line in proposal["quota_lines"]], ["9-1-1"])
+
     def test_structured_only_relation_is_confirmable_without_pdf_page(self):
         main = dict(self.main, source_path="", pdf_page=None, alignment_status="master_only")
         adjustment = dict(self.adjustment, source_path="", pdf_page=None, alignment_status="master_only")
@@ -359,6 +372,13 @@ class RealCataloguePricingRegressionTests(unittest.TestCase):
         self.assertIn("030412001-000", bills)
         self.assertIn("4-12-8", quotas)
         self.assertNotIn("method", {value["field"] for value in result.get("clarification_questions") or []})
+
+    def test_spaced_sbs_query_returns_the_linked_main_quota(self):
+        result, bills, quotas = self._proposal_codes("地下室外墙 4mm 厚 SBS 防水卷材", "building")
+        self.assertIn("010903001-000", bills)
+        self.assertIn("9-2-11", quotas)
+        proposal = result["proposals"][0]
+        self.assertEqual([line["code"] for line in proposal["quota_lines"]], ["9-2-11"])
 
     def test_newcomer_road_base_wording_selects_water_stabilized_base(self):
         _result, bills, quotas = self._proposal_codes("道路基层18公分水稳", "municipal")

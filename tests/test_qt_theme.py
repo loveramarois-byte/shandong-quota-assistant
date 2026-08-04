@@ -90,6 +90,38 @@ class QtThemeTests(unittest.TestCase):
             self.assertEqual(window.composer.maximumWidth(), window.feed.maximumWidth())
             self.assertEqual(window.brand_mark.width(), window.brand_mark.height())
             self.assertEqual(window.findChild(QLabel, "pageTitle").font().family(), "Source Han Serif SC")
+            self.assertEqual(window.edition.currentText(), "定额 2025")
+            self.assertEqual(window.standard.currentText(), "清单 2024")
+            self.assertEqual(window.discipline.currentText(), "专业 建筑")
+            self.assertTrue(all(selector.chevron.pixmap() is not None for selector in window.context_selectors))
+        finally:
+            window.close()
+
+    def test_unresolved_proposal_still_shows_candidate_quotas(self) -> None:
+        window = QuotaQtApp()
+        try:
+            card = window.feed.add_result(
+                {
+                    "discipline": "building",
+                    "work_items": [{}],
+                    "proposals": [
+                        {
+                            "bill_code": "010903001-000",
+                            "bill_title": "墙面卷材防水",
+                            "bill_unit": "m²",
+                            "status": "needs_clarification",
+                            "quota_lines": [],
+                            "review_candidates": [
+                                {"code": "9-2-11", "title": "改性沥青卷材热熔法 一层 立面", "unit": "10m²"}
+                            ],
+                        }
+                    ],
+                }
+            )
+            self.app.processEvents()
+            texts = [label.text() for label in card.findChildren(QLabel)]
+            self.assertIn("候选定额 · 补充条件后确定", texts)
+            self.assertIn("9-2-11", texts)
         finally:
             window.close()
 
