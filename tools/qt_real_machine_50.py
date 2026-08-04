@@ -17,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from PyQt6.QtCore import QEventLoop, QTimer
 from PyQt6.QtWidgets import QApplication, QLabel
 
-from app.qt_main import QuotaQtApp
+from app.qt_main import QuotaQtApp, _load_qt_fonts
 
 
 QUERIES = (
@@ -46,6 +46,7 @@ def wait_until(window: QuotaQtApp, predicate, timeout_ms: int = 30000) -> bool:
 
 def main() -> int:
     app = QApplication([])
+    _load_qt_fonts()
     window = QuotaQtApp()
     window.show()
     app.processEvents()

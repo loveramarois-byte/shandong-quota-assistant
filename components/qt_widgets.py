@@ -6,10 +6,13 @@ runtime small enough for a Windows installer.
 """
 from __future__ import annotations
 
+import os
+from functools import lru_cache
 from typing import Callable
 
-from PyQt6.QtCore import QEvent, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import QByteArray, QEasingCurve, QEvent, QPropertyAnimation, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -26,12 +29,17 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect,
 )
 
+from utils.paths import resource_path
 
-def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
-    font = QFont("Inter")
+
+def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: bool = False) -> QFont:
+    font = QFont("Source Han Serif SC" if display else "Inter")
     # Inter is the Latin UI face; keep an explicit CJK fallback so labels do
     # not become tofu when platform font fallback is disabled.
-    font.setFamilies(["Inter", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
+    if display:
+        font.setFamilies(["Source Han Serif SC", "Noto Serif CJK SC", "SimSun", "serif"])
+    else:
+        font.setFamilies(["Inter", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
     font.setPixelSize(size)
     font.setWeight(weight)
     return font
@@ -50,6 +58,53 @@ class PanelCard(QFrame):
             self.setGraphicsEffect(shadow)
 
 
+@lru_cache(maxsize=128)
+def _svg_pixmap(name: str, color: str, size: int) -> QPixmap:
+    path = resource_path("assets", "icons", f"{name}.svg")
+    pixmap = QPixmap(size * 2, size * 2)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    if not path.exists():
+        return pixmap
+    source = path.read_text(encoding="utf-8").replace("currentColor", color)
+    renderer = QSvgRenderer(QByteArray(source.encode("utf-8")))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter)
+    painter.end()
+    pixmap.setDevicePixelRatio(2)
+    return pixmap
+
+
+def svg_icon(name: str, color: str, size: int = 17) -> QIcon:
+    return QIcon(_svg_pixmap(name, color, size))
+
+
+class SvgIconButton(QPushButton):
+    """Application-owned icon button with consistent optical sizing."""
+
+    def __init__(
+        self,
+        icon_name: str,
+        tooltip: str,
+        *,
+        size: int = 36,
+        icon_size: int = 17,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.icon_name = icon_name
+        self.icon_pixel_size = icon_size
+        self.setObjectName("iconButton")
+        self.setFixedSize(size, size)
+        self.setIconSize(QSize(icon_size, icon_size))
+        self.setToolTip(tooltip)
+        self.setAccessibleName(tooltip)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_icon_color(self, color: str) -> None:
+        self.setIcon(QIcon(_svg_pixmap(self.icon_name, color, self.icon_pixel_size)))
+
+
 class MessageFeed(QWidget):
     """A compact, virtual-friendly conversation column."""
 
@@ -64,46 +119,100 @@ class MessageFeed(QWidget):
         self.layout.setContentsMargins(0, 24, 0, 24)
         self.layout.setSpacing(14)
         self.layout.addStretch(1)
+        self._animations: list[QPropertyAnimation] = []
+        self._transient_status: QWidget | None = None
 
-    def _insert(self, widget: QWidget) -> QWidget:
-        self.layout.insertWidget(self.layout.count() - 1, widget)
+    def _insert(self, widget: QWidget, *, align: Qt.AlignmentFlag | None = None) -> QWidget:
+        if align is None:
+            self.layout.insertWidget(self.layout.count() - 1, widget)
+        else:
+            self.layout.insertWidget(self.layout.count() - 1, widget, 0, align)
+        self._fade_in(widget)
         QTimer.singleShot(0, self.content_added.emit)
         return widget
 
+    def _fade_in(self, widget: QWidget) -> None:
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen" or os.environ.get("SHANDONG_REDUCED_MOTION") == "1":
+            return
+        from PyQt6.QtWidgets import QApplication, QGraphicsOpacityEffect
+
+        if QApplication.instance() is None:
+            return
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", widget)
+        animation.setDuration(180)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(lambda: self._animations.remove(animation) if animation in self._animations else None)
+        self._animations.append(animation)
+        animation.start()
+
     def clear_feed(self) -> None:
+        self._transient_status = None
         while self.layout.count() > 1:
             item = self.layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _clear_transient(self) -> None:
+        if self._transient_status is None:
+            return
+        self.layout.removeWidget(self._transient_status)
+        self._transient_status.hide()
+        self._transient_status.setParent(None)
+        self._transient_status.deleteLater()
+        self._transient_status = None
 
     def add_welcome(self, examples: list[str], on_example: Callable[[str], None]) -> QWidget:
-        card = PanelCard()
+        card = QFrame()
+        card.setObjectName("welcomePanel")
+        card.setMaximumWidth(720)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(28, 26, 28, 24)
-        kicker = QLabel("山东定额助手")
+        layout.setContentsMargins(18, 44, 18, 32)
+        layout.setSpacing(10)
+        mark = QLabel("定")
+        mark.setObjectName("welcomeMark")
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setFixedSize(40, 40)
+        kicker = QLabel("山东定额助手 · AI 套价")
         kicker.setObjectName("kicker")
         kicker.setFont(_font(12, QFont.Weight.DemiBold))
-        title = QLabel("先说清楚施工做法")
+        title = QLabel("把施工做法交给我")
         title.setObjectName("welcomeTitle")
-        title.setFont(_font(25, QFont.Weight.DemiBold))
+        title.setFont(_font(27, QFont.Weight.DemiBold, display=True))
         title.setWordWrap(True)
-        detail = QLabel("我会先从山东定额与清单资料中检索，再给出可复核的套项建议。")
+        detail = QLabel("从山东清单与定额资料中定位候选项，再由 AI 帮你梳理成可复核的建议。")
         detail.setObjectName("secondaryText")
         detail.setWordWrap(True)
+        layout.addWidget(mark, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(kicker)
         layout.addWidget(title)
         layout.addWidget(detail)
+        layout.setAlignment(kicker, Qt.AlignmentFlag.AlignHCenter)
+        layout.setAlignment(title, Qt.AlignmentFlag.AlignHCenter)
+        layout.setAlignment(detail, Qt.AlignmentFlag.AlignHCenter)
+        examples_label = QLabel("可以这样问")
+        examples_label.setObjectName("sectionLabel")
+        layout.addSpacing(10)
+        layout.addWidget(examples_label)
         for example in examples:
             button = QPushButton(example)
             button.setObjectName("exampleButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setMinimumHeight(42)
             button.clicked.connect(lambda _checked=False, value=example: on_example(value))
             layout.addWidget(button)
-        return self._insert(card)
+        return self._insert(card, align=Qt.AlignmentFlag.AlignHCenter)
 
     def add_user(self, text: str) -> QWidget:
         card = PanelCard()
         card.setObjectName("userMessage")
+        card.setMaximumWidth(620)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(18, 13, 18, 13)
         label = QLabel(text)
@@ -111,13 +220,15 @@ class MessageFeed(QWidget):
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(label)
-        return self._insert(card)
+        return self._insert(card, align=Qt.AlignmentFlag.AlignRight)
 
     def add_status(self, title: str, detail: str = "") -> QWidget:
+        self._clear_transient()
         card = PanelCard()
         card.setObjectName("statusCard")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(3)
         heading = QLabel(title)
         heading.setFont(_font(14, QFont.Weight.DemiBold))
         layout.addWidget(heading)
@@ -126,48 +237,77 @@ class MessageFeed(QWidget):
             body.setObjectName("secondaryText")
             body.setWordWrap(True)
             layout.addWidget(body)
+        self._transient_status = card
         return self._insert(card)
 
     def add_result(self, result: dict) -> QWidget:
+        self._clear_transient()
         card = PanelCard()
+        card.setObjectName("resultCard")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(22, 19, 22, 18)
-        title = QLabel("本地套价草案")
-        title.setFont(_font(16, QFont.Weight.DemiBold))
-        layout.addWidget(title)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(12)
+        proposals = result.get("proposals") or []
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        title = QLabel("套价建议")
+        title.setObjectName("resultTitle")
+        title.setFont(_font(17, QFont.Weight.DemiBold, display=True))
+        header.addWidget(title)
+        header.addStretch(1)
+        count = QLabel(f"{len(proposals)} 个候选")
+        count.setObjectName("countBadge")
+        header.addWidget(count)
+        layout.addLayout(header)
         summary = QLabel(_result_summary(result))
         summary.setObjectName("secondaryText")
         summary.setWordWrap(True)
         layout.addWidget(summary)
-        proposals = result.get("proposals") or []
         for index, proposal in enumerate(proposals[:6], 1):
             row = QFrame()
-            row.setObjectName("proposalRow")
+            row.setObjectName("primaryProposal" if index == 1 else "proposalRow")
             row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(12, 9, 12, 9)
+            row_layout.setContentsMargins(14, 12, 14, 12)
+            row_layout.setSpacing(7)
             code = str(proposal.get("bill_code") or "待确认清单")
             item_title = str(proposal.get("bill_title") or "未命名工作项")
-            line = QLabel(f"{index}. {code}  {item_title}")
-            line.setFont(_font(13, QFont.Weight.DemiBold))
+            title_row = QHBoxLayout()
+            rank = QLabel(str(index))
+            rank.setObjectName("rankBadge")
+            rank.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            rank.setFixedSize(24, 24)
+            title_row.addWidget(rank)
+            line = QLabel(item_title)
+            line.setObjectName("proposalTitle")
+            line.setFont(_font(14, QFont.Weight.DemiBold))
             line.setWordWrap(True)
-            row_layout.addWidget(line)
-            meta = QLabel(_proposal_meta(proposal))
+            title_row.addWidget(line, 1)
+            status = QLabel(_proposal_status(proposal))
+            status.setObjectName("proposalStatus")
+            title_row.addWidget(status)
+            row_layout.addLayout(title_row)
+            meta = QLabel(" · ".join(value for value in (code, str(proposal.get("bill_unit") or "")) if value))
             meta.setObjectName("secondaryText")
             meta.setWordWrap(True)
             row_layout.addWidget(meta)
             for quota in proposal.get("quota_lines") or []:
-                quota_text = "  ".join(
-                    value for value in (
-                        str(quota.get("code") or ""),
-                        str(quota.get("title") or ""),
-                        str(quota.get("unit") or ""),
-                    ) if value
-                )
-                if quota_text:
-                    quota_label = QLabel("定额  " + quota_text)
-                    quota_label.setObjectName("quotaLine")
-                    quota_label.setWordWrap(True)
-                    row_layout.addWidget(quota_label)
+                quota_row = QFrame()
+                quota_row.setObjectName("quotaLine")
+                quota_layout = QHBoxLayout(quota_row)
+                quota_layout.setContentsMargins(9, 6, 9, 6)
+                quota_layout.setSpacing(9)
+                quota_code = QLabel(str(quota.get("code") or "定额"))
+                quota_code.setObjectName("quotaCode")
+                quota_layout.addWidget(quota_code)
+                quota_title = QLabel(str(quota.get("title") or "待确认定额"))
+                quota_title.setWordWrap(True)
+                quota_layout.addWidget(quota_title, 1)
+                unit = str(quota.get("unit") or "")
+                if unit:
+                    quota_unit = QLabel(unit)
+                    quota_unit.setObjectName("secondaryText")
+                    quota_layout.addWidget(quota_unit)
+                row_layout.addWidget(quota_row)
             layout.addWidget(row)
         if not proposals:
             empty = QLabel("没有找到可直接确认的方案，请补充规格、厚度或施工部位。")
@@ -177,12 +317,16 @@ class MessageFeed(QWidget):
         return self._insert(card)
 
     def add_ai(self, text: str) -> QWidget:
+        self._clear_transient()
         card = PanelCard()
+        card.setObjectName("aiCard")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(22, 19, 22, 19)
-        heading = QLabel("AI 复核意见")
-        heading.setFont(_font(16, QFont.Weight.DemiBold))
-        layout.addWidget(heading)
+        layout.setContentsMargins(24, 21, 24, 21)
+        layout.setSpacing(9)
+        kicker = QLabel("AI 复核")
+        kicker.setObjectName("kicker")
+        kicker.setFont(_font(12, QFont.Weight.DemiBold))
+        layout.addWidget(kicker)
         body = QLabel(text)
         body.setObjectName("aiText")
         body.setWordWrap(True)
@@ -192,6 +336,7 @@ class MessageFeed(QWidget):
         return self._insert(card)
 
     def add_warning(self, text: str, *, error: bool = False) -> QWidget:
+        self._clear_transient()
         label = QLabel(text)
         label.setObjectName("errorText" if error else "warningText")
         label.setWordWrap(True)
@@ -206,16 +351,19 @@ class Composer(QFrame):
         self.setObjectName("composer")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.setMaximumHeight(150)
+        self.setMaximumWidth(820)
+        self.setMinimumWidth(760)
         self.edit = QPlainTextEdit(self)
         self.edit.setObjectName("composerEdit")
         self.edit.setPlaceholderText("描述施工做法，例如：地下室外墙 4mm 厚 SBS 防水卷材")
         self.edit.setMinimumHeight(70)
         self.edit.setMaximumHeight(120)
         self.edit.setTabChangesFocus(False)
-        self.send_button = QPushButton("分析")
+        self.send_button = QPushButton("开始分析")
         self.send_button.setObjectName("primaryButton")
         self.send_button.setMinimumHeight(38)
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.send_button.setAccessibleName("开始分析")
         self.send_button.clicked.connect(self.send_requested)
         self.edit.installEventFilter(self)
         layout = QVBoxLayout(self)
@@ -223,7 +371,7 @@ class Composer(QFrame):
         layout.setSpacing(8)
         layout.addWidget(self.edit)
         footer = QHBoxLayout()
-        hint = QLabel("本地资料优先 · AI 仅做复核")
+        hint = QLabel("Enter 发送 · Shift + Enter 换行")
         hint.setObjectName("composerHint")
         footer.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
         footer.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
@@ -246,6 +394,13 @@ class Composer(QFrame):
     def set_text(self, value: str) -> None:
         self.edit.setPlainText(value)
         self.edit.setFocus()
+
+    def set_busy(self, busy: bool) -> None:
+        self.send_button.setText("停止" if busy else "开始分析")
+        self.send_button.setAccessibleName("停止当前分析" if busy else "开始分析")
+        self.send_button.setProperty("busy", busy)
+        self.send_button.style().unpolish(self.send_button)
+        self.send_button.style().polish(self.send_button)
 
 
 class SessionList(QListWidget):
@@ -281,3 +436,9 @@ def _proposal_meta(proposal: dict) -> str:
     unit = proposal.get("bill_unit") or ""
     status = {"ready": "可复核", "needs_input": "待补条件", "review": "需复核"}.get(str(proposal.get("status") or ""), "本地资料")
     return " · ".join(value for value in (str(unit), status) if value)
+
+
+def _proposal_status(proposal: dict) -> str:
+    return {"ready": "建议优先", "needs_input": "待补条件", "review": "需要复核"}.get(
+        str(proposal.get("status") or ""), "本地候选"
+    )

@@ -18,6 +18,14 @@ Open Font License 1.1.
 - Copyright: 2014-2021 Adobe and Google
 - License text: [assets/fonts/NotoSansSC-LICENSE.txt](assets/fonts/NotoSansSC-LICENSE.txt)
 
+Source Han Serif SC is bundled as the Simplified Chinese display font under
+the SIL Open Font License 1.1. It is used for editorial headings while body
+copy remains in the sans-serif UI stack.
+
+- Project: https://github.com/adobe-fonts/source-han-serif
+- Copyright: 2017-2022 Adobe
+- License text: [assets/fonts/SourceHanSerifSC-LICENSE.txt](assets/fonts/SourceHanSerifSC-LICENSE.txt)
+
 ## Runtime and build dependencies
 
 Packages listed in `requirements.txt` are installed from their respective

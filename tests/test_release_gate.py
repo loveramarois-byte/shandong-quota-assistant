@@ -116,6 +116,11 @@ class ReleaseGateTests(unittest.TestCase):
     def test_release_bundles_the_cjk_fallback_font(self):
         self.assertIn('"NotoSansSC-Regular.otf"', self.script)
 
+    def test_release_bundles_the_cjk_display_font_and_license(self):
+        self.assertIn('"SourceHanSerifSC-Regular.otf"', self.script)
+        self.assertIn('"SourceHanSerifSC-SemiBold.otf"', self.script)
+        self.assertIn('"SourceHanSerifSC-LICENSE.txt"', self.script)
+
     def test_installer_selection_is_exact_for_the_current_version(self):
         self.assertIn('$expectedInstaller = Join-Path $releaseRoot "山东定额助手-Setup-$appVersion.exe"', self.script)
         self.assertNotIn('Get-ChildItem -LiteralPath $releaseRoot -Filter "*-Setup-*.exe"', self.script)

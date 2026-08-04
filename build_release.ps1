@@ -174,7 +174,16 @@ foreach ($target in @($stageRoot, $workRoot, $bundleRoot)) {
 }
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 
-$fontFiles = @("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "NotoSansSC-Regular.otf")
+$fontFiles = @(
+    "Inter-Regular.ttf",
+    "Inter-Medium.ttf",
+    "Inter-SemiBold.ttf",
+    "Inter-Bold.ttf",
+    "NotoSansSC-Regular.otf",
+    "SourceHanSerifSC-Regular.otf",
+    "SourceHanSerifSC-SemiBold.otf",
+    "SourceHanSerifSC-LICENSE.txt"
+)
 $pyinstallerArgs = @(
     "--noconfirm", "--clean", "--windowed", "--onedir",
     "--name", "山东定额助手",
