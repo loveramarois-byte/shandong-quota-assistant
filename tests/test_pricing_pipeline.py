@@ -379,6 +379,8 @@ class RealCataloguePricingRegressionTests(unittest.TestCase):
         self.assertIn("9-2-11", quotas)
         proposal = result["proposals"][0]
         self.assertEqual([line["code"] for line in proposal["quota_lines"]], ["9-2-11"])
+        method = next(value for value in result["clarification_questions"] if value["field"] == "method")
+        self.assertEqual(method["options"][:3], ["热熔法", "冷粘法", "自粘法"])
 
     def test_newcomer_road_base_wording_selects_water_stabilized_base(self):
         _result, bills, quotas = self._proposal_codes("道路基层18公分水稳", "municipal")

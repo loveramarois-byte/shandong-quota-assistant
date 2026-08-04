@@ -182,7 +182,10 @@ $fontFiles = @(
     "NotoSansSC-Regular.otf",
     "SourceHanSerifSC-Regular.otf",
     "SourceHanSerifSC-SemiBold.otf",
-    "SourceHanSerifSC-LICENSE.txt"
+    "SourceHanSerifSC-LICENSE.txt",
+    "SourceHanSansSC-Regular.otf",
+    "SourceHanSansSC-Medium.otf",
+    "SourceHanSansSC-LICENSE.txt"
 )
 $pyinstallerArgs = @(
     "--noconfirm", "--clean", "--windowed", "--onedir",

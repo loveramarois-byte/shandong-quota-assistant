@@ -405,7 +405,9 @@ class QuotaQtApp(QMainWindow):
         self.feed.setMaximumWidth(self.tokens.content_max_width)
         self.feed.content_added.connect(self._scroll_to_latest)
         self.scroll.setWidget(self.feed)
-        self.scroll.verticalScrollBar().valueChanged.connect(self._track_scroll_position)
+        scroll_bar = self.scroll.verticalScrollBar()
+        scroll_bar.valueChanged.connect(self._track_scroll_position)
+        scroll_bar.rangeChanged.connect(self._follow_growing_content)
         content_layout.addWidget(self.scroll, 1)
         self.composer = Composer()
         content_layout.addWidget(self.composer, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -469,6 +471,7 @@ class QuotaQtApp(QMainWindow):
 
     def _connect_signals(self) -> None:
         self.composer.send_requested.connect(self._send)
+        self.feed.clarification_selected.connect(self._answer_clarification)
         self.signals.local_result.connect(self._on_local_result)
         self.signals.ai_answer.connect(self._on_ai_answer)
         self.signals.ai_error.connect(self._on_ai_error)
@@ -479,19 +482,19 @@ class QuotaQtApp(QMainWindow):
     def _apply_theme(self) -> None:
         c = self.tokens.colors
         self.setStyleSheet(f"""
-        QWidget {{ color: {c.text}; font-family: Inter, 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif; font-size: 14px; }}
+        QWidget {{ color: {c.text}; font-family: 'Source Han Sans SC'; font-size: 14px; font-weight: 400; }}
         QMainWindow, #root {{ background: {c.background}; }}
         QToolTip {{ color: {c.text}; background: {c.elevated}; border: 1px solid {c.border}; padding: 5px 7px; }}
         #sidebar {{ background: {c.sidebar}; border-right: 1px solid {c.sidebar_border}; }}
-        #brandMark, #welcomeMark {{ color: {c.accent}; background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 10px; font-size: 16px; font-weight: 700; }}
+        #brandMark, #welcomeMark {{ color: {c.accent}; background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 9px; font-size: 15px; font-weight: 500; }}
         #brand {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 15px; font-weight: 600; }}
         #brandSubtitle, #versionText {{ color: {c.text_muted}; font-size: 11px; }}
-        #sectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 650; padding-top: 10px; }}
+        #sectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 10px; }}
         #pageTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 19px; font-weight: 600; }}
         #pageSubtitle {{ color: {c.text_muted}; font-size: 11px; }}
         #filterBar {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 10px; }}
         #secondaryText {{ color: {c.text_secondary}; }}
-        #statusPill {{ color: {c.success}; background: transparent; border: 0; padding: 5px 3px; font-size: 11px; font-weight: 600; }}
+        #statusPill {{ color: {c.success}; background: transparent; border: 0; padding: 5px 3px; font-size: 11px; font-weight: 500; }}
         #rule {{ color: {c.border}; max-height: 1px; }}
         #feedScroll, #feedViewport, #messageFeed {{ background: {c.background}; border: 0; }}
         #welcomePanel {{ background: transparent; border: 0; }}
@@ -521,16 +524,32 @@ class QuotaQtApp(QMainWindow):
         #proposalTitle {{ color: {c.text}; }}
         #quotaLine {{ color: {c.text_secondary}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 7px; }}
         #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 1px dashed {c.border_strong}; border-radius: 7px; }}
-        #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 650; padding-top: 2px; }}
-        #quotaCode {{ color: {c.accent}; font-size: 12px; font-weight: 650; }}
+        #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
+        #quotaCode {{ color: {c.accent}; font-family: Inter; font-size: 12px; font-weight: 500; }}
+        #clarificationRule {{ background: {c.border}; border: 0; max-height: 1px; margin-top: 3px; }}
+        #clarificationTitle {{ color: {c.text}; font-size: 14px; font-weight: 500; padding-top: 3px; }}
+        #clarificationHint {{ color: {c.text_muted}; font-size: 11px; }}
+        #choiceButton {{ color: {c.text_secondary}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 7px; padding: 6px 11px; min-height: 24px; font-size: 12px; font-weight: 500; }}
+        #choiceButton:hover {{ color: {c.text}; border-color: {c.border_strong}; background: {c.subtle}; }}
+        #choiceButton:pressed, #choiceButton:checked {{ color: {c.on_accent}; background: {c.accent_fill}; border-color: {c.accent_fill}; }}
+        #choiceButton:focus {{ border-color: {c.focus}; }}
         #aiText {{ color: {c.text}; line-height: 1.62; }}
         #warningText {{ color: {c.warning}; background: {c.warning_soft}; border-radius: 8px; padding: 9px 11px; }}
         #errorText {{ color: {c.danger}; background: {c.danger_soft}; border-radius: 8px; padding: 9px 11px; }}
-        #composer {{ background: {c.elevated}; border: 1px solid {c.border_strong}; border-radius: 14px; padding: 9px 11px 8px; }}
-        #composer:hover {{ border-color: {c.focus}; }}
-        #composerEdit {{ color: {c.text}; min-height: 60px; }}
-        #composerHint {{ color: {c.text_muted}; font-size: 11px; padding-left: 7px; }}
-        #primaryButton, #newButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 9px; padding: 7px 15px; min-height: 34px; font-weight: 650; }}
+        #composer {{ background: transparent; border: 0; }}
+        #composerStatusRow {{ background: transparent; border: 0; }}
+        #composerMode {{ color: {c.accent}; background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 6px; padding: 3px 7px; font-size: 10px; font-weight: 500; }}
+        #composerStatus {{ color: {c.text_muted}; font-size: 11px; }}
+        #composerInputShell {{ background: {c.elevated}; border: 1px solid {c.border_strong}; border-radius: 12px; }}
+        #composerInputShell:hover {{ border-color: {c.focus}; }}
+        #composerInputShell[focused="true"] {{ border: 2px solid {c.focus}; }}
+        #composerEdit, #composerEdit:focus {{ color: {c.text}; min-height: 56px; font-size: 14px; border: 0; }}
+        #composerAction {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 21px; padding: 10px; }}
+        #composerAction:hover {{ background: {c.accent_hover}; border-color: {c.accent_hover}; }}
+        #composerAction:pressed {{ background: {c.accent_pressed}; border-color: {c.accent_pressed}; }}
+        #composerAction:focus {{ border: 2px solid {c.focus}; }}
+        #composerAction[busy="true"] {{ background: {c.danger_soft}; border-color: {c.danger}; }}
+        #primaryButton, #newButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 7px; padding: 6px 14px; min-height: 32px; font-size: 13px; font-weight: 500; }}
         #primaryButton:hover, #newButton:hover {{ background: {c.accent_hover}; border-color: {c.accent_hover}; }}
         #primaryButton:pressed, #newButton:pressed {{ background: {c.accent_pressed}; border-color: {c.accent_pressed}; }}
         #primaryButton:disabled, #newButton:disabled {{ color: {c.text_muted}; background: {c.subtle}; border-color: {c.border}; }}
@@ -549,7 +568,7 @@ class QuotaQtApp(QMainWindow):
         #sessionList::item:hover {{ background: {c.subtle}; color: {c.text}; }}
         #sessionList::item:selected {{ background: {c.accent_soft}; color: {c.text}; }}
         #libraryPanel {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 9px; }}
-        #libraryTitle {{ color: {c.text}; font-size: 12px; font-weight: 650; }}
+        #libraryTitle {{ color: {c.text}; font-size: 12px; font-weight: 500; }}
         QCheckBox {{ color: {c.text_secondary}; spacing: 8px; padding: 3px 0; }}
         QScrollBar:vertical {{ background: transparent; width: 9px; margin: 0; border: 0; }}
         QScrollBar::handle:vertical {{ background: {c.border_strong}; border-radius: 4px; min-height: 30px; }}
@@ -568,6 +587,7 @@ class QuotaQtApp(QMainWindow):
         self.theme_button.setToolTip("切换到浅色外观" if self.theme_name == "dark" else "切换到深色外观")
         self.theme_button.set_icon_color(icon_color)
         self.settings_button.set_icon_color(icon_color)
+        self.composer.apply_icon_color(c.on_accent, c.danger)
         for selector in self.context_selectors:
             selector.set_icon_color(icon_color)
         self.new_button.setIcon(svg_icon("plus", c.on_accent, 16))
@@ -684,6 +704,7 @@ class QuotaQtApp(QMainWindow):
         self._cancel = cancel
         self._active_request_id = request_id
         self.composer.set_busy(True)
+        self.composer.apply_icon_color(self.tokens.colors.on_accent, self.tokens.colors.danger)
         self.composer.send_button.clicked.disconnect()
         self.composer.send_button.clicked.connect(self._cancel_active)
         job = AnalysisJob(request_id, effective, dict(self.settings), cancel)
@@ -694,12 +715,29 @@ class QuotaQtApp(QMainWindow):
         job.signals.search_error.connect(self.signals.search_error)
         self.pool.start(job)
 
+    def _answer_clarification(self, question_id: str, answer: str) -> None:
+        if self._cancel is not None or not self._session:
+            return
+        turns = self._session.get("turns") or []
+        if not turns:
+            return
+        snapshot = turns[-1].get("retrieval_snapshot") or {}
+        question = next(
+            (value for value in snapshot.get("clarification_questions") or [] if str(value.get("id") or "") == question_id),
+            None,
+        )
+        if not question:
+            return
+        self.composer.set_text(answer)
+        self._send()
+
     def _finish_job(self, request_id: int | None = None) -> None:
         if request_id is not None and self._active_request_id != request_id:
             return
         self._cancel = None
         self._active_request_id = None
         self.composer.set_busy(False)
+        self.composer.apply_icon_color(self.tokens.colors.on_accent, self.tokens.colors.danger)
         try:
             self.composer.send_button.clicked.disconnect()
         except TypeError:
@@ -711,6 +749,19 @@ class QuotaQtApp(QMainWindow):
             return
         bar = self.scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
+        # Rich result rows can update the scroll range one event-loop turn
+        # after insertion. Settle once more without overriding a reader who
+        # has already moved away from the latest content.
+        QTimer.singleShot(0, self._settle_scroll_to_latest)
+
+    def _settle_scroll_to_latest(self) -> None:
+        if self._follow_latest:
+            bar = self.scroll.verticalScrollBar()
+            bar.setValue(bar.maximum())
+
+    def _follow_growing_content(self, _minimum: int, maximum: int) -> None:
+        if self._follow_latest:
+            self.scroll.verticalScrollBar().setValue(maximum)
 
     def _track_scroll_position(self, value: int) -> None:
         bar = self.scroll.verticalScrollBar()
@@ -811,6 +862,8 @@ def _load_qt_fonts() -> None:
         "NotoSansSC-Regular.otf",
         "SourceHanSerifSC-Regular.otf",
         "SourceHanSerifSC-SemiBold.otf",
+        "SourceHanSansSC-Regular.otf",
+        "SourceHanSansSC-Medium.otf",
     ):
         path = resource_path("assets", "fonts", name)
         if path.exists():

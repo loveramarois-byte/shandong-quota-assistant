@@ -6,7 +6,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QSizePolicy
+from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy
 
 from app.qt_main import QuotaQtApp, _load_qt_fonts
 from themes.tokens import get_theme
@@ -45,7 +45,7 @@ class QtThemeTests(unittest.TestCase):
             self.assertTrue(window.scroll.alignment() & Qt.AlignmentFlag.AlignHCenter)
             self.assertEqual(window.feed.layout.sizeConstraint(), QLayout.SizeConstraint.SetMinimumSize)
             self.assertEqual(window.composer.sizePolicy().verticalPolicy(), QSizePolicy.Policy.Maximum)
-            self.assertEqual(window.composer.maximumHeight(), 150)
+            self.assertEqual(window.composer.maximumHeight(), 146)
         finally:
             window.close()
 
@@ -88,8 +88,12 @@ class QtThemeTests(unittest.TestCase):
             self.assertEqual(window.settings_button.width(), window.settings_button.height())
             self.assertTrue(window.settings_button.accessibleName())
             self.assertEqual(window.composer.maximumWidth(), window.feed.maximumWidth())
+            window.composer.edit.setFocus()
+            self.app.processEvents()
+            self.assertTrue(window.composer.input_shell.property("focused"))
             self.assertEqual(window.brand_mark.width(), window.brand_mark.height())
             self.assertEqual(window.findChild(QLabel, "pageTitle").font().family(), "Source Han Serif SC")
+            self.assertEqual(window.composer.status_label.font().family(), "Source Han Sans SC")
             self.assertEqual(window.edition.currentText(), "定额 2025")
             self.assertEqual(window.standard.currentText(), "清单 2024")
             self.assertEqual(window.discipline.currentText(), "专业 建筑")
@@ -125,6 +129,28 @@ class QtThemeTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_clarification_choices_are_clickable_and_emit_the_selected_value(self) -> None:
+        window = QuotaQtApp()
+        try:
+            selected: list[tuple[str, str]] = []
+            window.feed.clarification_selected.connect(lambda question, answer: selected.append((question, answer)))
+            card = window.feed.add_result(
+                {
+                    "discipline": "building",
+                    "work_items": [{}],
+                    "proposals": [{"bill_code": "010903001-000", "bill_title": "墙面卷材防水", "quota_lines": []}],
+                    "clarification_questions": [
+                        {"id": "Q1", "question": "本项采用哪种施工方式？", "options": ["热熔法", "冷粘法", "不确定"]}
+                    ],
+                }
+            )
+            self.app.processEvents()
+            button = next(value for value in card.findChildren(QPushButton) if value.text() == "热熔法")
+            button.click()
+            self.assertEqual(selected, [("Q1", "热熔法")])
+        finally:
+            window.close()
+
     def test_new_content_does_not_yank_a_reader_back_to_the_bottom(self) -> None:
         window = QuotaQtApp()
         try:
@@ -142,6 +168,35 @@ class QtThemeTests(unittest.TestCase):
             self.app.processEvents()
             self.assertEqual(bar.value(), 0)
             self.assertLess(bar.value(), bar.maximum())
+        finally:
+            window.close()
+
+    def test_new_content_settles_at_latest_after_layout_updates(self) -> None:
+        window = QuotaQtApp()
+        try:
+            window.resize(1080, 680)
+            window.show()
+            window.feed.clear_feed()
+            window._follow_latest = True
+            for index in range(8):
+                window.feed.add_user(f"施工描述 {index + 1}：生成足够长的内容以触发布局和滚动范围更新。")
+            self.app.processEvents()
+            bar = window.scroll.verticalScrollBar()
+            self.assertEqual(bar.value(), bar.maximum())
+        finally:
+            window.close()
+
+    def test_growing_scroll_range_follows_latest_only_when_enabled(self) -> None:
+        window = QuotaQtApp()
+        try:
+            bar = window.scroll.verticalScrollBar()
+            window._follow_latest = True
+            window._follow_growing_content(0, 37)
+            self.assertEqual(bar.value(), bar.maximum())
+            window._follow_latest = False
+            original = bar.value()
+            window._follow_growing_content(0, 99)
+            self.assertEqual(bar.value(), original)
         finally:
             window.close()
 

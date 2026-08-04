@@ -41,7 +41,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("Get-HardLinkCount $stagedDatabase", self.script)
 
     def test_release_version_is_consistent_across_runtime_and_packaging(self):
-        self.assertEqual(APP_VERSION, "0.8.7")
+        self.assertEqual(APP_VERSION, "0.8.8")
         self.assertEqual(self.catalog_manifest["app_version"], APP_VERSION)
         installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
         version_info = (PROJECT_ROOT / "packaging" / "windows_version_info.txt").read_text(encoding="utf-8-sig")
@@ -120,6 +120,9 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn('"SourceHanSerifSC-Regular.otf"', self.script)
         self.assertIn('"SourceHanSerifSC-SemiBold.otf"', self.script)
         self.assertIn('"SourceHanSerifSC-LICENSE.txt"', self.script)
+        self.assertIn('"SourceHanSansSC-Regular.otf"', self.script)
+        self.assertIn('"SourceHanSansSC-Medium.otf"', self.script)
+        self.assertIn('"SourceHanSansSC-LICENSE.txt"', self.script)
 
     def test_installer_selection_is_exact_for_the_current_version(self):
         self.assertIn('$expectedInstaller = Join-Path $releaseRoot "山东定额助手-Setup-$appVersion.exe"', self.script)

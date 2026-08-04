@@ -26,6 +26,14 @@ copy remains in the sans-serif UI stack.
 - Copyright: 2017-2022 Adobe
 - License text: [assets/fonts/SourceHanSerifSC-LICENSE.txt](assets/fonts/SourceHanSerifSC-LICENSE.txt)
 
+Source Han Sans SC is bundled as the Simplified Chinese interface font under
+the SIL Open Font License 1.1. Regular and Medium weights are used directly so
+Windows does not synthesize heavy CJK button text.
+
+- Project: https://github.com/adobe-fonts/source-han-sans
+- Copyright: 2014-2021 Adobe
+- License text: [assets/fonts/SourceHanSansSC-LICENSE.txt](assets/fonts/SourceHanSansSC-LICENSE.txt)
+
 ## Runtime and build dependencies
 
 Packages listed in `requirements.txt` are installed from their respective

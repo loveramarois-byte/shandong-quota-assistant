@@ -24,7 +24,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QSizePolicy,
-    QSpacerItem,
     QVBoxLayout,
     QWidget,
     QGraphicsDropShadowEffect,
@@ -34,13 +33,13 @@ from utils.paths import resource_path
 
 
 def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: bool = False) -> QFont:
-    font = QFont("Source Han Serif SC" if display else "Inter")
+    font = QFont("Source Han Serif SC" if display else "Source Han Sans SC")
     # Inter is the Latin UI face; keep an explicit CJK fallback so labels do
     # not become tofu when platform font fallback is disabled.
     if display:
         font.setFamilies(["Source Han Serif SC", "Noto Serif CJK SC", "SimSun", "serif"])
     else:
-        font.setFamilies(["Inter", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
+        font.setFamilies(["Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei UI", "sans-serif"])
     font.setPixelSize(size)
     font.setWeight(weight)
     return font
@@ -131,6 +130,7 @@ class MessageFeed(QWidget):
     """A compact, virtual-friendly conversation column."""
 
     content_added = pyqtSignal()
+    clarification_selected = pyqtSignal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -352,6 +352,35 @@ class MessageFeed(QWidget):
                     quota_layout.addWidget(quota_unit)
                     row_layout.addWidget(quota_row)
             layout.addWidget(row)
+        questions = [value for value in result.get("clarification_questions") or [] if isinstance(value, dict)]
+        if questions:
+            divider = QFrame()
+            divider.setObjectName("clarificationRule")
+            layout.addWidget(divider)
+            question = questions[0]
+            prompt = QLabel(str(question.get("question") or "请选择需要补充的施工条件"))
+            prompt.setObjectName("clarificationTitle")
+            prompt.setWordWrap(True)
+            layout.addWidget(prompt)
+            reason = QLabel("选择后立即重新匹配清单与定额")
+            reason.setObjectName("clarificationHint")
+            layout.addWidget(reason)
+            choices = QHBoxLayout()
+            choices.setSpacing(7)
+            question_id = str(question.get("id") or "")
+            for option in question.get("options") or []:
+                value = str(option)
+                button = QPushButton(value)
+                button.setObjectName("choiceButton")
+                button.setCheckable(True)
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.setAccessibleName(f"补充条件：{value}")
+                button.clicked.connect(
+                    lambda _checked=False, selected=value, target=question_id: self.clarification_selected.emit(target, selected)
+                )
+                choices.addWidget(button)
+            choices.addStretch(1)
+            layout.addLayout(choices)
         if not proposals:
             empty = QLabel("没有找到可直接确认的方案，请补充规格、厚度或施工部位。")
             empty.setObjectName("secondaryText")
@@ -393,39 +422,58 @@ class Composer(QFrame):
         super().__init__(parent)
         self.setObjectName("composer")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        self.setMaximumHeight(150)
+        self.setMaximumHeight(146)
         self.setMaximumWidth(820)
         self.setMinimumWidth(760)
-        self.edit = QPlainTextEdit(self)
+        self.status_row = QFrame(self)
+        self.status_row.setObjectName("composerStatusRow")
+        status_layout = QHBoxLayout(self.status_row)
+        status_layout.setContentsMargins(2, 0, 2, 0)
+        status_layout.setSpacing(8)
+        self.mode_label = QLabel("专业模式")
+        self.mode_label.setObjectName("composerMode")
+        self.status_label = QLabel("描述施工做法，我会匹配清单与定额")
+        self.status_label.setObjectName("composerStatus")
+        status_layout.addWidget(self.mode_label)
+        status_layout.addWidget(self.status_label)
+        status_layout.addStretch(1)
+        self.input_shell = QFrame(self)
+        self.input_shell.setObjectName("composerInputShell")
+        shell_layout = QHBoxLayout(self.input_shell)
+        shell_layout.setContentsMargins(7, 6, 7, 6)
+        shell_layout.setSpacing(8)
+        self.edit = QPlainTextEdit(self.input_shell)
         self.edit.setObjectName("composerEdit")
         self.edit.setPlaceholderText("描述施工做法，例如：地下室外墙 4mm 厚 SBS 防水卷材")
-        self.edit.setMinimumHeight(70)
-        self.edit.setMaximumHeight(120)
+        self.edit.setMinimumHeight(62)
+        self.edit.setMaximumHeight(84)
         self.edit.setTabChangesFocus(False)
-        self.send_button = QPushButton("开始分析")
-        self.send_button.setObjectName("primaryButton")
-        self.send_button.setMinimumHeight(38)
+        self.send_button = SvgIconButton("send", "开始分析", size=42, icon_size=18, parent=self.input_shell)
+        self.send_button.setObjectName("composerAction")
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.setAccessibleName("开始分析")
         self.send_button.clicked.connect(self.send_requested)
         self.edit.installEventFilter(self)
+        shell_layout.addWidget(self.edit, 1)
+        shell_layout.addWidget(self.send_button, 0, Qt.AlignmentFlag.AlignBottom)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        layout.addWidget(self.edit)
-        footer = QHBoxLayout()
-        hint = QLabel("Enter 发送 · Shift + Enter 换行")
-        hint.setObjectName("composerHint")
-        footer.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        footer.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
-        footer.addWidget(self.send_button)
-        layout.addLayout(footer)
+        layout.setSpacing(7)
+        layout.addWidget(self.status_row)
+        layout.addWidget(self.input_shell)
 
     def eventFilter(self, watched: QWidget, event) -> bool:
-        if watched is self.edit and event.type() == QEvent.Type.KeyPress:
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-                self.send_requested.emit()
-                return True
+        if watched is self.edit:
+            if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+                self.input_shell.setProperty("focused", event.type() == QEvent.Type.FocusIn)
+                self.input_shell.style().unpolish(self.input_shell)
+                self.input_shell.style().polish(self.input_shell)
+            if event.type() == QEvent.Type.KeyPress:
+                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (
+                    event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                ):
+                    self.send_requested.emit()
+                    return True
         return super().eventFilter(watched, event)
 
     def text(self) -> str:
@@ -439,11 +487,15 @@ class Composer(QFrame):
         self.edit.setFocus()
 
     def set_busy(self, busy: bool) -> None:
-        self.send_button.setText("停止" if busy else "开始分析")
+        self.send_button.icon_name = "x" if busy else "send"
+        self.status_label.setText("正在匹配本地资料与 AI 复核…" if busy else "描述施工做法，我会匹配清单与定额")
         self.send_button.setAccessibleName("停止当前分析" if busy else "开始分析")
         self.send_button.setProperty("busy", busy)
         self.send_button.style().unpolish(self.send_button)
         self.send_button.style().polish(self.send_button)
+
+    def apply_icon_color(self, color: str, busy_color: str) -> None:
+        self.send_button.set_icon_color(busy_color if self.send_button.property("busy") else color)
 
 
 class SessionList(QListWidget):

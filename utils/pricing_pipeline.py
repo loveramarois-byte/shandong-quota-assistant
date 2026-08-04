@@ -394,7 +394,7 @@ def _question_from_hint(work_item_id: str, hint: str, index: int, facets: dict[s
         ("material_application", r"未明确体现|按回填土还是|材料处理口径", "资料中的关联项未体现该材料，应按哪种做法处理？", ("按主体项目处理", "拆成独立材料做法", "不确定")),
         ("soil_type", r"土类|土类别", "本项土类别是哪一类？", ("一二类土", "三类土", "四类土", "不确定")),
         ("depth", r"深度|挖深|槽深|坑深", "本项施工深度是多少？", ("2m以内", "2~4m", "4m以上", "不确定")),
-        ("method", r"人工|机械|施工方法", "本项采用哪种施工方式？", ("人工", "机械", "人工配合机械", "不确定")),
+        ("method", r"人工|机械|施工方法", "本项采用哪种施工方式？", facets.get("method") or ("人工", "机械", "人工配合机械", "不确定")),
         ("distance", r"运距|运输距离", "本项运输距离是多少？", ("不外运", "1km以内", "1km以上", "不确定")),
         ("material", r"材料|防水类型|卷材|砂浆类型|管材", "本项使用的材料类型是什么？", facets.get("material") or ("钢管", "塑料管", "钢导管", "不确定")),
         ("thickness", r"厚度|厚", "本项设计厚度属于哪个分档？", facets.get("thickness") or ("10mm以内", "10~30mm", "30mm以上", "不确定")),
@@ -422,6 +422,7 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
     facets = {
         "material": _material_facets(all_links),
         "plant_spec": _facet_values(all_links, ("土球直径20cm以内", "土球直径40cm以内", "土球直径60cm以内", "裸根")),
+        "method": _facet_values(all_links, ("热熔法", "冷粘法", "自粘法", "热风焊接法", "明配", "暗配", "人工", "机械")),
     }
     if work_item.material:
         known_fields.add("material")
