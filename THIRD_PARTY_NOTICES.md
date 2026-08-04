@@ -18,6 +18,12 @@ distributions and remain subject to their upstream license terms. They are not
 vendored into this source repository. Review the package metadata before
 redistributing a compiled binary.
 
+The Qt desktop migration currently uses PyQt6. PyQt6 is available under the
+GNU General Public License or a commercial license. A redistributable binary
+must therefore be released under compatible GPL terms or built with a valid
+commercial PyQt license; the repository's MIT notice does not replace that
+requirement.
+
 The public repository also excludes downloaded copies of 7-Zip and Inno Setup.
 Packaging scripts expect developers to obtain required build tools from their
 official distribution channels and comply with their own license terms.

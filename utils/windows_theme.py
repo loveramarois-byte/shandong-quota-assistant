@@ -20,8 +20,21 @@ def apply_window_chrome(window, tokens: ThemeTokens) -> None:
     if not sys.platform.startswith("win"):
         return
     try:
-        window.update_idletasks()
-        hwnd = ctypes.c_void_p(int(window.winfo_id()))
+        # Tk exposes ``winfo_id``; Qt exposes ``winId``.  Keeping the native
+        # chrome helper polymorphic lets both UI surfaces share the same DWM
+        # colors and Win11 corner preference during the migration.
+        update_idletasks = getattr(window, "update_idletasks", None)
+        if callable(update_idletasks):
+            update_idletasks()
+        native_id = getattr(window, "winfo_id", None)
+        if callable(native_id):
+            hwnd_value = native_id()
+        else:
+            native_id = getattr(window, "winId", None)
+            if not callable(native_id):
+                return
+            hwnd_value = int(native_id())
+        hwnd = ctypes.c_void_p(int(hwnd_value))
         parent = ctypes.windll.user32.GetParent(hwnd)
         if parent:
             hwnd = ctypes.c_void_p(parent)
