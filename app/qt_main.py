@@ -370,6 +370,9 @@ class QuotaQtApp(QMainWindow):
         self.scroll.setObjectName("feedScroll")
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        viewport = self.scroll.viewport()
+        viewport.setObjectName("feedViewport")
+        viewport.setAutoFillBackground(True)
         self.feed = MessageFeed()
         self.feed.content_added.connect(self._scroll_to_latest)
         self.scroll.setWidget(self.feed)
@@ -428,6 +431,7 @@ class QuotaQtApp(QMainWindow):
         #secondaryText {{ color: {c.text_secondary}; }}
         #statusPill {{ color: {c.success}; background: {c.success_soft}; border-radius: 12px; padding: 5px 10px; font-size: 12px; }}
         #rule {{ color: {c.border}; max-height: 1px; }}
+        #feedScroll, #feedViewport, #messageFeed {{ background: {c.background}; border: 0; }}
         QComboBox, QPlainTextEdit {{ background: {c.elevated}; border: 1px solid {c.border}; border-radius: 8px; padding: 8px 10px; selection-background-color: {c.accent_soft}; }}
         QComboBox:focus, QPlainTextEdit:focus {{ border-color: {c.focus}; }}
         #surfaceCard, #elevatedCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 10px; }}
@@ -449,9 +453,12 @@ class QuotaQtApp(QMainWindow):
         #sessionList {{ background: transparent; color: {c.text_secondary}; padding: 4px 0; }}
         #sessionList::item {{ padding: 9px 10px; border-radius: 7px; margin: 1px 0; }}
         #sessionList::item:selected {{ background: {c.subtle}; color: {c.text}; }}
-        QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+        QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; border: 0; }}
         QScrollBar::handle:vertical {{ background: {c.border_strong}; border-radius: 5px; min-height: 28px; }}
-        QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; background: transparent; border: 0; }}
+        QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {{ width: 0; height: 0; border: 0; }}
+        QAbstractScrollArea::corner {{ background: {c.background}; }}
         QDialog {{ background: {c.background}; }}
         #dialogTitle {{ font-size: 19px; font-weight: 650; }}
         """)

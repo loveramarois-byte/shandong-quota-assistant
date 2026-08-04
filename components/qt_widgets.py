@@ -53,6 +53,7 @@ class MessageFeed(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("messageFeed")
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 18, 0, 18)
         self.layout.setSpacing(12)
