@@ -54,7 +54,7 @@ from utils.paths import APP_VERSION, catalog_manifest_path, resource_path
 from utils.pricing_pipeline import analyze_pricing_description, merge_clarification_context
 from utils.settings import DISCIPLINE_LABEL_TO_CODE, DISCIPLINE_OPTIONS, load_settings, sanitize_settings, save_settings, validate_ai_endpoint
 from utils.secrets import load_api_key, save_api_key
-from utils.single_instance import SingleInstanceGuard
+from utils.single_instance import SingleInstanceGuard, activate_existing_window
 from utils import sessions as session_store
 from utils.windows_theme import apply_window_chrome
 
@@ -802,6 +802,7 @@ def _load_qt_fonts() -> None:
 def main() -> int:
     guard = SingleInstanceGuard(r"Local\ShandongQuotaAssistant.SessionWriter.v3")
     if not guard.acquire():
+        activate_existing_window("山东定额助手")
         return 0
     try:
         app = QApplication(sys.argv)

@@ -37,7 +37,7 @@ from utils.result_export import confirmed_proposal_payload, proposal_csv, result
 from utils.ai_structured import build_structured_ai_prompt, parse_structured_ai_response, render_structured_ai_response, validate_structured_ai_response
 from utils.pricing_pipeline import analyze_pricing_description, merge_clarification_context
 from utils.settings import DISCIPLINE_LABEL_TO_CODE, DISCIPLINE_OPTIONS, load_settings, sanitize_settings, save_settings
-from utils.single_instance import SingleInstanceGuard
+from utils.single_instance import SingleInstanceGuard, activate_existing_window
 from utils.svg import svg_image
 from utils.windows_theme import apply_window_chrome
 from utils.updater import ReleaseInfo, check_latest, should_check
@@ -1506,6 +1506,8 @@ class QuotaApp(ctk.CTk):
 def main() -> int:
     guard = SingleInstanceGuard(r"Local\ShandongQuotaAssistant.SessionWriter.v2")
     if not guard.acquire():
+        if activate_existing_window("山东定额助手"):
+            return 0
         try:
             import ctypes
 

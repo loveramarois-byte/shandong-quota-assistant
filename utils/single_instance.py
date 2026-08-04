@@ -6,6 +6,26 @@ from ctypes import wintypes
 
 
 ERROR_ALREADY_EXISTS = 183
+SW_RESTORE = 9
+
+
+def activate_existing_window(title: str) -> bool:
+    """Restore the existing top-level window after a second launch."""
+    if os.name != "nt" or not title:
+        return False
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
+        user32.FindWindowW.restype = wintypes.HWND
+        hwnd = user32.FindWindowW(None, title)
+        if not hwnd:
+            return False
+        user32.ShowWindow(wintypes.HWND(hwnd), SW_RESTORE)
+        user32.BringWindowToTop(wintypes.HWND(hwnd))
+        user32.SetForegroundWindow(wintypes.HWND(hwnd))
+        return True
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
 
 
 class SingleInstanceGuard:
