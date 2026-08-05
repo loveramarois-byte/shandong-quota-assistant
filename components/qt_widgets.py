@@ -10,7 +10,7 @@ import os
 from functools import lru_cache
 from typing import Callable
 
-from PyQt6.QtCore import QByteArray, QEasingCurve, QEvent, QPropertyAnimation, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QAbstractAnimation, QByteArray, QEasingCurve, QEvent, QPropertyAnimation, QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QPushButton,
     QPlainTextEdit,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -30,6 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from utils.paths import resource_path
+from utils.ai_presentation import build_ai_suggestion_view_model, option_presentation
 
 
 def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: bool = False) -> QFont:
@@ -156,10 +158,50 @@ class CheckRow(QPushButton):
         self.setIcon(QIcon(blank))
 
 
+class SmoothScrollArea(QScrollArea):
+    """Mouse-wheel smoothing that yields immediately to manual reading."""
+
+    user_scroll_started = pyqtSignal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._scroll_target = 0
+        self._scroll_animation = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
+        self._scroll_animation.setDuration(150)
+        self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def wheelEvent(self, event) -> None:
+        pixel_delta = event.pixelDelta().y()
+        angle_delta = event.angleDelta().y()
+        if pixel_delta:
+            self.user_scroll_started.emit()
+            bar = self.verticalScrollBar()
+            self._scroll_animation.stop()
+            bar.setValue(max(bar.minimum(), min(bar.maximum(), bar.value() - pixel_delta)))
+            self._scroll_target = bar.value()
+            event.accept()
+            return
+        if not angle_delta:
+            super().wheelEvent(event)
+            return
+        self.user_scroll_started.emit()
+        bar = self.verticalScrollBar()
+        if self._scroll_animation.state() != QAbstractAnimation.State.Running:
+            self._scroll_target = bar.value()
+        steps = angle_delta / 120.0
+        self._scroll_target = max(bar.minimum(), min(bar.maximum(), round(self._scroll_target - steps * 72)))
+        self._scroll_animation.stop()
+        self._scroll_animation.setStartValue(bar.value())
+        self._scroll_animation.setEndValue(self._scroll_target)
+        self._scroll_animation.start()
+        event.accept()
+
+
 class MessageFeed(QWidget):
     """A compact, virtual-friendly conversation column."""
 
     content_added = pyqtSignal()
+    interaction_started = pyqtSignal()
     clarification_selected = pyqtSignal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -220,6 +262,16 @@ class MessageFeed(QWidget):
         self._transient_status.deleteLater()
         self._transient_status = None
 
+    def remove_widget(self, widget: QWidget | None) -> None:
+        if widget is None:
+            return
+        if widget is self._transient_status:
+            self._transient_status = None
+        self.layout.removeWidget(widget)
+        widget.hide()
+        widget.setParent(None)
+        widget.deleteLater()
+
     def add_welcome(self, examples: list[str], on_example: Callable[[str], None]) -> QWidget:
         card = QFrame()
         card.setObjectName("welcomePanel")
@@ -270,6 +322,8 @@ class MessageFeed(QWidget):
         layout.setContentsMargins(18, 13, 18, 13)
         label = QLabel(text)
         label.setFont(_font(14))
+        readable_width = min(584, max(96, label.fontMetrics().horizontalAdvance(text)))
+        label.setMinimumWidth(readable_width)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(label)
@@ -396,12 +450,12 @@ class MessageFeed(QWidget):
             reason = QLabel("选择后立即重新匹配清单与定额")
             reason.setObjectName("clarificationHint")
             layout.addWidget(reason)
-            choices = QHBoxLayout()
+            choices = QVBoxLayout()
             choices.setSpacing(7)
             question_id = str(question.get("id") or "")
             for option in question.get("options") or []:
                 value = str(option)
-                button = QPushButton(value)
+                button = QPushButton(option_presentation(value)["display"])
                 button.setObjectName("choiceButton")
                 button.setCheckable(True)
                 button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -410,7 +464,6 @@ class MessageFeed(QWidget):
                     lambda _checked=False, selected=value, target=question_id: self.clarification_selected.emit(target, selected)
                 )
                 choices.addWidget(button)
-            choices.addStretch(1)
             layout.addLayout(choices)
         if not proposals:
             empty = QLabel("没有找到可直接确认的方案，请补充规格、厚度或施工部位。")
@@ -419,23 +472,143 @@ class MessageFeed(QWidget):
             layout.addWidget(empty)
         return self._insert(card)
 
-    def add_ai(self, text: str) -> QWidget:
+    def add_ai(self, text: str, result: dict | None = None) -> QWidget:
         self._clear_transient()
         card = PanelCard()
-        card.setObjectName("aiCard")
+        card.setObjectName("aiSuggestionCard")
+        card.setAccessibleName("AI 套价建议")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(24, 21, 24, 21)
-        layout.setSpacing(9)
-        kicker = QLabel("AI 复核")
-        kicker.setObjectName("kicker")
-        kicker.setFont(_font(12, QFont.Weight.DemiBold))
-        layout.addWidget(kicker)
-        body = QLabel(text)
-        body.setObjectName("aiText")
-        body.setWordWrap(True)
-        body.setTextFormat(Qt.TextFormat.MarkdownText)
-        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(body)
+        layout.setContentsMargins(24, 22, 24, 23)
+        layout.setSpacing(12)
+        view = build_ai_suggestion_view_model(text, result)
+
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        kicker = QLabel("AI 套价建议")
+        kicker.setObjectName("aiKicker")
+        kicker.setFont(_font(13, QFont.Weight.DemiBold))
+        header.addWidget(kicker)
+        header.addStretch(1)
+        state = QLabel(str(view["state_label"]))
+        state.setObjectName("aiState")
+        state.setProperty("state", str(view["state"]))
+        header.addWidget(state)
+        layout.addLayout(header)
+
+        headline = QLabel(str(view["headline"]))
+        headline.setObjectName("aiHeadline")
+        headline.setFont(_font(18, QFont.Weight.DemiBold, display=True))
+        headline.setWordWrap(True)
+        headline.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(headline)
+
+        note = QLabel(str(view["note"]))
+        note.setObjectName("aiNote")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        reasons = list(view.get("reasons") or [])
+        if reasons:
+            reason_title = QLabel("为什么这样建议")
+            reason_title.setObjectName("aiSectionTitle")
+            layout.addSpacing(4)
+            layout.addWidget(reason_title)
+            reason_panel = QFrame()
+            reason_panel.setObjectName("aiReasonPanel")
+            reason_layout = QVBoxLayout(reason_panel)
+            reason_layout.setContentsMargins(12, 7, 12, 7)
+            reason_layout.setSpacing(0)
+            for reason in reasons:
+                row = QFrame()
+                row.setObjectName("aiReasonRow")
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 6, 0, 6)
+                row_layout.setSpacing(8)
+                marker = QLabel("?" if reason.get("status") == "missing" else "✓")
+                marker.setObjectName("aiReasonMarker")
+                marker.setProperty("missing", reason.get("status") == "missing")
+                marker.setFixedWidth(16)
+                row_layout.addWidget(marker)
+                label = QLabel(str(reason.get("label") or "信息"))
+                label.setObjectName("aiReasonLabel")
+                row_layout.addWidget(label)
+                value = QLabel(str(reason.get("value") or "未获取到"))
+                value.setObjectName("aiReasonValue")
+                value.setWordWrap(True)
+                row_layout.addWidget(value, 1)
+                reason_layout.addWidget(row)
+            layout.addWidget(reason_panel)
+
+        question = view.get("question")
+        if isinstance(question, dict):
+            prompt = QLabel(f"下一步：请确认{question.get('label') or '关键信息'}")
+            prompt.setObjectName("aiNextStep")
+            prompt.setWordWrap(True)
+            layout.addSpacing(3)
+            layout.addWidget(prompt)
+            help_text = QLabel("不同选择可能对应不同定额，并影响人工、材料和机械消耗。请在上方套价建议中选择实际做法。")
+            help_text.setObjectName("aiNote")
+            help_text.setWordWrap(True)
+            layout.addWidget(help_text)
+        elif view.get("state") in {"ready", "partial"}:
+            summary_title = QLabel("套价结果")
+            summary_title.setObjectName("aiSectionTitle")
+            layout.addSpacing(3)
+            layout.addWidget(summary_title)
+            summary = QFrame()
+            summary.setObjectName("aiPricingSummary")
+            summary_layout = QVBoxLayout(summary)
+            summary_layout.setContentsMargins(12, 8, 12, 8)
+            summary_layout.setSpacing(7)
+            bill_name = QLabel(f"清单项目  ·  {view['bill']['name']}")
+            bill_name.setObjectName("aiSummaryLine")
+            bill_name.setWordWrap(True)
+            summary_layout.addWidget(bill_name)
+            quotas = list(view.get("quotas") or [])
+            quota_name = QLabel(f"对应定额  ·  {(quotas[0] if quotas else {}).get('name') or '未获取到'}")
+            quota_name.setObjectName("aiSummaryLine")
+            quota_name.setWordWrap(True)
+            summary_layout.addWidget(quota_name)
+            layout.addWidget(summary)
+
+        details = QFrame()
+        details.setObjectName("aiDetails")
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(12, 9, 12, 9)
+        details_layout.setSpacing(6)
+        bill = dict(view.get("bill") or {})
+        for label_text, value in (("清单名称", bill.get("name")), ("清单编码", bill.get("code")), ("清单单位", bill.get("unit")), ("匹配来源", bill.get("sources"))):
+            detail = QLabel(f"{label_text}  ·  {value or '未获取到'}")
+            detail.setObjectName("aiDetailLine")
+            detail.setWordWrap(True)
+            detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            details_layout.addWidget(detail)
+        for index, quota in enumerate(view.get("quotas") or [], 1):
+            for label_text, value in ((f"定额 {index} 名称", quota.get("name")), ("定额编号", quota.get("code")), ("定额单位", quota.get("unit")), ("匹配来源", quota.get("sources"))):
+                detail = QLabel(f"{label_text}  ·  {value or '未获取到'}")
+                detail.setObjectName("aiDetailLine")
+                detail.setWordWrap(True)
+                detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                details_layout.addWidget(detail)
+        details.setVisible(False)
+        details.setAccessibleName("专业套价明细")
+
+        detail_button = QPushButton("查看专业明细")
+        detail_button.setObjectName("aiDetailsButton")
+        detail_button.setCheckable(True)
+        detail_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        detail_button.setAccessibleName("展开专业套价明细")
+
+        def toggle_details(expanded: bool) -> None:
+            self.interaction_started.emit()
+            details.setVisible(expanded)
+            detail_button.setText("收起专业明细" if expanded else "查看专业明细")
+            detail_button.setAccessibleName("收起专业套价明细" if expanded else "展开专业套价明细")
+
+        detail_button.toggled.connect(toggle_details)
+        if view.get("has_details"):
+            layout.addWidget(detail_button, 0, Qt.AlignmentFlag.AlignLeft)
+            layout.addWidget(details)
         return self._insert(card)
 
     def add_warning(self, text: str, *, error: bool = False) -> QWidget:

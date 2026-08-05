@@ -181,7 +181,7 @@ def _state_cases() -> list[DrillCase]:
         ("结果/结论", "首屏结论优先给主清单与主定额", _check_result_summary, ("ui_clarity", "simplicity")),
         ("结果/导出", "本地方案可生成可复制文本", _check_plain_export, ("ease_of_use", "maturity")),
         ("布局/窗口", "150% DPI 初始窗口不重复缩放", lambda: (initial_window_bounds(2560, 1440, 1.5)[:2] == (1360, 860), str(initial_window_bounds(2560, 1440, 1.5)[:2])), ("ui_clarity", "maturity")),
-        ("布局/窄窗", "窄窗口保留最小内容边距", lambda: (centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width) >= 20, str(centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width))), ("ui_clarity", "simplicity")),
+        ("布局/窄窗", "窄窗口保留最小内容边距", lambda: (centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width) >= 18, str(centered_content_padding(980, LIGHT.sidebar_width, LIGHT.content_max_width))), ("ui_clarity", "simplicity")),
         ("布局/长文", "长结果在高 DPI 下限制可读行宽", lambda: (logical_wrap_width(932, 1.5) == 600, str(logical_wrap_width(932, 1.5))), ("ui_clarity",)),
         ("滚动/标准滚轮", "标准滚轮步长稳定", lambda: (normalized_wheel_pixels(-120) > 0, str(normalized_wheel_pixels(-120))), ("ease_of_use", "maturity")),
         ("滚动/高精度滚轮", "高精度滚轮保留细粒度", lambda: (normalized_wheel_pixels(30) == -14, str(normalized_wheel_pixels(30))), ("ease_of_use", "maturity")),

@@ -6,7 +6,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy
+from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy, QWidget
 
 from app.qt_main import QuotaQtApp, SettingsDialog, _load_qt_fonts
 from components.qt_widgets import CheckRow
@@ -80,6 +80,17 @@ class QtThemeTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_long_user_message_gets_a_readable_width_without_exceeding_the_feed(self) -> None:
+        window = QuotaQtApp()
+        try:
+            card = window.feed.add_user("地下室外墙 4mm 厚 SBS 防水卷材，采用热熔法施工")
+            label = card.findChild(QLabel)
+            self.assertIsNotNone(label)
+            self.assertGreater(label.minimumWidth(), 180)
+            self.assertLessEqual(card.maximumWidth(), 620)
+        finally:
+            window.close()
+
     def test_art_direction_keeps_icon_actions_accessible_and_aligned(self) -> None:
         window = QuotaQtApp()
         try:
@@ -147,9 +158,65 @@ class QtThemeTests(unittest.TestCase):
                 }
             )
             self.app.processEvents()
-            button = next(value for value in card.findChildren(QPushButton) if value.text() == "热熔法")
+            button = next(value for value in card.findChildren(QPushButton) if "热熔法" in value.text())
+            self.assertIn("使用喷灯加热粘贴", button.text())
             button.click()
             self.assertEqual(selected, [("Q1", "热熔法")])
+        finally:
+            window.close()
+
+    def test_ai_suggestion_hides_codes_until_details_are_expanded(self) -> None:
+        window = QuotaQtApp()
+        try:
+            card = window.feed.add_ai(
+                "## 结论\n已形成可确认的清单与定额组合建议。",
+                {
+                    "work_items": [
+                        {
+                            "location": "地下室外墙",
+                            "material": "SBS 防水卷材",
+                            "attributes": [{"key": "thickness", "source": "4mm"}],
+                        }
+                    ],
+                    "proposals": [
+                        {
+                            "status": "ready_for_review",
+                            "bill_code": "010903001-000",
+                            "bill_title": "墙面卷材防水",
+                            "bill_unit": "m²",
+                            "evidence_refs": ["R1"],
+                            "quota_lines": [
+                                {
+                                    "code": "9-2-11",
+                                    "title": "改性沥青卷材热熔法一层 立面",
+                                    "unit": "10m²",
+                                    "evidence_refs": ["R18"],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            )
+            self.app.processEvents()
+            details = next(value for value in card.findChildren(QWidget) if value.objectName() == "aiDetails")
+            labels = card.findChildren(QLabel)
+            code_labels = [value for value in labels if "010903001-000" in value.text() or "9-2-11" in value.text()]
+            self.assertFalse(details.isVisible())
+            self.assertTrue(code_labels)
+            self.assertTrue(all(not value.isVisible() for value in code_labels))
+            button = next(value for value in card.findChildren(QPushButton) if value.objectName() == "aiDetailsButton")
+            button.click()
+            self.app.processEvents()
+            self.assertTrue(window._manual_scroll_active)
+            self.assertFalse(window._follow_latest)
+            self.assertFalse(details.isHidden())
+            self.assertEqual(button.text(), "收起专业明细")
+            button.click()
+            self.assertTrue(details.isHidden())
+
+            visible_primary_text = " ".join(value.text() for value in labels if not details.isAncestorOf(value))
+            self.assertNotIn("010903001-000", visible_primary_text)
+            self.assertNotIn("9-2-11", visible_primary_text)
         finally:
             window.close()
 
@@ -198,6 +265,20 @@ class QtThemeTests(unittest.TestCase):
             window._follow_latest = False
             original = bar.value()
             window._follow_growing_content(0, 99)
+            self.assertEqual(bar.value(), original)
+        finally:
+            window.close()
+
+    def test_manual_scroll_pause_blocks_range_growth_from_repositioning_reader(self) -> None:
+        window = QuotaQtApp()
+        try:
+            bar = window.scroll.verticalScrollBar()
+            window._follow_latest = True
+            window._pause_follow_latest()
+            self.assertFalse(window._follow_latest)
+            self.assertTrue(window._manual_scroll_active)
+            original = bar.value()
+            window._follow_growing_content(0, 200)
             self.assertEqual(bar.value(), original)
         finally:
             window.close()

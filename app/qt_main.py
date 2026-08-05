@@ -29,16 +29,16 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from components.qt_widgets import CheckRow, ChevronComboBox, Composer, MessageFeed, SessionList, SvgIconButton, svg_icon
+from components.qt_widgets import CheckRow, ChevronComboBox, Composer, MessageFeed, SessionList, SmoothScrollArea, SvgIconButton, svg_icon
 from controllers.analysis import AnalysisTaskRegistry
 from themes.tokens import ThemeTokens, get_theme
 from utils.ai_providers import provider_config
+from utils.ai_presentation import option_presentation
 from utils.ai_structured import (
     build_structured_ai_prompt,
     parse_structured_ai_response,
@@ -376,8 +376,10 @@ class QuotaQtApp(QMainWindow):
         self._session: dict | None = None
         self._active_turn_id: str | None = None
         self._pending: dict[int, dict] = {}
+        self._turn_widgets: dict[str, dict[str, object]] = {}
         self._sidebar_loading = False
         self._follow_latest = True
+        self._manual_scroll_active = False
         self._build()
         self._connect_signals()
         self._apply_theme()
@@ -447,7 +449,7 @@ class QuotaQtApp(QMainWindow):
         content_layout.addLayout(header)
         self.rule = QFrame(); self.rule.setFrameShape(QFrame.Shape.HLine); self.rule.setObjectName("rule")
         content_layout.addWidget(self.rule)
-        self.scroll = QScrollArea()
+        self.scroll = SmoothScrollArea()
         self.scroll.setObjectName("feedScroll")
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -459,10 +461,13 @@ class QuotaQtApp(QMainWindow):
         self.feed = MessageFeed()
         self.feed.setMaximumWidth(self.tokens.content_max_width)
         self.feed.content_added.connect(self._scroll_to_latest)
+        self.feed.interaction_started.connect(self._pause_follow_latest)
         self.scroll.setWidget(self.feed)
         scroll_bar = self.scroll.verticalScrollBar()
         scroll_bar.valueChanged.connect(self._track_scroll_position)
         scroll_bar.rangeChanged.connect(self._follow_growing_content)
+        scroll_bar.sliderPressed.connect(self._pause_follow_latest)
+        self.scroll.user_scroll_started.connect(self._pause_follow_latest)
         content_layout.addWidget(self.scroll, 1)
         self.composer = Composer()
         content_layout.addWidget(self.composer, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -565,10 +570,10 @@ class QuotaQtApp(QMainWindow):
         QComboBox QAbstractItemView {{ background: {c.elevated}; color: {c.text}; border: 1px solid {c.border}; outline: 0; padding: 4px; selection-background-color: {c.accent_soft}; selection-color: {c.text}; }}
         QComboBox QAbstractItemView::item {{ min-height: 30px; padding: 6px 10px; color: {c.text}; }}
         QComboBox QAbstractItemView::item:hover {{ background: {c.subtle}; color: {c.text}; }}
-        #surfaceCard, #elevatedCard, #aiCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; }}
+        #surfaceCard, #elevatedCard, #aiSuggestionCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; }}
         #elevatedCard {{ background: {c.elevated}; }}
         #resultCard {{ background: transparent; border: 0; }}
-        #aiCard {{ background: {c.surface}; border-left: 3px solid {c.accent}; }}
+        #aiSuggestionCard {{ background: {c.surface}; border-left: 2px solid {c.accent}; }}
         #userMessage {{ color: {c.user_text}; background: {c.user_surface}; border: 0; border-radius: 12px; }}
         #statusCard {{ background: transparent; border: 0; border-left: 2px solid {c.accent}; border-radius: 0; }}
         #resultTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-weight: 600; }}
@@ -585,11 +590,30 @@ class QuotaQtApp(QMainWindow):
         #clarificationRule {{ background: {c.border}; border: 0; max-height: 1px; margin-top: 3px; }}
         #clarificationTitle {{ color: {c.text}; font-size: 14px; font-weight: 500; padding-top: 3px; }}
         #clarificationHint {{ color: {c.text_muted}; font-size: 11px; }}
-        #choiceButton {{ color: {c.text_secondary}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 7px; padding: 6px 11px; min-height: 24px; font-size: 12px; font-weight: 500; }}
+        #choiceButton {{ color: {c.text_secondary}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 7px; padding: 7px 11px; min-height: 30px; text-align: left; font-size: 12px; font-weight: 500; }}
         #choiceButton:hover {{ color: {c.text}; border-color: {c.border_strong}; background: {c.subtle}; }}
         #choiceButton:pressed, #choiceButton:checked {{ color: {c.on_accent}; background: {c.accent_fill}; border-color: {c.accent_fill}; }}
         #choiceButton:focus {{ border-color: {c.focus}; }}
-        #aiText {{ color: {c.text}; line-height: 1.62; }}
+        #aiKicker {{ color: {c.accent}; font-size: 13px; font-weight: 500; }}
+        #aiState {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 4px 8px; font-size: 11px; }}
+        #aiState[state="ready"] {{ color: {c.success}; background: {c.success_soft}; }}
+        #aiState[state="needs_confirmation"] {{ color: {c.warning}; background: {c.warning_soft}; }}
+        #aiState[state="empty"], #aiState[state="partial"] {{ color: {c.warning}; background: {c.warning_soft}; }}
+        #aiHeadline {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 18px; font-weight: 600; }}
+        #aiNote {{ color: {c.text_secondary}; font-size: 13px; }}
+        #aiSectionTitle {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
+        #aiReasonPanel, #aiPricingSummary {{ background: {c.subtle}; border: 0; border-radius: 7px; }}
+        #aiReasonRow {{ background: transparent; border: 0; border-bottom: 1px solid {c.border}; }}
+        #aiReasonMarker {{ color: {c.success}; font-family: Inter; font-size: 12px; font-weight: 500; }}
+        #aiReasonMarker[missing="true"] {{ color: {c.warning}; }}
+        #aiReasonLabel {{ color: {c.text_muted}; font-size: 12px; }}
+        #aiReasonValue, #aiSummaryLine {{ color: {c.text}; font-size: 13px; }}
+        #aiNextStep {{ color: {c.text}; background: {c.warning_soft}; border-left: 2px solid {c.warning}; border-radius: 4px; padding: 9px 11px; font-size: 13px; font-weight: 500; }}
+        #aiDetailsButton {{ color: {c.text_secondary}; background: transparent; border: 0; border-bottom: 1px solid transparent; border-radius: 0; padding: 6px 1px; font-size: 12px; }}
+        #aiDetailsButton:hover {{ color: {c.text}; border-bottom-color: {c.border_strong}; }}
+        #aiDetailsButton:focus {{ border-bottom: 2px solid {c.focus}; }}
+        #aiDetails {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 7px; }}
+        #aiDetailLine {{ color: {c.text_secondary}; font-family: 'Source Han Sans SC'; font-size: 12px; }}
         #warningText {{ color: {c.warning}; background: {c.warning_soft}; border: 0; border-left: 2px solid {c.warning}; border-radius: 4px; padding: 9px 11px; }}
         #errorText {{ color: {c.danger}; background: {c.danger_soft}; border: 0; border-left: 2px solid {c.danger}; border-radius: 4px; padding: 9px 11px; }}
         #composer {{ background: transparent; border: 0; }}
@@ -710,7 +734,9 @@ class QuotaQtApp(QMainWindow):
         self._save_session()
         self._session = None
         self._active_turn_id = None
+        self._turn_widgets.clear()
         self._follow_latest = True
+        self._manual_scroll_active = False
         self.feed.clear_feed()
         self._show_welcome()
         self.composer.setFocus()
@@ -722,16 +748,22 @@ class QuotaQtApp(QMainWindow):
         if session is None:
             return
         self._session = session
+        self._turn_widgets.clear()
         self._follow_latest = True
+        self._manual_scroll_active = False
         self.feed.clear_feed()
         for turn in session.get("turns") or []:
-            self.feed.add_user(str(turn.get("query") or ""))
+            turn_id = str(turn.get("turn_id") or "")
+            widgets: dict[str, object] = {"ai": []}
+            widgets["user"] = self.feed.add_user(str(turn.get("query") or ""))
             snapshot = turn.get("retrieval_snapshot")
             if isinstance(snapshot, dict):
-                self.feed.add_result(snapshot)
+                widgets["result"] = self.feed.add_result(snapshot)
             for attempt in turn.get("ai_attempts") or []:
                 if attempt.get("status") == "completed" and attempt.get("response"):
-                    self.feed.add_ai(str(attempt["response"]))
+                    widgets["ai"].append(self.feed.add_ai(str(attempt["response"]), snapshot if isinstance(snapshot, dict) else None))
+            if turn_id:
+                self._turn_widgets[turn_id] = widgets
 
     def _ensure_session(self, title: str) -> dict:
         if self._session is None:
@@ -758,8 +790,14 @@ class QuotaQtApp(QMainWindow):
         previous = self._session.get("turns", [])[-1] if self._session and self._session.get("turns") else None
         merged = merge_clarification_context(previous.get("retrieval_snapshot"), description) if previous else None
         effective = merged[0] if merged else description
+        replace_turn_id = str(previous.get("turn_id") or "") if merged and previous else ""
+        if replace_turn_id:
+            for pending in self._pending.values():
+                if str(pending.get("turn_id") or "") == replace_turn_id:
+                    pending["superseded"] = True
         self.composer.clear()
         self._follow_latest = True
+        self._manual_scroll_active = False
         session = self._ensure_session(description.replace("\n", " ").strip()[:28])
         self._request_id += 1
         request_id = self._request_id
@@ -771,8 +809,15 @@ class QuotaQtApp(QMainWindow):
         save_settings(self.settings)
         turn = session_store.create_turn(session, description, quota_edition=edition, standard_edition=standard, discipline=discipline, request_id=request_id)
         self._active_turn_id = turn["turn_id"]
-        self._pending[request_id] = {"session": session, "turn_id": turn["turn_id"], "description": effective, "ai_enabled": bool(self.settings.get("ai_enabled"))}
-        self.feed.add_user(description)
+        self._pending[request_id] = {
+            "session": session,
+            "turn_id": turn["turn_id"],
+            "description": effective,
+            "ai_enabled": bool(self.settings.get("ai_enabled")),
+            "replace_turn_id": replace_turn_id,
+        }
+        user_widget = self.feed.add_user(description)
+        self._turn_widgets[str(turn["turn_id"])] = {"user": user_widget, "ai": []}
         self.feed.add_status("正在查找本地资料", "按专业、清单标准和定额年度筛选候选项…")
         cancel = threading.Event()
         self._pending[request_id]["cancel"] = cancel
@@ -803,7 +848,7 @@ class QuotaQtApp(QMainWindow):
         )
         if not question:
             return
-        self.composer.set_text(answer)
+        self.composer.set_text(option_presentation(answer)["display"])
         self._send()
 
     def _finish_job(self, request_id: int | None = None) -> None:
@@ -838,9 +883,19 @@ class QuotaQtApp(QMainWindow):
         if self._follow_latest:
             self.scroll.verticalScrollBar().setValue(maximum)
 
+    def _pause_follow_latest(self) -> None:
+        self._manual_scroll_active = True
+        self._follow_latest = False
+
     def _track_scroll_position(self, value: int) -> None:
         bar = self.scroll.verticalScrollBar()
-        self._follow_latest = bar.maximum() - value <= 24
+        if bar.maximum() - value <= 1:
+            self._manual_scroll_active = False
+            self._follow_latest = True
+        elif self._manual_scroll_active:
+            self._follow_latest = False
+        else:
+            self._follow_latest = False
 
     def _cancel_active(self) -> None:
         if self._cancel:
@@ -856,7 +911,18 @@ class QuotaQtApp(QMainWindow):
         turn_id = pending["turn_id"]
         session_store.set_turn_local_result(session, turn_id, result, ai_enabled=pending["ai_enabled"])
         self._save_session()
-        self.feed.add_result(result)
+        replace_turn_id = str(pending.get("replace_turn_id") or "")
+        if replace_turn_id:
+            replaced = self._turn_widgets.get(replace_turn_id) or {}
+            self.feed.remove_widget(replaced.get("result") if isinstance(replaced, dict) else None)
+            old_ai_widgets = list(replaced.get("ai") or []) if isinstance(replaced, dict) else []
+            for widget in old_ai_widgets:
+                self.feed.remove_widget(widget)
+            if isinstance(replaced, dict):
+                replaced["result"] = None
+                replaced["ai"] = []
+        result_widget = self.feed.add_result(result)
+        self._turn_widgets.setdefault(str(turn_id), {"ai": []})["result"] = result_widget
         # Local evidence is actionable even when the remote AI is still
         # running. Release the composer now; the AI response remains bound to
         # this request and will be appended when it arrives.
@@ -871,14 +937,20 @@ class QuotaQtApp(QMainWindow):
             return
         session_store.finish_ai_attempt(session_store_save_target(pending), pending["turn_id"], request_id=request_id, status="completed", response=text, validation=validation)
         self._save_session()
-        self.feed.add_ai(text)
+        if not pending.get("superseded"):
+            turn = session_store.find_turn(pending.get("session"), pending.get("turn_id")) or {}
+            snapshot = turn.get("retrieval_snapshot") if isinstance(turn, dict) else None
+            ai_widget = self.feed.add_ai(text, snapshot if isinstance(snapshot, dict) else None)
+            self._turn_widgets.setdefault(str(pending["turn_id"]), {"ai": []}).setdefault("ai", []).append(ai_widget)
         self._pending.pop(request_id, None)
 
     def _on_ai_skipped(self, request_id: int) -> None:
         self._pending.pop(request_id, None)
 
     def _on_ai_error(self, request_id: int, detail: str) -> None:
-        self.feed.add_warning(f"AI 暂不可用：{detail}。本地套价草案仍可继续使用。", error=True)
+        pending = self._pending.get(request_id) or {}
+        if not pending.get("superseded"):
+            self.feed.add_warning(f"AI 暂不可用：{detail}。本地套价草案仍可继续使用。", error=True)
         self._pending.pop(request_id, None)
 
     def _on_search_error(self, request_id: int, detail: str) -> None:
