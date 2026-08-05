@@ -11,7 +11,7 @@ from functools import lru_cache
 from typing import Callable
 
 from PyQt6.QtCore import QAbstractAnimation, QByteArray, QEasingCurve, QEvent, QPropertyAnimation, QSize, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPen, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QFrame,
@@ -197,6 +197,34 @@ class SmoothScrollArea(QScrollArea):
         event.accept()
 
 
+class LoadingSpinner(QWidget):
+    """Small token-aware progress indicator for transient analysis states."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("loadingSpinner")
+        self.setAccessibleName("正在处理")
+        self.setFixedSize(16, 16)
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(40)
+        self._timer.timeout.connect(self._advance)
+        if os.environ.get("SHANDONG_REDUCED_MOTION") != "1" and os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            self._timer.start()
+
+    def _advance(self) -> None:
+        self._angle = (self._angle - 18) % 360
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = self.palette().color(QPalette.ColorRole.WindowText)
+        color.setAlpha(175)
+        painter.setPen(QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawArc(self.rect().adjusted(2, 2, -2, -2), self._angle * 16, 270 * 16)
+
+
 class MessageFeed(QWidget):
     """A compact, virtual-friendly conversation column."""
 
@@ -335,10 +363,16 @@ class MessageFeed(QWidget):
         card.setObjectName("statusCard")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(3)
+        layout.setSpacing(5)
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        spinner = LoadingSpinner(card)
+        header.addWidget(spinner, 0, Qt.AlignmentFlag.AlignVCenter)
         heading = QLabel(title)
         heading.setFont(_font(14, QFont.Weight.DemiBold))
-        layout.addWidget(heading)
+        header.addWidget(heading)
+        header.addStretch(1)
+        layout.addLayout(header)
         if detail:
             body = QLabel(detail)
             body.setObjectName("secondaryText")

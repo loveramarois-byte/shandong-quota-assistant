@@ -777,6 +777,10 @@ class QuotaQtApp(QMainWindow):
             except OSError:
                 log_exception("qt session save failed")
 
+    def _clear_welcome_for_first_turn(self) -> None:
+        if self._session is None:
+            self.feed.clear_feed()
+
     def _send(self) -> None:
         if self._cancel is not None:
             return
@@ -787,6 +791,7 @@ class QuotaQtApp(QMainWindow):
         if len(description) > 500:
             self.feed.add_warning("施工描述请控制在 500 字以内。", error=True)
             return
+        self._clear_welcome_for_first_turn()
         previous = self._session.get("turns", [])[-1] if self._session and self._session.get("turns") else None
         merged = merge_clarification_context(previous.get("retrieval_snapshot"), description) if previous else None
         effective = merged[0] if merged else description

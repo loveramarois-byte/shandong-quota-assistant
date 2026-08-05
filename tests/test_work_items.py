@@ -6,6 +6,12 @@ from utils.work_items import extract_work_item, segment_description
 
 
 class WorkItemSegmentationTests(unittest.TestCase):
+    def test_structural_member_outranks_generic_concrete_material(self):
+        item = extract_work_item("现浇C30混凝土柱，泵送施工", item_id="W1", discipline="building")
+
+        self.assertEqual(item.object, "柱")
+        self.assertEqual(item.material, "混凝土")
+
     def test_spaced_sbs_name_keeps_the_specific_material(self):
         item = segment_description("地下室外墙 4mm 厚 SBS 防水卷材", discipline="building")[0]
         self.assertEqual(item.material, "SBS防水卷材")

@@ -254,6 +254,7 @@ def _source_status(item: dict[str, Any]) -> str:
 
 def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
     title = _normalized_trade_text(str(bill.get("title") or ""))
+    source = _normalized_trade_text(work_item.search_text())
     code_query = re.sub(r"\s+", "", work_item.source_span)
     bill_code = str(bill.get("code") or "")
     embedded_code = re.search(r"(?<!\d)(\d{9,12})(?:-\d{3})?(?!\d)", code_query)
@@ -281,6 +282,14 @@ def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
     if work_item.material and _normalized_trade_text(work_item.material) in title:
         score += 75 if len(work_item.material) >= 5 else 55
         semantic_hit = True
+    if _unit_dimension(bill.get("unit")) == "mass" and "钢筋" in title and "钢筋" not in source:
+        # A concrete pouring description can lexically resemble a rebar bill
+        # such as “现浇混凝土柱钢筋”.  Its mass unit is a decisive mismatch
+        # unless the user actually mentioned reinforcement work.
+        score -= 220
+    for specialization in ("劲性", "钢管"):
+        if specialization in title and specialization not in source:
+            score -= 70
     if work_item.location:
         if "墙" in work_item.location and "墙" in title:
             score += 32

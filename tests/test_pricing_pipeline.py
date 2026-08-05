@@ -382,6 +382,13 @@ class RealCataloguePricingRegressionTests(unittest.TestCase):
         method = next(value for value in result["clarification_questions"] if value["field"] == "method")
         self.assertEqual(method["options"][:3], ["热熔法", "冷粘法", "自粘法"])
 
+    def test_cast_in_place_concrete_column_does_not_drift_to_rebar_bill(self):
+        result, bills, quotas = self._proposal_codes("现浇C30混凝土柱，泵送施工", "building")
+
+        self.assertIn("010502006-000", bills)
+        self.assertIn("5-1-15", quotas)
+        self.assertNotIn("010506002-000", bills)
+
     def test_newcomer_road_base_wording_selects_water_stabilized_base(self):
         _result, bills, quotas = self._proposal_codes("道路基层18公分水稳", "municipal")
         self.assertIn("040202014-000", bills)

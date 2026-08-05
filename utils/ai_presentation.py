@@ -10,8 +10,8 @@ _ATTRIBUTE_LABELS = {
     "diameter": "管径",
     "strength_grade": "强度等级",
     "method": "施工方式",
-    "pump": "施工方式",
-    "cast_in_place": "施工方式",
+    "pump": "混凝土输送",
+    "cast_in_place": "构件做法",
     "hot_melt": "施工方式",
     "self_adhesive": "施工方式",
 }
@@ -114,6 +114,7 @@ def _recommendation_headline(
 ) -> str:
     item = next((value for value in result.get("work_items") or [] if isinstance(value, dict)), {})
     location = str(item.get("location") or "").strip()
+    object_name = str(item.get("object") or "").strip()
     material = str(item.get("material") or "").strip()
     attributes = [value for value in item.get("attributes") or [] if isinstance(value, dict)]
     thickness = next(
@@ -136,6 +137,8 @@ def _recommendation_headline(
         method = "自粘法"
 
     material_phrase = " ".join(value for value in (thickness, material) if value)
+    if not location and object_name and object_name not in material_phrase:
+        material_phrase = f"{material_phrase}{object_name}" if material_phrase else object_name
     if location and material_phrase:
         recommendation = f"推荐{location}采用 {material_phrase}"
     elif material_phrase:

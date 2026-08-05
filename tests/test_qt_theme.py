@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy, QWidget
 
 from app.qt_main import QuotaQtApp, SettingsDialog, _load_qt_fonts
-from components.qt_widgets import CheckRow
+from components.qt_widgets import CheckRow, LoadingSpinner
 from themes.tokens import get_theme
 
 
@@ -47,6 +47,27 @@ class QtThemeTests(unittest.TestCase):
             self.assertEqual(window.feed.layout.sizeConstraint(), QLayout.SizeConstraint.SetMinimumSize)
             self.assertEqual(window.composer.sizePolicy().verticalPolicy(), QSizePolicy.Policy.Maximum)
             self.assertEqual(window.composer.maximumHeight(), 146)
+        finally:
+            window.close()
+
+    def test_first_turn_removes_welcome_before_results_are_inserted(self) -> None:
+        window = QuotaQtApp()
+        try:
+            self.assertIsNotNone(window.feed.findChild(QWidget, "welcomePanel"))
+            window._clear_welcome_for_first_turn()
+            self.app.processEvents()
+            self.assertIsNone(window.feed.findChild(QWidget, "welcomePanel"))
+        finally:
+            window.close()
+
+    def test_analysis_status_has_a_compact_accessible_spinner(self) -> None:
+        window = QuotaQtApp()
+        try:
+            card = window.feed.add_status("AI 正在复核", "只基于本地候选方案生成解释。")
+            spinner = card.findChild(LoadingSpinner)
+            self.assertIsNotNone(spinner)
+            self.assertEqual((spinner.width(), spinner.height()), (16, 16))
+            self.assertEqual(spinner.accessibleName(), "正在处理")
         finally:
             window.close()
 

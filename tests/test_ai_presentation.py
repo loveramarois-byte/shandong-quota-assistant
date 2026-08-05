@@ -102,6 +102,36 @@ class AiPresentationTests(unittest.TestCase):
         self.assertEqual(presentation["professional_name"], "其他工法")
         self.assertEqual(presentation["display"], "其他工法")
 
+    def test_concrete_column_summary_names_the_member_and_separates_methods(self) -> None:
+        result = {
+            "work_items": [
+                {
+                    "object": "柱",
+                    "material": "混凝土",
+                    "attributes": [
+                        {"key": "strength_grade", "source": "C30"},
+                        {"key": "pump", "source": "泵送"},
+                        {"key": "cast_in_place", "source": "现浇"},
+                    ],
+                }
+            ],
+            "proposals": [
+                {
+                    "status": "ready_for_review",
+                    "bill_title": "钢筋混凝土柱",
+                    "quota_lines": [{"title": "现浇混凝土 矩形柱"}],
+                }
+            ],
+        }
+
+        view = build_ai_suggestion_view_model("", result)
+
+        self.assertIn("混凝土柱", view["headline"])
+        self.assertIn("按泵送施工", view["headline"])
+        reasons = {(value["label"], value["value"]) for value in view["reasons"]}
+        self.assertIn(("混凝土输送", "泵送"), reasons)
+        self.assertIn(("构件做法", "现浇"), reasons)
+
 
 if __name__ == "__main__":
     unittest.main()
