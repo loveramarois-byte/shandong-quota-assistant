@@ -74,7 +74,8 @@ class QtThemeTests(unittest.TestCase):
             proposal_label = next(label for label in card.findChildren(QLabel) if label.objectName() == "proposalTitle")
             self.assertGreater(proposal_label.height(), 0)
             rank = next(label for label in card.findChildren(QLabel) if label.objectName() == "rankBadge")
-            self.assertEqual((rank.width(), rank.height()), (24, 24))
+            self.assertEqual((rank.width(), rank.height()), (28, 24))
+            self.assertEqual(rank.text(), "01")
         finally:
             window.close()
 

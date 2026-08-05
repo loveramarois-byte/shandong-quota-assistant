@@ -492,7 +492,7 @@ class QuotaQtApp(QMainWindow):
         #sectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 10px; }}
         #pageTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 19px; font-weight: 600; }}
         #pageSubtitle {{ color: {c.text_muted}; font-size: 11px; }}
-        #filterBar {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 10px; }}
+        #filterBar {{ background: transparent; border: 0; }}
         #secondaryText {{ color: {c.text_secondary}; }}
         #statusPill {{ color: {c.success}; background: transparent; border: 0; padding: 5px 3px; font-size: 11px; font-weight: 500; }}
         #rule {{ color: {c.border}; max-height: 1px; }}
@@ -510,20 +510,21 @@ class QuotaQtApp(QMainWindow):
         QComboBox QAbstractItemView {{ background: {c.elevated}; color: {c.text}; border: 1px solid {c.border}; outline: 0; padding: 4px; selection-background-color: {c.accent_soft}; selection-color: {c.text}; }}
         QComboBox QAbstractItemView::item {{ min-height: 30px; padding: 6px 10px; color: {c.text}; }}
         QComboBox QAbstractItemView::item:hover {{ background: {c.subtle}; color: {c.text}; }}
-        #surfaceCard, #elevatedCard, #resultCard, #aiCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; }}
+        #surfaceCard, #elevatedCard, #aiCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; }}
         #elevatedCard {{ background: {c.elevated}; }}
-        #resultCard {{ background: {c.surface}; }}
+        #resultCard {{ background: transparent; border: 0; }}
         #aiCard {{ background: {c.surface}; border-left: 3px solid {c.accent}; }}
         #userMessage {{ color: {c.user_text}; background: {c.user_surface}; border: 0; border-radius: 12px; }}
         #statusCard {{ background: {c.subtle}; border: 0; border-radius: 9px; }}
         #resultTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-weight: 600; }}
-        #countBadge, #proposalStatus {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 8px; padding: 4px 8px; font-size: 11px; }}
-        #primaryProposal {{ background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 9px; }}
-        #proposalRow {{ background: transparent; border: 1px solid {c.border}; border-radius: 9px; }}
-        #rankBadge {{ color: {c.on_accent}; background: {c.accent_fill}; border-radius: 12px; font-size: 11px; font-weight: 700; }}
+        #countBadge {{ color: {c.text_muted}; background: transparent; border: 0; padding: 4px 0; font-size: 11px; }}
+        #proposalStatus {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 4px 8px; font-size: 11px; }}
+        #primaryProposal {{ background: {c.surface}; border: 1px solid {c.border}; border-left: 2px solid {c.accent}; border-radius: 8px; }}
+        #proposalRow {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px; }}
+        #rankBadge {{ color: {c.accent}; background: transparent; border: 0; font-family: Inter; font-size: 11px; font-weight: 500; }}
         #proposalTitle {{ color: {c.text}; }}
-        #quotaLine {{ color: {c.text_secondary}; background: {c.elevated}; border: 1px solid {c.border}; border-radius: 7px; }}
-        #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 1px dashed {c.border_strong}; border-radius: 7px; }}
+        #quotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
+        #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
         #quotaCode {{ color: {c.accent}; font-family: Inter; font-size: 12px; font-weight: 500; }}
         #clarificationRule {{ background: {c.border}; border: 0; max-height: 1px; margin-top: 3px; }}
@@ -549,11 +550,15 @@ class QuotaQtApp(QMainWindow):
         #composerAction:pressed {{ background: {c.accent_pressed}; border-color: {c.accent_pressed}; }}
         #composerAction:focus {{ border: 2px solid {c.focus}; }}
         #composerAction[busy="true"] {{ background: {c.danger_soft}; border-color: {c.danger}; }}
-        #primaryButton, #newButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 7px; padding: 6px 14px; min-height: 32px; font-size: 13px; font-weight: 500; }}
-        #primaryButton:hover, #newButton:hover {{ background: {c.accent_hover}; border-color: {c.accent_hover}; }}
-        #primaryButton:pressed, #newButton:pressed {{ background: {c.accent_pressed}; border-color: {c.accent_pressed}; }}
-        #primaryButton:disabled, #newButton:disabled {{ color: {c.text_muted}; background: {c.subtle}; border-color: {c.border}; }}
+        #primaryButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 7px; padding: 6px 14px; min-height: 32px; font-size: 13px; font-weight: 500; }}
+        #primaryButton:hover {{ background: {c.accent_hover}; border-color: {c.accent_hover}; }}
+        #primaryButton:pressed {{ background: {c.accent_pressed}; border-color: {c.accent_pressed}; }}
+        #primaryButton:disabled {{ color: {c.text_muted}; background: {c.subtle}; border-color: {c.border}; }}
         #primaryButton[busy="true"] {{ color: {c.danger}; background: {c.danger_soft}; border-color: {c.danger_soft}; }}
+        #newButton {{ color: {c.text}; background: transparent; border: 1px solid {c.border}; border-radius: 7px; padding: 6px 12px; min-height: 32px; text-align: left; font-size: 13px; font-weight: 500; }}
+        #newButton:hover {{ background: {c.subtle}; border-color: {c.border_strong}; }}
+        #newButton:pressed {{ background: {c.accent_soft}; }}
+        #newButton:disabled {{ color: {c.text_muted}; background: transparent; border-color: {c.border}; }}
         #iconButton {{ background: transparent; border: 1px solid transparent; border-radius: 9px; padding: 8px; }}
         #iconButton:hover {{ background: {c.subtle}; border-color: {c.border}; }}
         #iconButton:pressed {{ background: {c.accent_soft}; }}
@@ -561,13 +566,13 @@ class QuotaQtApp(QMainWindow):
         #iconButton:disabled {{ background: transparent; }}
         #quietButton, #exampleButton {{ color: {c.text_secondary}; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 10px; }}
         #quietButton:hover {{ background: {c.subtle}; color: {c.text}; }}
-        #exampleButton {{ color: {c.text}; background: {c.surface}; border-color: {c.border}; text-align: left; padding-left: 14px; }}
-        #exampleButton:hover {{ background: {c.elevated}; border-color: {c.border_strong}; }}
+        #exampleButton {{ color: {c.text_secondary}; background: transparent; border: 0; border-bottom: 1px solid {c.border}; border-radius: 0; text-align: left; padding: 9px 2px; }}
+        #exampleButton:hover {{ color: {c.text}; background: transparent; border-bottom-color: {c.border_strong}; }}
         #sessionList {{ background: transparent; color: {c.text_secondary}; border: 0; padding: 3px 0; outline: 0; }}
         #sessionList::item {{ min-height: 24px; padding: 8px 10px; border-radius: 8px; margin: 1px 0; }}
         #sessionList::item:hover {{ background: {c.subtle}; color: {c.text}; }}
         #sessionList::item:selected {{ background: {c.accent_soft}; color: {c.text}; }}
-        #libraryPanel {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 9px; }}
+        #libraryPanel {{ background: transparent; border: 0; border-top: 1px solid {c.border}; border-radius: 0; }}
         #libraryTitle {{ color: {c.text}; font-size: 12px; font-weight: 500; }}
         QCheckBox {{ color: {c.text_secondary}; spacing: 8px; padding: 3px 0; }}
         QScrollBar:vertical {{ background: transparent; width: 9px; margin: 0; border: 0; }}
@@ -590,7 +595,7 @@ class QuotaQtApp(QMainWindow):
         self.composer.apply_icon_color(c.on_accent, c.danger)
         for selector in self.context_selectors:
             selector.set_icon_color(icon_color)
-        self.new_button.setIcon(svg_icon("plus", c.on_accent, 16))
+        self.new_button.setIcon(svg_icon("plus", c.text_secondary, 16))
         self.new_button.setIconSize(QSize(16, 16))
         self.ai_status.setText(self._ai_status_text())
 
