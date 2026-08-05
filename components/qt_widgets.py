@@ -126,6 +126,36 @@ class SvgIconButton(QPushButton):
         self.setIcon(QIcon(_svg_pixmap(self.icon_name, color, self.icon_pixel_size)))
 
 
+class CheckRow(QPushButton):
+    """Large, theme-aware check target used for settings and consent rows."""
+
+    def __init__(self, text: str, *, checked: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("checkRow")
+        self.setCheckable(True)
+        self.setChecked(checked)
+        self.setMinimumHeight(38)
+        self.setIconSize(QSize(15, 15))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAccessibleName(text)
+        self._checked_color = "#64705E"
+        self.toggled.connect(self._refresh_icon)
+        self._refresh_icon()
+
+    def set_icon_color(self, checked_color: str) -> None:
+        self._checked_color = checked_color
+        self._refresh_icon()
+
+    def _refresh_icon(self) -> None:
+        if self.isChecked():
+            self.setIcon(QIcon(_svg_pixmap("check", self._checked_color, 15)))
+            return
+        blank = QPixmap(30, 30)
+        blank.fill(Qt.GlobalColor.transparent)
+        blank.setDevicePixelRatio(2)
+        self.setIcon(QIcon(blank))
+
+
 class MessageFeed(QWidget):
     """A compact, virtual-friendly conversation column."""
 

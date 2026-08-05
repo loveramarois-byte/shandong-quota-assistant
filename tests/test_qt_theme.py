@@ -8,7 +8,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy
 
-from app.qt_main import QuotaQtApp, _load_qt_fonts
+from app.qt_main import QuotaQtApp, SettingsDialog, _load_qt_fonts
+from components.qt_widgets import CheckRow
 from themes.tokens import get_theme
 
 
@@ -199,6 +200,25 @@ class QtThemeTests(unittest.TestCase):
             window._follow_growing_content(0, 99)
             self.assertEqual(bar.value(), original)
         finally:
+            window.close()
+
+    def test_settings_use_application_owned_consent_rows(self) -> None:
+        window = QuotaQtApp()
+        dialog = SettingsDialog(window.settings, window)
+        try:
+            checks = dialog.findChildren(CheckRow)
+            self.assertEqual(len(checks), 3)
+            self.assertTrue(all(check.accessibleName() for check in checks))
+            initial = dialog.description_consent.isChecked()
+            dialog.description_consent.click()
+            self.assertNotEqual(dialog.description_consent.isChecked(), initial)
+            dialog._set_connection_message("连接失败", "error")
+            self.assertEqual(dialog.connection_status.property("tone"), "error")
+            dialog.show()
+            self.app.processEvents()
+            self.assertEqual(dialog.windowOpacity(), 1.0)
+        finally:
+            dialog.close()
             window.close()
 
 

@@ -15,14 +15,12 @@ import threading
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QObject, QPropertyAnimation, QRunnable, QSize, QThreadPool, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFontDatabase, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -37,7 +35,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from components.qt_widgets import ChevronComboBox, Composer, MessageFeed, SessionList, SvgIconButton, svg_icon
+from components.qt_widgets import CheckRow, ChevronComboBox, Composer, MessageFeed, SessionList, SvgIconButton, svg_icon
 from controllers.analysis import AnalysisTaskRegistry
 from themes.tokens import ThemeTokens, get_theme
 from utils.ai_providers import provider_config
@@ -135,19 +133,26 @@ class SettingsDialog(QDialog):
 
     def __init__(self, settings: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("settingsDialog")
         self.setWindowTitle("设置")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(590)
         self.settings = dict(settings)
+        self._open_animation: QPropertyAnimation | None = None
+        self._animated_once = False
         form = QVBoxLayout(self)
-        form.setContentsMargins(28, 24, 28, 22)
-        form.setSpacing(10)
-        title = QLabel("分析设置")
+        form.setContentsMargins(30, 27, 30, 24)
+        form.setSpacing(9)
+        title = QLabel("AI 与模型")
         title.setObjectName("dialogTitle")
         form.addWidget(title)
-        hint = QLabel("API Key 只保存在本机凭据区；本地资料检索始终可以单独使用。")
+        hint = QLabel("本地资料检索无需 AI。API Key 只保存在 Windows 凭据区。")
         hint.setObjectName("secondaryText")
         hint.setWordWrap(True)
         form.addWidget(hint)
+        connection_label = QLabel("连接配置")
+        connection_label.setObjectName("settingsSectionLabel")
+        form.addSpacing(7)
+        form.addWidget(connection_label)
         self.provider = ChevronComboBox()
         self.provider.addItem("ccSwitch", "ccswitch")
         self.provider.addItem("DeepSeek", "deepseek")
@@ -161,45 +166,89 @@ class SettingsDialog(QDialog):
         self.model.setEditable(True)
         self.model.addItems([str(settings.get("ai_model") or "")])
         self.model.setCurrentText(str(settings.get("ai_model") or ""))
-        self.ai_enabled = QCheckBox("启用 AI 复核")
-        self.ai_enabled.setChecked(bool(settings.get("ai_enabled")))
-        for label, widget in (("服务商", self.provider), ("API Key", self.api_key), ("服务地址", self.base_url), ("模型", self.model), ("状态", self.ai_enabled)):
+        for label, widget in (("服务商", self.provider), ("API Key", self.api_key), ("服务地址", self.base_url), ("模型", self.model)):
             row = QHBoxLayout()
+            row.setSpacing(12)
             caption = QLabel(label)
-            caption.setMinimumWidth(70)
-            caption.setObjectName("secondaryText")
+            caption.setMinimumWidth(72)
+            caption.setObjectName("fieldLabel")
             row.addWidget(caption)
             row.addWidget(widget, 1)
             form.addLayout(row)
-        self.connect_button = QPushButton("连接并获取模型")
-        self.connect_button.setObjectName("primaryButton")
+        self.connect_button = QPushButton("测试连接并读取模型")
+        self.connect_button.setObjectName("connectButton")
+        self.connect_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connect_button.clicked.connect(self._connect_ai)
-        form.addWidget(self.connect_button)
+        connect_row = QHBoxLayout()
+        connect_row.addStretch(1)
+        connect_row.addWidget(self.connect_button)
+        form.addLayout(connect_row)
         self.connection_status = QLabel("")
-        self.connection_status.setObjectName("secondaryText")
+        self.connection_status.setObjectName("connectionStatus")
+        self.connection_status.setProperty("tone", "neutral")
         self.connection_status.setWordWrap(True)
         form.addWidget(self.connection_status)
-        self.description_consent = QCheckBox("允许发送施工描述")
-        self.description_consent.setChecked(int(settings.get("ai_consent_version") or 0) >= 1)
-        self.catalog_consent = QCheckBox("允许发送本地候选摘要")
-        self.catalog_consent.setChecked(int(settings.get("ai_catalog_consent_version") or 0) >= 1)
+        rule = QFrame()
+        rule.setObjectName("settingsRule")
+        form.addSpacing(5)
+        form.addWidget(rule)
+        consent_label = QLabel("发送范围")
+        consent_label.setObjectName("settingsSectionLabel")
+        form.addSpacing(4)
+        form.addWidget(consent_label)
+        self.ai_enabled = CheckRow("启用 AI 复核", checked=bool(settings.get("ai_enabled")))
+        self.description_consent = CheckRow("允许发送施工描述", checked=int(settings.get("ai_consent_version") or 0) >= 1)
+        self.catalog_consent = CheckRow("允许发送本地候选摘要", checked=int(settings.get("ai_catalog_consent_version") or 0) >= 1)
+        check_color = getattr(parent, "tokens", get_theme("light")).colors.accent
+        for check in (self.ai_enabled, self.description_consent, self.catalog_consent):
+            check.set_icon_color(check_color)
+        form.addWidget(self.ai_enabled)
         form.addWidget(self.description_consent)
         form.addWidget(self.catalog_consent)
-        consent = QLabel("发送前请确认施工描述和本地候选摘要可以发送给所选服务商。")
-        consent.setObjectName("warningText")
+        consent = QLabel("只有勾选的内容会发送给所选服务商；本地定额资料库不会上传。")
+        consent.setObjectName("privacyNote")
         consent.setWordWrap(True)
         form.addWidget(consent)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save)
-        save_button = buttons.button(QDialogButtonBox.StandardButton.Save)
-        cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        footer_rule = QFrame()
+        footer_rule.setObjectName("settingsRule")
+        form.addSpacing(5)
+        form.addWidget(footer_rule)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        buttons.addStretch(1)
+        cancel_button = QPushButton("取消")
+        cancel_button.setObjectName("dialogCancel")
+        cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_button.clicked.connect(self.reject)
+        save_button = QPushButton("保存")
         save_button.setText("保存")
         save_button.setObjectName("primaryButton")
-        cancel_button.setText("取消")
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        form.addWidget(buttons)
+        save_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_button.setDefault(True)
+        save_button.clicked.connect(self.accept)
+        buttons.addWidget(cancel_button)
+        buttons.addWidget(save_button)
+        form.addLayout(buttons)
         self.connection_result.connect(self._connection_finished)
         self._provider_changed()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._animated_once:
+            return
+        self._animated_once = True
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen" or os.environ.get("SHANDONG_REDUCED_MOTION") == "1":
+            self.setWindowOpacity(1.0)
+            return
+        self.setWindowOpacity(0.0)
+        animation = QPropertyAnimation(self, b"windowOpacity", self)
+        animation.setDuration(180)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(lambda: self.setWindowOpacity(1.0))
+        self._open_animation = animation
+        animation.start()
 
     def _provider_key(self) -> str:
         return str(self.provider.currentData() or "ccswitch")
@@ -213,7 +262,13 @@ class SettingsDialog(QDialog):
         except (OSError, RuntimeError):
             saved = False
         self.api_key.setPlaceholderText("已安全保存在本机；留空继续使用" if saved else config.key_hint)
-        self.connection_status.setText(config.novice_hint)
+        self._set_connection_message(config.novice_hint)
+
+    def _set_connection_message(self, text: str, tone: str = "neutral") -> None:
+        self.connection_status.setText(text)
+        self.connection_status.setProperty("tone", tone)
+        self.connection_status.style().unpolish(self.connection_status)
+        self.connection_status.style().polish(self.connection_status)
 
     def _current_key(self) -> str:
         entered = self.api_key.text().strip()
@@ -229,17 +284,17 @@ class SettingsDialog(QDialog):
         config = provider_config(provider)
         key = self._current_key()
         if config.requires_api_key and not key:
-            self.connection_status.setText(f"请先填写 {config.label} API Key。")
+            self._set_connection_message(f"请先填写 {config.label} API Key。", "error")
             self.api_key.setFocus()
             return
         try:
             endpoint = validate_ai_endpoint(self.base_url.text()) or config.default_base_url
         except ValueError as exc:
-            self.connection_status.setText(str(exc))
+            self._set_connection_message(str(exc), "error")
             return
         self.connect_button.setEnabled(False)
         self.connect_button.setText("连接中…")
-        self.connection_status.setText("正在读取可用模型并进行一次连接测试…")
+        self._set_connection_message("正在读取可用模型并进行一次连接测试…")
 
         def worker() -> None:
             try:
@@ -259,9 +314,9 @@ class SettingsDialog(QDialog):
 
     def _connection_finished(self, success: bool, detail: object) -> None:
         self.connect_button.setEnabled(True)
-        self.connect_button.setText("连接并获取模型")
+        self.connect_button.setText("测试连接并读取模型")
         if not success:
-            self.connection_status.setText("连接失败：" + str(detail))
+            self._set_connection_message("连接失败：" + str(detail), "error")
             return
         payload = dict(detail)
         models = [str(item) for item in payload.get("models") or []]
@@ -269,27 +324,27 @@ class SettingsDialog(QDialog):
         self.model.addItems(models)
         self.model.setCurrentText(str(payload.get("model") or (models[0] if models else "")))
         suffix = "（使用 ccSwitch 已验证候选模型）" if payload.get("fallback") else ""
-        self.connection_status.setText(f"连接成功，已获取 {len(models)} 个模型{suffix}。")
+        self._set_connection_message(f"连接成功，已获取 {len(models)} 个模型{suffix}。", "success")
 
     def accept(self) -> None:
         provider = self._provider_key()
         config = provider_config(provider)
         if self.ai_enabled.isChecked():
             if config.requires_api_key and not self._current_key():
-                self.connection_status.setText(f"启用 {config.label} 前需填写 API Key。")
+                self._set_connection_message(f"启用 {config.label} 前需填写 API Key。", "error")
                 return
             if not self.model.currentText().strip():
-                self.connection_status.setText("请先连接并选择模型。")
+                self._set_connection_message("请先连接并选择模型。", "error")
                 return
             if not self.description_consent.isChecked() or not self.catalog_consent.isChecked():
-                self.connection_status.setText("启用 AI 前，请勾选两项发送许可。")
+                self._set_connection_message("启用 AI 前，请勾选两项发送许可。", "error")
                 return
         entered_key = self.api_key.text().strip()
         if entered_key:
             try:
                 save_api_key(provider, entered_key)
             except (OSError, RuntimeError):
-                self.connection_status.setText("API Key 无法写入 Windows 凭据区。")
+                self._set_connection_message("API Key 无法写入 Windows 凭据区。", "error")
                 return
         super().accept()
 
@@ -515,7 +570,7 @@ class QuotaQtApp(QMainWindow):
         #resultCard {{ background: transparent; border: 0; }}
         #aiCard {{ background: {c.surface}; border-left: 3px solid {c.accent}; }}
         #userMessage {{ color: {c.user_text}; background: {c.user_surface}; border: 0; border-radius: 12px; }}
-        #statusCard {{ background: {c.subtle}; border: 0; border-radius: 9px; }}
+        #statusCard {{ background: transparent; border: 0; border-left: 2px solid {c.accent}; border-radius: 0; }}
         #resultTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-weight: 600; }}
         #countBadge {{ color: {c.text_muted}; background: transparent; border: 0; padding: 4px 0; font-size: 11px; }}
         #proposalStatus {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 4px 8px; font-size: 11px; }}
@@ -535,8 +590,8 @@ class QuotaQtApp(QMainWindow):
         #choiceButton:pressed, #choiceButton:checked {{ color: {c.on_accent}; background: {c.accent_fill}; border-color: {c.accent_fill}; }}
         #choiceButton:focus {{ border-color: {c.focus}; }}
         #aiText {{ color: {c.text}; line-height: 1.62; }}
-        #warningText {{ color: {c.warning}; background: {c.warning_soft}; border-radius: 8px; padding: 9px 11px; }}
-        #errorText {{ color: {c.danger}; background: {c.danger_soft}; border-radius: 8px; padding: 9px 11px; }}
+        #warningText {{ color: {c.warning}; background: {c.warning_soft}; border: 0; border-left: 2px solid {c.warning}; border-radius: 4px; padding: 9px 11px; }}
+        #errorText {{ color: {c.danger}; background: {c.danger_soft}; border: 0; border-left: 2px solid {c.danger}; border-radius: 4px; padding: 9px 11px; }}
         #composer {{ background: transparent; border: 0; }}
         #composerStatusRow {{ background: transparent; border: 0; }}
         #composerMode {{ color: {c.accent}; background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 6px; padding: 3px 7px; font-size: 10px; font-weight: 500; }}
@@ -574,7 +629,6 @@ class QuotaQtApp(QMainWindow):
         #sessionList::item:selected {{ background: {c.accent_soft}; color: {c.text}; }}
         #libraryPanel {{ background: transparent; border: 0; border-top: 1px solid {c.border}; border-radius: 0; }}
         #libraryTitle {{ color: {c.text}; font-size: 12px; font-weight: 500; }}
-        QCheckBox {{ color: {c.text_secondary}; spacing: 8px; padding: 3px 0; }}
         QScrollBar:vertical {{ background: transparent; width: 9px; margin: 0; border: 0; }}
         QScrollBar::handle:vertical {{ background: {c.border_strong}; border-radius: 4px; min-height: 30px; }}
         QScrollBar::handle:vertical:hover {{ background: {c.text_muted}; }}
@@ -582,10 +636,26 @@ class QuotaQtApp(QMainWindow):
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; background: transparent; border: 0; }}
         QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {{ width: 0; height: 0; border: 0; }}
         QAbstractScrollArea::corner {{ background: {c.background}; }}
-        QDialog {{ background: {c.background}; }}
-        #dialogTitle {{ font-family: 'Source Han Serif SC'; font-size: 20px; font-weight: 600; }}
-        QDialogButtonBox QPushButton {{ color: {c.text}; background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px; min-height: 32px; padding: 4px 14px; }}
-        QDialogButtonBox QPushButton:hover {{ background: {c.subtle}; border-color: {c.border_strong}; }}
+        QDialog, #settingsDialog {{ background: {c.background}; }}
+        #dialogTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 21px; font-weight: 600; }}
+        #settingsSectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
+        #settingsRule {{ background: {c.border}; border: 0; max-height: 1px; }}
+        #fieldLabel {{ color: {c.text_secondary}; font-size: 12px; }}
+        #connectButton {{ color: {c.text}; background: transparent; border: 1px solid {c.border}; border-radius: 7px; min-height: 34px; padding: 4px 12px; font-size: 13px; font-weight: 500; }}
+        #connectButton:hover {{ background: {c.subtle}; border-color: {c.border_strong}; }}
+        #connectButton:pressed {{ background: {c.accent_soft}; }}
+        #connectButton:disabled {{ color: {c.text_muted}; background: {c.subtle}; border-color: {c.border}; }}
+        #connectionStatus {{ color: {c.text_muted}; font-size: 12px; padding: 2px 1px; }}
+        #connectionStatus[tone="success"] {{ color: {c.success}; }}
+        #connectionStatus[tone="error"] {{ color: {c.danger}; }}
+        #checkRow {{ color: {c.text_secondary}; background: transparent; border: 0; border-bottom: 1px solid {c.border}; border-radius: 0; padding: 9px 2px; text-align: left; font-size: 13px; }}
+        #checkRow:hover {{ color: {c.text}; background: {c.subtle}; border-bottom-color: {c.border_strong}; }}
+        #checkRow:checked {{ color: {c.text}; background: transparent; }}
+        #checkRow:focus {{ border: 0; border-bottom: 2px solid {c.focus}; }}
+        #privacyNote {{ color: {c.text_muted}; font-size: 11px; padding: 3px 1px; }}
+        #dialogCancel {{ color: {c.text_secondary}; background: transparent; border: 1px solid transparent; border-radius: 7px; min-height: 32px; padding: 4px 13px; }}
+        #dialogCancel:hover {{ color: {c.text}; background: {c.subtle}; border-color: {c.border}; }}
+        #dialogCancel:pressed {{ background: {c.accent_soft}; }}
         """)
         icon_color = c.text_secondary
         self.theme_button.icon_name = "sun" if self.theme_name == "dark" else "moon"
