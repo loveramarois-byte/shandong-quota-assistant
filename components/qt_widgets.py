@@ -47,9 +47,32 @@ def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: boo
     return font
 
 
-def _summary_identity(item: dict) -> str:
-    values = [str(item.get(key) or "").strip() for key in ("code", "name")]
-    return "  ".join(value for value in values if value and value != "未获取到") or "未获取到"
+def _pricing_summary_row(kind: str, item: dict) -> QFrame:
+    row = QFrame()
+    row.setObjectName("aiPricingLine")
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 8, 0, 8)
+    layout.setSpacing(12)
+    kind_label = QLabel(kind)
+    kind_label.setObjectName("aiPricingType")
+    kind_label.setFixedWidth(36)
+    layout.addWidget(kind_label, 0, Qt.AlignmentFlag.AlignTop)
+    code = QLabel(str(item.get("code") or "待确认"))
+    code.setObjectName("aiPricingCode")
+    code.setMinimumWidth(112)
+    code.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    layout.addWidget(code, 0, Qt.AlignmentFlag.AlignTop)
+    name = QLabel(str(item.get("name") or "未获取到"))
+    name.setObjectName("aiPricingName")
+    name.setWordWrap(True)
+    name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    layout.addWidget(name, 1)
+    unit = str(item.get("unit") or "").strip()
+    if unit and unit != "未获取到":
+        unit_label = QLabel(unit)
+        unit_label.setObjectName("aiPricingUnit")
+        layout.addWidget(unit_label, 0, Qt.AlignmentFlag.AlignTop)
+    return row
 
 
 class PanelCard(QFrame):
@@ -172,8 +195,8 @@ class SmoothScrollArea(QScrollArea):
         super().__init__(parent)
         self._scroll_target = 0
         self._scroll_animation = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
-        self._scroll_animation.setDuration(150)
-        self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._scroll_animation.setDuration(105)
+        self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
 
     def cancel_scroll_motion(self) -> None:
         self._scroll_animation.stop()
@@ -198,7 +221,7 @@ class SmoothScrollArea(QScrollArea):
         if self._scroll_animation.state() != QAbstractAnimation.State.Running:
             self._scroll_target = bar.value()
         steps = angle_delta / 120.0
-        self._scroll_target = max(bar.minimum(), min(bar.maximum(), round(self._scroll_target - steps * 72)))
+        self._scroll_target = max(bar.minimum(), min(bar.maximum(), round(self._scroll_target - steps * 68)))
         self._scroll_animation.stop()
         self._scroll_animation.setStartValue(bar.value())
         self._scroll_animation.setEndValue(self._scroll_target)
@@ -216,13 +239,13 @@ class LoadingSpinner(QWidget):
         self.setFixedSize(16, 16)
         self._angle = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(40)
+        self._timer.setInterval(32)
         self._timer.timeout.connect(self._advance)
         if os.environ.get("SHANDONG_REDUCED_MOTION") != "1" and os.environ.get("QT_QPA_PLATFORM") != "offscreen":
             self._timer.start()
 
     def _advance(self) -> None:
-        self._angle = (self._angle - 18) % 360
+        self._angle = (self._angle - 22) % 360
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -253,12 +276,13 @@ class MessageFeed(QWidget):
         self._animations: list[QPropertyAnimation] = []
         self._transient_status: QWidget | None = None
 
-    def _insert(self, widget: QWidget, *, align: Qt.AlignmentFlag | None = None) -> QWidget:
+    def _insert(self, widget: QWidget, *, align: Qt.AlignmentFlag | None = None, animate: bool = True) -> QWidget:
         if align is None:
             self.layout.insertWidget(self.layout.count() - 1, widget)
         else:
             self.layout.insertWidget(self.layout.count() - 1, widget, 0, align)
-        self._fade_in(widget)
+        if animate:
+            self._fade_in(widget)
         QTimer.singleShot(0, self.content_added.emit)
         return widget
 
@@ -272,7 +296,7 @@ class MessageFeed(QWidget):
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
         animation = QPropertyAnimation(effect, b"opacity", widget)
-        animation.setDuration(180)
+        animation.setDuration(150)
         animation.setStartValue(0.0)
         animation.setEndValue(1.0)
         animation.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -400,12 +424,12 @@ class MessageFeed(QWidget):
         proposals = result.get("proposals") or []
         header = QHBoxLayout()
         header.setSpacing(10)
-        title = QLabel("套价建议")
+        title = QLabel("本地匹配")
         title.setObjectName("resultTitle")
         title.setFont(_font(17, QFont.Weight.DemiBold, display=True))
         header.addWidget(title)
         header.addStretch(1)
-        count = QLabel(f"{len(proposals)} 个候选")
+        count = QLabel(f"{len(proposals)} 个方案")
         count.setObjectName("countBadge")
         header.addWidget(count)
         layout.addLayout(header)
@@ -460,7 +484,7 @@ class MessageFeed(QWidget):
                 row_layout.addWidget(quota_row)
             review_candidates = proposal.get("review_candidates") or []
             if not (proposal.get("quota_lines") or []) and review_candidates:
-                candidate_heading = QLabel("候选定额 · 补充条件后确定")
+                candidate_heading = QLabel("候选定额，补充条件后确定")
                 candidate_heading.setObjectName("candidateHeading")
                 row_layout.addWidget(candidate_heading)
                 for quota in review_candidates[:3]:
@@ -513,7 +537,7 @@ class MessageFeed(QWidget):
             empty.setObjectName("secondaryText")
             empty.setWordWrap(True)
             layout.addWidget(empty)
-        return self._insert(card)
+        return self._insert(card, animate=False)
 
     def add_ai(self, text: str, result: dict | None = None) -> QWidget:
         self._clear_transient()
@@ -521,13 +545,13 @@ class MessageFeed(QWidget):
         card.setObjectName("aiSuggestionCard")
         card.setAccessibleName("AI 套价建议")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(24, 22, 24, 23)
-        layout.setSpacing(12)
+        layout.setContentsMargins(28, 24, 28, 26)
+        layout.setSpacing(10)
         view = build_ai_suggestion_view_model(text, result)
 
         header = QHBoxLayout()
         header.setSpacing(10)
-        kicker = QLabel("AI 套价建议")
+        kicker = QLabel("复核结论")
         kicker.setObjectName("aiKicker")
         kicker.setFont(_font(13, QFont.Weight.DemiBold))
         header.addWidget(kicker)
@@ -540,7 +564,7 @@ class MessageFeed(QWidget):
 
         headline = QLabel(str(view["headline"]))
         headline.setObjectName("aiHeadline")
-        headline.setFont(_font(18, QFont.Weight.DemiBold, display=True))
+        headline.setFont(_font(20, QFont.Weight.DemiBold, display=True))
         headline.setWordWrap(True)
         headline.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(headline)
@@ -549,38 +573,6 @@ class MessageFeed(QWidget):
         note.setObjectName("aiNote")
         note.setWordWrap(True)
         layout.addWidget(note)
-
-        reasons = list(view.get("reasons") or [])
-        if reasons:
-            reason_title = QLabel("为什么这样建议")
-            reason_title.setObjectName("aiSectionTitle")
-            layout.addSpacing(4)
-            layout.addWidget(reason_title)
-            reason_panel = QFrame()
-            reason_panel.setObjectName("aiReasonPanel")
-            reason_layout = QVBoxLayout(reason_panel)
-            reason_layout.setContentsMargins(12, 7, 12, 7)
-            reason_layout.setSpacing(0)
-            for reason in reasons:
-                row = QFrame()
-                row.setObjectName("aiReasonRow")
-                row_layout = QHBoxLayout(row)
-                row_layout.setContentsMargins(0, 6, 0, 6)
-                row_layout.setSpacing(8)
-                marker = QLabel("?" if reason.get("status") == "missing" else "✓")
-                marker.setObjectName("aiReasonMarker")
-                marker.setProperty("missing", reason.get("status") == "missing")
-                marker.setFixedWidth(16)
-                row_layout.addWidget(marker)
-                label = QLabel(str(reason.get("label") or "信息"))
-                label.setObjectName("aiReasonLabel")
-                row_layout.addWidget(label)
-                value = QLabel(str(reason.get("value") or "未获取到"))
-                value.setObjectName("aiReasonValue")
-                value.setWordWrap(True)
-                row_layout.addWidget(value, 1)
-                reason_layout.addWidget(row)
-            layout.addWidget(reason_panel)
 
         question = view.get("question")
         if isinstance(question, dict):
@@ -594,27 +586,56 @@ class MessageFeed(QWidget):
             help_text.setWordWrap(True)
             layout.addWidget(help_text)
         elif view.get("state") in {"ready", "partial"}:
-            summary_title = QLabel("套价结果")
+            summary_title = QLabel("建议套用")
             summary_title.setObjectName("aiSectionTitle")
-            layout.addSpacing(3)
+            layout.addSpacing(8)
             layout.addWidget(summary_title)
             summary = QFrame()
             summary.setObjectName("aiPricingSummary")
             summary_layout = QVBoxLayout(summary)
-            summary_layout.setContentsMargins(12, 8, 12, 8)
-            summary_layout.setSpacing(7)
-            bill_name = QLabel(f"清单项目  ·  {_summary_identity(dict(view['bill']))}")
-            bill_name.setObjectName("aiSummaryLine")
-            bill_name.setWordWrap(True)
-            bill_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            summary_layout.addWidget(bill_name)
+            summary_layout.setContentsMargins(0, 0, 0, 0)
+            summary_layout.setSpacing(0)
+            summary_layout.addWidget(_pricing_summary_row("清单", dict(view["bill"])))
             quotas = list(view.get("quotas") or [])
-            quota_name = QLabel(f"对应定额  ·  {_summary_identity(dict(quotas[0] if quotas else {}))}")
-            quota_name.setObjectName("aiSummaryLine")
-            quota_name.setWordWrap(True)
-            quota_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            summary_layout.addWidget(quota_name)
+            if quotas:
+                for quota in quotas[:3]:
+                    summary_layout.addWidget(_pricing_summary_row("定额", dict(quota)))
+            else:
+                summary_layout.addWidget(_pricing_summary_row("定额", {}))
             layout.addWidget(summary)
+
+        reasons = list(view.get("reasons") or [])[:4]
+        if reasons:
+            reason_title = QLabel("匹配依据")
+            reason_title.setObjectName("aiSectionTitle")
+            layout.addSpacing(8)
+            layout.addWidget(reason_title)
+            reason_panel = QFrame()
+            reason_panel.setObjectName("aiReasonPanel")
+            reason_layout = QVBoxLayout(reason_panel)
+            reason_layout.setContentsMargins(0, 0, 0, 0)
+            reason_layout.setSpacing(1)
+            for reason in reasons:
+                row = QFrame()
+                row.setObjectName("aiReasonRow")
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 5, 0, 5)
+                row_layout.setSpacing(8)
+                marker = QLabel("?" if reason.get("status") == "missing" else "✓")
+                marker.setObjectName("aiReasonMarker")
+                marker.setProperty("missing", reason.get("status") == "missing")
+                marker.setFixedWidth(16)
+                row_layout.addWidget(marker)
+                label = QLabel(str(reason.get("label") or "信息"))
+                label.setObjectName("aiReasonLabel")
+                label.setFixedWidth(76)
+                row_layout.addWidget(label)
+                value = QLabel(str(reason.get("value") or "未获取到"))
+                value.setObjectName("aiReasonValue")
+                value.setWordWrap(True)
+                row_layout.addWidget(value, 1)
+                reason_layout.addWidget(row)
+            layout.addWidget(reason_panel)
 
         details = QFrame()
         details.setObjectName("aiDetails")
@@ -654,7 +675,7 @@ class MessageFeed(QWidget):
         if view.get("has_details"):
             layout.addWidget(detail_button, 0, Qt.AlignmentFlag.AlignLeft)
             layout.addWidget(details)
-        return self._insert(card)
+        return self._insert(card, animate=False)
 
     def add_warning(self, text: str, *, error: bool = False) -> QWidget:
         self._clear_transient()
@@ -679,11 +700,8 @@ class Composer(QFrame):
         status_layout = QHBoxLayout(self.status_row)
         status_layout.setContentsMargins(2, 0, 2, 0)
         status_layout.setSpacing(8)
-        self.mode_label = QLabel("专业模式")
-        self.mode_label.setObjectName("composerMode")
-        self.status_label = QLabel("描述施工做法，我会匹配清单与定额")
+        self.status_label = QLabel("描述施工做法，获取清单与定额建议")
         self.status_label.setObjectName("composerStatus")
-        status_layout.addWidget(self.mode_label)
         status_layout.addWidget(self.status_label)
         status_layout.addStretch(1)
         self.input_shell = QFrame(self)
@@ -735,9 +753,12 @@ class Composer(QFrame):
         self.edit.setPlainText(value)
         self.edit.setFocus()
 
+    def focus_input(self) -> None:
+        self.edit.setFocus()
+
     def set_busy(self, busy: bool) -> None:
         self.send_button.icon_name = "x" if busy else "send"
-        self.status_label.setText("正在匹配本地资料与 AI 复核…" if busy else "描述施工做法，我会匹配清单与定额")
+        self.status_label.setText("正在匹配本地资料与 AI 复核…" if busy else "描述施工做法，获取清单与定额建议")
         self.send_button.setAccessibleName("停止当前分析" if busy else "开始分析")
         self.send_button.setProperty("busy", busy)
         self.send_button.style().unpolish(self.send_button)
@@ -760,6 +781,11 @@ class SessionList(QListWidget):
 
     def set_sessions(self, sessions: list[dict]) -> None:
         self.clear()
+        if not sessions:
+            empty = QListWidgetItem("暂无历史分析")
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.addItem(empty)
+            return
         for summary in sessions:
             item = QListWidgetItem(str(summary.get("title") or "新的检索"))
             item.setData(Qt.ItemDataRole.UserRole, str(summary.get("id") or ""))
@@ -773,7 +799,7 @@ def _result_summary(result: dict) -> str:
     discipline = {"building": "建筑", "decoration": "装饰", "installation": "安装", "municipal": "市政", "landscape": "园林"}.get(
         result.get("discipline") or result.get("requested_discipline"), "建筑"
     )
-    return f"{discipline}专业 · 识别 {len(items)} 个工作项 · 形成 {len(proposals)} 个候选方案"
+    return f"{discipline}专业，识别 {len(items)} 个工作项，形成 {len(proposals)} 个候选方案"
 
 
 def _proposal_meta(proposal: dict) -> str:

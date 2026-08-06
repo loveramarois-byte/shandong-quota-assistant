@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import QEasingCurve, QObject, QPropertyAnimation, QRunnable, QSize, QThreadPool, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFontDatabase, QIcon
+from PyQt6.QtGui import QColor, QFontDatabase, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -406,19 +406,13 @@ class QuotaQtApp(QMainWindow):
         outer.addWidget(self.sidebar)
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(32, 18, 32, 20)
+        content_layout.setContentsMargins(32, 16, 32, 18)
         content_layout.setSpacing(8)
         header = QHBoxLayout()
-        header.setSpacing(10)
-        title_stack = QVBoxLayout()
-        title_stack.setSpacing(1)
+        header.setSpacing(8)
         title = QLabel("套价分析")
         title.setObjectName("pageTitle")
-        subtitle = QLabel("山东清单与定额智能匹配")
-        subtitle.setObjectName("pageSubtitle")
-        title_stack.addWidget(title)
-        title_stack.addWidget(subtitle)
-        header.addLayout(title_stack)
+        header.addWidget(title)
         header.addStretch(1)
         self.edition = ChevronComboBox()
         self.edition.addItem("定额 2025", "2025")
@@ -474,6 +468,10 @@ class QuotaQtApp(QMainWindow):
         self.composer = Composer()
         content_layout.addWidget(self.composer, 0, Qt.AlignmentFlag.AlignHCenter)
         outer.addWidget(content, 1)
+        self.focus_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.focus_shortcut.activated.connect(self.composer.focus_input)
+        self.new_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        self.new_shortcut.activated.connect(self._new_session)
         self._set_controls_from_settings()
 
     def _build_sidebar(self) -> QWidget:
@@ -482,7 +480,7 @@ class QuotaQtApp(QMainWindow):
         sidebar.setFixedWidth(self.tokens.sidebar_width)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 16, 16, 14)
-        layout.setSpacing(9)
+        layout.setSpacing(8)
         brand_row = QHBoxLayout()
         brand_row.setSpacing(10)
         self.brand_mark = QLabel("定")
@@ -500,7 +498,7 @@ class QuotaQtApp(QMainWindow):
         brand_text.addWidget(brand_subtitle)
         brand_row.addLayout(brand_text, 1)
         layout.addLayout(brand_row)
-        layout.addSpacing(5)
+        layout.addSpacing(7)
         self.new_button = QPushButton("新建分析")
         self.new_button.setObjectName("newButton")
         self.new_button.setAccessibleName("新建分析")
@@ -551,12 +549,12 @@ class QuotaQtApp(QMainWindow):
         #brandMark, #welcomeMark {{ color: {c.accent}; background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 9px; font-size: 15px; font-weight: 500; }}
         #brand {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 15px; font-weight: 600; }}
         #brandSubtitle, #versionText {{ color: {c.text_muted}; font-size: 11px; }}
-        #sectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 10px; }}
-        #pageTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 19px; font-weight: 600; }}
-        #pageSubtitle {{ color: {c.text_muted}; font-size: 11px; }}
+        #sectionLabel {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 12px; }}
+        #pageTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 20px; font-weight: 600; }}
         #filterBar {{ background: transparent; border: 0; }}
         #secondaryText {{ color: {c.text_secondary}; }}
-        #statusPill {{ color: {c.success}; background: transparent; border: 0; padding: 5px 3px; font-size: 11px; font-weight: 500; }}
+        #statusPill {{ color: {c.text_muted}; background: transparent; border: 0; padding: 5px 3px; font-size: 11px; font-weight: 500; }}
+        #statusPill[connected="true"] {{ color: {c.success}; }}
         #rule {{ color: {c.border}; max-height: 1px; }}
         #feedScroll, #feedViewport, #messageFeed {{ background: {c.background}; border: 0; }}
         #welcomePanel {{ background: transparent; border: 0; }}
@@ -572,23 +570,23 @@ class QuotaQtApp(QMainWindow):
         QComboBox QAbstractItemView {{ background: {c.elevated}; color: {c.text}; border: 1px solid {c.border}; outline: 0; padding: 4px; selection-background-color: {c.accent_soft}; selection-color: {c.text}; }}
         QComboBox QAbstractItemView::item {{ min-height: 30px; padding: 6px 10px; color: {c.text}; }}
         QComboBox QAbstractItemView::item:hover {{ background: {c.subtle}; color: {c.text}; }}
-        #surfaceCard, #elevatedCard, #aiSuggestionCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; }}
+        #surfaceCard, #elevatedCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 10px; }}
         #elevatedCard {{ background: {c.elevated}; }}
         #resultCard {{ background: transparent; border: 0; }}
-        #aiSuggestionCard {{ background: {c.surface}; border-left: 2px solid {c.accent}; }}
-        #userMessage {{ color: {c.user_text}; background: {c.user_surface}; border: 0; border-radius: 12px; }}
+        #aiSuggestionCard {{ background: transparent; border: 0; border-left: 2px solid {c.accent}; border-radius: 0; }}
+        #userMessage {{ color: {c.user_text}; background: {c.user_surface}; border: 0; border-radius: 10px; }}
         #statusCard {{ background: transparent; border: 0; border-left: 2px solid {c.accent}; border-radius: 0; }}
         #resultTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-weight: 600; }}
         #countBadge {{ color: {c.text_muted}; background: transparent; border: 0; padding: 4px 0; font-size: 11px; }}
         #proposalStatus {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 4px 8px; font-size: 11px; }}
         #primaryProposal {{ background: {c.surface}; border: 1px solid {c.border}; border-left: 2px solid {c.accent}; border-radius: 8px; }}
         #proposalRow {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px; }}
-        #rankBadge {{ color: {c.accent}; background: transparent; border: 0; font-family: Inter; font-size: 11px; font-weight: 500; }}
+        #rankBadge {{ color: {c.accent}; background: transparent; border: 0; font-family: Consolas; font-size: 11px; font-weight: 500; }}
         #proposalTitle {{ color: {c.text}; }}
         #quotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
-        #quotaCode {{ color: {c.accent}; font-family: Inter; font-size: 12px; font-weight: 500; }}
+        #quotaCode {{ color: {c.accent}; font-family: Consolas; font-size: 12px; font-weight: 500; }}
         #clarificationRule {{ background: {c.border}; border: 0; max-height: 1px; margin-top: 3px; }}
         #clarificationTitle {{ color: {c.text}; font-size: 14px; font-weight: 500; padding-top: 3px; }}
         #clarificationHint {{ color: {c.text_muted}; font-size: 11px; }}
@@ -596,35 +594,39 @@ class QuotaQtApp(QMainWindow):
         #choiceButton:hover {{ color: {c.text}; border-color: {c.border_strong}; background: {c.subtle}; }}
         #choiceButton:pressed, #choiceButton:checked {{ color: {c.on_accent}; background: {c.accent_fill}; border-color: {c.accent_fill}; }}
         #choiceButton:focus {{ border-color: {c.focus}; }}
-        #aiKicker {{ color: {c.accent}; font-size: 13px; font-weight: 500; }}
-        #aiState {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 4px 8px; font-size: 11px; }}
+        #aiKicker {{ color: {c.text_secondary}; font-size: 12px; font-weight: 500; }}
+        #aiState {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 5px; padding: 4px 8px; font-size: 11px; }}
         #aiState[state="ready"] {{ color: {c.success}; background: {c.success_soft}; }}
         #aiState[state="needs_confirmation"] {{ color: {c.warning}; background: {c.warning_soft}; }}
         #aiState[state="empty"], #aiState[state="partial"] {{ color: {c.warning}; background: {c.warning_soft}; }}
-        #aiHeadline {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 18px; font-weight: 600; }}
+        #aiHeadline {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-size: 20px; font-weight: 600; }}
         #aiNote {{ color: {c.text_secondary}; font-size: 13px; }}
-        #aiSectionTitle {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
-        #aiReasonPanel, #aiPricingSummary {{ background: {c.subtle}; border: 0; border-radius: 7px; }}
-        #aiReasonRow {{ background: transparent; border: 0; border-bottom: 1px solid {c.border}; }}
-        #aiReasonMarker {{ color: {c.success}; font-family: Inter; font-size: 12px; font-weight: 500; }}
+        #aiSectionTitle {{ color: {c.text_secondary}; font-size: 12px; font-weight: 500; padding-top: 2px; }}
+        #aiReasonPanel, #aiPricingSummary {{ background: transparent; border: 0; }}
+        #aiPricingLine {{ background: transparent; border: 0; border-bottom: 1px solid {c.border}; }}
+        #aiPricingType {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; }}
+        #aiPricingCode {{ color: {c.accent}; font-family: Consolas; font-size: 12px; font-weight: 500; }}
+        #aiPricingName {{ color: {c.text}; font-size: 13px; font-weight: 500; }}
+        #aiPricingUnit {{ color: {c.text_muted}; font-family: Consolas; font-size: 11px; }}
+        #aiReasonRow {{ background: transparent; border: 0; }}
+        #aiReasonMarker {{ color: {c.success}; font-family: 'Source Han Sans SC'; font-size: 12px; font-weight: 500; }}
         #aiReasonMarker[missing="true"] {{ color: {c.warning}; }}
         #aiReasonLabel {{ color: {c.text_muted}; font-size: 12px; }}
-        #aiReasonValue, #aiSummaryLine {{ color: {c.text}; font-size: 13px; }}
+        #aiReasonValue {{ color: {c.text}; font-size: 13px; }}
         #aiNextStep {{ color: {c.text}; background: {c.warning_soft}; border-left: 2px solid {c.warning}; border-radius: 4px; padding: 9px 11px; font-size: 13px; font-weight: 500; }}
         #aiDetailsButton {{ color: {c.text_secondary}; background: transparent; border: 0; border-bottom: 1px solid transparent; border-radius: 0; padding: 6px 1px; font-size: 12px; }}
         #aiDetailsButton:hover {{ color: {c.text}; border-bottom-color: {c.border_strong}; }}
         #aiDetailsButton:focus {{ border-bottom: 2px solid {c.focus}; }}
-        #aiDetails {{ background: {c.subtle}; border: 1px solid {c.border}; border-radius: 7px; }}
+        #aiDetails {{ background: transparent; border: 0; border-top: 1px solid {c.border}; border-radius: 0; }}
         #aiDetailLine {{ color: {c.text_secondary}; font-family: 'Source Han Sans SC'; font-size: 12px; }}
         #warningText {{ color: {c.warning}; background: {c.warning_soft}; border: 0; border-left: 2px solid {c.warning}; border-radius: 4px; padding: 9px 11px; }}
         #errorText {{ color: {c.danger}; background: {c.danger_soft}; border: 0; border-left: 2px solid {c.danger}; border-radius: 4px; padding: 9px 11px; }}
         #composer {{ background: transparent; border: 0; }}
         #composerStatusRow {{ background: transparent; border: 0; }}
-        #composerMode {{ color: {c.accent}; background: {c.accent_soft}; border: 1px solid {c.border}; border-radius: 6px; padding: 3px 7px; font-size: 10px; font-weight: 500; }}
         #composerStatus {{ color: {c.text_muted}; font-size: 11px; }}
         #composerInputShell {{ background: {c.elevated}; border: 1px solid {c.border_strong}; border-radius: 12px; }}
         #composerInputShell:hover {{ border-color: {c.focus}; }}
-        #composerInputShell[focused="true"] {{ border: 2px solid {c.focus}; }}
+        #composerInputShell[focused="true"] {{ border: 1px solid {c.focus}; }}
         #composerEdit, #composerEdit:focus {{ color: {c.text}; min-height: 56px; font-size: 14px; border: 0; }}
         #composerAction {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 21px; padding: 10px; }}
         #composerAction:hover {{ background: {c.accent_hover}; border-color: {c.accent_hover}; }}
@@ -650,9 +652,10 @@ class QuotaQtApp(QMainWindow):
         #exampleButton {{ color: {c.text_secondary}; background: transparent; border: 0; border-bottom: 1px solid {c.border}; border-radius: 0; text-align: left; padding: 9px 2px; }}
         #exampleButton:hover {{ color: {c.text}; background: transparent; border-bottom-color: {c.border_strong}; }}
         #sessionList {{ background: transparent; color: {c.text_secondary}; border: 0; padding: 3px 0; outline: 0; }}
-        #sessionList::item {{ min-height: 24px; padding: 8px 10px; border-radius: 8px; margin: 1px 0; }}
+        #sessionList::item {{ min-height: 24px; padding: 8px 10px; border-radius: 6px; margin: 1px 0; }}
         #sessionList::item:hover {{ background: {c.subtle}; color: {c.text}; }}
         #sessionList::item:selected {{ background: {c.accent_soft}; color: {c.text}; }}
+        #sessionList::item:disabled {{ color: {c.text_muted}; background: transparent; }}
         #libraryPanel {{ background: transparent; border: 0; border-top: 1px solid {c.border}; border-radius: 0; }}
         #libraryTitle {{ color: {c.text}; font-size: 12px; font-weight: 500; }}
         QScrollBar:vertical {{ background: transparent; width: 9px; margin: 0; border: 0; }}
@@ -701,7 +704,11 @@ class QuotaQtApp(QMainWindow):
         _set_combo_data(self.discipline, str(self.settings.get("discipline") or "建筑"))
 
     def _ai_status_text(self) -> str:
-        if self.settings.get("ai_enabled") and self.settings.get("ai_model"):
+        connected = bool(self.settings.get("ai_enabled") and self.settings.get("ai_model"))
+        self.ai_status.setProperty("connected", connected)
+        self.ai_status.style().unpolish(self.ai_status)
+        self.ai_status.style().polish(self.ai_status)
+        if connected:
             return f"●  {provider_config(self.settings.get('ai_provider')).label} 已连接"
         return "○  AI 未连接"
 
@@ -741,7 +748,7 @@ class QuotaQtApp(QMainWindow):
         self._manual_scroll_active = False
         self.feed.clear_feed()
         self._show_welcome()
-        self.composer.setFocus()
+        self.composer.focus_input()
 
     def _select_session(self, session_id: str) -> None:
         if not session_id:
@@ -759,11 +766,17 @@ class QuotaQtApp(QMainWindow):
             widgets: dict[str, object] = {"ai": []}
             widgets["user"] = self.feed.add_user(str(turn.get("query") or ""))
             snapshot = turn.get("retrieval_snapshot")
-            if isinstance(snapshot, dict):
+            completed_attempts = [
+                attempt
+                for attempt in turn.get("ai_attempts") or []
+                if attempt.get("status") == "completed" and attempt.get("response")
+            ]
+            if completed_attempts:
+                latest = completed_attempts[-1]
+                widgets["result"] = None
+                widgets["ai"].append(self.feed.add_ai(str(latest["response"]), snapshot if isinstance(snapshot, dict) else None))
+            elif isinstance(snapshot, dict):
                 widgets["result"] = self.feed.add_result(snapshot)
-            for attempt in turn.get("ai_attempts") or []:
-                if attempt.get("status") == "completed" and attempt.get("response"):
-                    widgets["ai"].append(self.feed.add_ai(str(attempt["response"]), snapshot if isinstance(snapshot, dict) else None))
             if turn_id:
                 self._turn_widgets[turn_id] = widgets
 
@@ -776,7 +789,7 @@ class QuotaQtApp(QMainWindow):
         if self._session is not None:
             try:
                 session_store.save_session(self._session)
-            except OSError:
+            except (OSError, ValueError, session_store.SessionDeletedError):
                 log_exception("qt session save failed")
 
     def _clear_welcome_for_first_turn(self) -> None:
@@ -967,8 +980,11 @@ class QuotaQtApp(QMainWindow):
             reader_position = self.scroll.verticalScrollBar().value() if self._manual_scroll_active else None
             reader_epoch = self._manual_scroll_epoch
             self.scroll.cancel_scroll_motion()
+            turn_widgets = self._turn_widgets.setdefault(str(pending["turn_id"]), {"ai": []})
+            self.feed.remove_widget(turn_widgets.get("result"))
+            turn_widgets["result"] = None
             ai_widget = self.feed.add_ai(text, snapshot if isinstance(snapshot, dict) else None)
-            self._turn_widgets.setdefault(str(pending["turn_id"]), {"ai": []}).setdefault("ai", []).append(ai_widget)
+            turn_widgets.setdefault("ai", []).append(ai_widget)
             if reader_position is not None:
                 QTimer.singleShot(0, lambda value=reader_position, epoch=reader_epoch: self._restore_manual_scroll_position(value, epoch))
                 QTimer.singleShot(40, lambda value=reader_position, epoch=reader_epoch: self._restore_manual_scroll_position(value, epoch))

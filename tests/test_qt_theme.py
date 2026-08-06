@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -153,6 +154,37 @@ class QtThemeTests(unittest.TestCase):
             self.assertEqual(window.standard.currentText(), "清单 2024")
             self.assertEqual(window.discipline.currentText(), "专业 建筑")
             self.assertTrue(all(selector.chevron.pixmap() is not None for selector in window.context_selectors))
+            self.assertIsNone(window.findChild(QLabel, "pageSubtitle"))
+            self.assertIsNone(window.composer.findChild(QLabel, "composerMode"))
+        finally:
+            window.close()
+
+    def test_compact_shell_has_keyboard_focus_and_semantic_connection_state(self) -> None:
+        window = QuotaQtApp()
+        try:
+            window.show()
+            self.app.processEvents()
+            window.composer.focus_input()
+            self.app.processEvents()
+            self.assertTrue(window.composer.edit.hasFocus())
+            window.settings.update({"ai_enabled": False, "ai_model": ""})
+            window.ai_status.setText(window._ai_status_text())
+            self.assertFalse(window.ai_status.property("connected"))
+            window.settings.update({"ai_enabled": True, "ai_model": "deepseek-chat", "ai_provider": "deepseek"})
+            window.ai_status.setText(window._ai_status_text())
+            self.assertTrue(window.ai_status.property("connected"))
+        finally:
+            window._session = None
+            window.close()
+
+    def test_empty_history_uses_a_quiet_noninteractive_state(self) -> None:
+        window = QuotaQtApp()
+        try:
+            window.sessions.set_sessions([])
+            self.assertEqual(window.sessions.count(), 1)
+            item = window.sessions.item(0)
+            self.assertEqual(item.text(), "暂无历史分析")
+            self.assertFalse(bool(item.flags() & Qt.ItemFlag.ItemIsEnabled))
         finally:
             window.close()
 
@@ -179,7 +211,7 @@ class QtThemeTests(unittest.TestCase):
             )
             self.app.processEvents()
             texts = [label.text() for label in card.findChildren(QLabel)]
-            self.assertIn("候选定额 · 补充条件后确定", texts)
+            self.assertIn("候选定额，补充条件后确定", texts)
             self.assertIn("9-2-11", texts)
         finally:
             window.close()
@@ -242,10 +274,14 @@ class QtThemeTests(unittest.TestCase):
             self.app.processEvents()
             details = next(value for value in card.findChildren(QWidget) if value.objectName() == "aiDetails")
             labels = card.findChildren(QLabel)
-            summary_lines = [value.text() for value in labels if value.objectName() == "aiSummaryLine"]
+            pricing_text = " ".join(
+                value.text()
+                for value in labels
+                if value.objectName() in {"aiPricingType", "aiPricingCode", "aiPricingName", "aiPricingUnit"}
+            )
             self.assertFalse(details.isVisible())
-            self.assertIn("清单项目  ·  010903001-000  墙面卷材防水", summary_lines)
-            self.assertIn("对应定额  ·  9-2-11  改性沥青卷材热熔法一层 立面", summary_lines)
+            self.assertIn("清单 010903001-000 墙面卷材防水 m²", pricing_text)
+            self.assertIn("定额 9-2-11 改性沥青卷材热熔法一层 立面 10m²", pricing_text)
             button = next(value for value in card.findChildren(QPushButton) if value.objectName() == "aiDetailsButton")
             button.click()
             self.app.processEvents()
@@ -259,6 +295,41 @@ class QtThemeTests(unittest.TestCase):
             visible_primary_text = " ".join(value.text() for value in labels if not details.isAncestorOf(value))
             self.assertIn("010903001-000", visible_primary_text)
             self.assertIn("9-2-11", visible_primary_text)
+        finally:
+            window.close()
+
+    def test_completed_session_shows_one_final_surface_instead_of_duplicate_results(self) -> None:
+        window = QuotaQtApp()
+        snapshot = {
+            "work_items": [{"location": "地下室外墙", "material": "SBS防水卷材"}],
+            "proposals": [
+                {
+                    "status": "ready_for_review",
+                    "bill_code": "010903001-000",
+                    "bill_title": "墙面卷材防水",
+                    "bill_unit": "m²",
+                    "quota_lines": [{"code": "9-2-11", "title": "改性沥青卷材热熔法一层 立面", "unit": "10m²"}],
+                }
+            ],
+        }
+        session = {
+            "id": "S1",
+            "turns": [
+                {
+                    "turn_id": "T1",
+                    "query": "地下室外墙 4mm 厚 SBS 防水卷材",
+                    "retrieval_snapshot": snapshot,
+                    "ai_attempts": [{"status": "completed", "response": "## 结论\n采用热熔法施工。"}],
+                }
+            ],
+        }
+        try:
+            with patch("app.qt_main.session_store.load_session", return_value=session):
+                window._select_session("S1")
+            self.app.processEvents()
+            self.assertEqual(len(window.feed.findChildren(QWidget, "resultCard")), 0)
+            self.assertEqual(len(window.feed.findChildren(QWidget, "aiSuggestionCard")), 1)
+            self.assertIsNone(window._turn_widgets["T1"]["result"])
         finally:
             window.close()
 
