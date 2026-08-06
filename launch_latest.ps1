@@ -5,17 +5,22 @@ $releaseRoot = Join-Path $projectRoot "build\authorized-public"
 $latestExe = $null
 
 if (Test-Path -LiteralPath $releaseRoot) {
-    $latestExe = Get-ChildItem -LiteralPath $releaseRoot -Directory -Filter "v*" |
+    $releaseDirectories = Get-ChildItem -LiteralPath $releaseRoot -Directory -Filter "v*" |
         Sort-Object {
             try { [version]$_.Name.Substring(1) } catch { [version]"0.0" }
-        } -Descending |
-        ForEach-Object {
-            $candidate = Join-Path $_.FullName "山东定额助手-完整版\山东定额助手.exe"
-            if (Test-Path -LiteralPath $candidate) {
-                Get-Item -LiteralPath $candidate
-                break
-            }
+        } -Descending
+    foreach ($releaseDirectory in $releaseDirectories) {
+        $candidate = Get-ChildItem -LiteralPath $releaseDirectory.FullName -Recurse -File -Filter "*.exe" |
+            Where-Object {
+                $_.Name -notlike "*Setup*" -and
+                $_.DirectoryName -notmatch "\\_internal(?:\\|$)"
+            } |
+            Select-Object -First 1
+        if ($candidate) {
+            $latestExe = $candidate
+            break
         }
+    }
 }
 
 if ($latestExe) {
@@ -33,8 +38,8 @@ if ((Test-Path -LiteralPath $pythonw) -and (Test-Path -LiteralPath $entry) -and 
 
 Add-Type -AssemblyName PresentationFramework
 [System.Windows.MessageBox]::Show(
-    "未找到可启动的山东定额助手。请先完成一次授权公共版构建。",
-    "山东定额助手",
+    "No runnable Shandong Quota Assistant release was found.",
+    "Shandong Quota Assistant",
     "OK",
     "Error"
 ) | Out-Null
