@@ -51,7 +51,7 @@ _DISCIPLINE_SIGNALS = {
         (r"\bDN\s*\d+\b", 3),
     ),
     "municipal": (
-        (r"市政|道路|路基|路面|桥涵|隧道|检查井|雨水井|污水井|路灯", 10),
+        (r"市政|道路|内部路|小区路|混凝土路|路基|路面|桥涵|隧道|检查井|雨水井|污水井|路灯", 10),
         (r"雨水管|污水管|市政管网", 8),
     ),
     "landscape": (
@@ -70,6 +70,7 @@ _OBJECT_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("风管", ("风管",)),
     ("防水", ("防水", "卷材", "涂膜")),
     ("混凝土", ("混凝土", "现浇", "预制")),
+    ("道路路面", ("道路", "内部路", "小区路", "混凝土路", "路面")),
     ("砌筑", ("砌筑", "砖墙", "砌体", "实心砖", "空心砖")),
     ("土方", ("土方", "沟槽", "基坑", "挖土", "回填")),
     ("乔木", ("乔木",)),
@@ -106,7 +107,7 @@ _MISSING_FEATURE_VALUE = "未明确（原描述未提供）"
 
 def infer_discipline(description: str) -> str | None:
     """Return one high-confidence discipline; ambiguous wording stays explicit."""
-    text = str(description or "")
+    text = normalize_trade_description(str(description or ""))
     scores = {
         discipline: sum(weight for pattern, weight in signals if re.search(pattern, text, re.I))
         for discipline, signals in _DISCIPLINE_SIGNALS.items()
@@ -206,7 +207,10 @@ def _bill_feature_description(work_item: WorkItem, characteristics: object) -> s
         elif any(term in requirement for term in ("部位", "位置")):
             missing.append("部位未明确")
         material_required = any(term in requirement for term in ("品种", "种类", "材质", "材料"))
-        if material_required:
+        secondary_material = bool(re.search(r"嵌缝|填缝|密封|掺和|添加剂|养护", requirement))
+        if material_required and secondary_material:
+            missing.append(_MISSING_FEATURE_VALUE)
+        elif material_required:
             if work_item.material:
                 values.append(work_item.material)
             else:
@@ -345,6 +349,14 @@ def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: 
         conflicts.append("施工部位冲突：室内/内墙做法不得套用室外/外墙子目")
     if re.search(r"直埋|埋地", target) and not re.search(r"直埋|埋地", source):
         conflicts.append("施工部位冲突：候选为直埋/埋地做法，施工描述未说明直埋或埋地")
+    if "道路路面" in source_objects:
+        candidate_discipline = str(candidate.get("discipline") or "")
+        if candidate_discipline and candidate_discipline != "municipal":
+            conflicts.append("专业冲突：道路路面主体项目必须使用市政专业候选")
+        for specialized in ("隧道", "人行道", "基层", "铣刨", "板桩", "支撑", "构件运输"):
+            if specialized in target_title and specialized not in source:
+                conflicts.append(f"道路类型冲突：候选为{specialized}专用项目，施工描述未说明该做法")
+                break
     if source_objects & {"给水管道", "排水管道"} and re.search(r"制粉|原煤|送粉|烟道|风道|煤管|通风|燃气|蒸汽|油管|气体驱动", target):
         conflicts.append("介质用途冲突：给排水管道不得套用制粉、风道、燃气、蒸汽或工艺管道子目")
     return list(dict.fromkeys(conflicts))
@@ -408,6 +420,13 @@ def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
         semantic_hit = True
     if work_item.material and _normalized_trade_text(work_item.material) in title:
         score += 75 if len(work_item.material) >= 5 else 55
+        semantic_hit = True
+    if (
+        "道路路面" in source_families
+        and re.fullmatch(r"水泥混凝土(?:路面)?", title)
+        and str(bill.get("code") or "").startswith("040203")
+    ):
+        score += 180
         semantic_hit = True
     if _unit_dimension(bill.get("unit")) == "mass" and "钢筋" in title and "钢筋" not in source:
         # A concrete pouring description can lexically resemble a rebar bill
@@ -582,6 +601,12 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
             continue
         question = _question_from_hint(work_item.id, hint, start + len(questions), facets)
         if (
+            question.field == "method"
+            and re.search(r"人工|机械", hint)
+            and not any(re.search(r"人工|机械", str(value.get("title") or "")) for value in selected_links)
+        ):
+            continue
+        if (
             work_item.object in {"配管", "电缆", "风管", "给水管道", "排水管道", "管道"}
             and question.field == "method"
             and re.search(r"人工|机械", hint)
@@ -664,7 +689,15 @@ def _assemble_proposal(
             None,
         )
         if thickness_adjustment is not None:
-            selected.append(thickness_adjustment)
+            adjustment_factor = _thickness_adjustment_factor(
+                work_item,
+                selected[0] if selected else None,
+                thickness_adjustment,
+            )
+            if adjustment_factor is None or abs(adjustment_factor) > 1e-9:
+                if adjustment_factor is not None:
+                    thickness_adjustment["computed_factor"] = adjustment_factor
+                selected.append(thickness_adjustment)
     if attributes.get("distance") is not None and by_role.get("transport"):
         selected.append(by_role["transport"][0])
     if "换算" in work_item.source_span and by_role.get("conversion"):
@@ -720,6 +753,8 @@ def _assemble_proposal(
         reasons = link.get("match_reasons") or ["由所选清单的本地关联表召回"]
         evidence = tuple(value for value in (references.get(str(link.get("record_id") or "")),) if value)
         factor = float(link["factor"]) if isinstance(link.get("factor"), (int, float)) else None
+        if role == "adjustment" and isinstance(link.get("computed_factor"), (int, float)):
+            factor = float(link["computed_factor"])
         converted_factor = _thickness_conversion_factor(bill.get("unit"), link.get("unit"), work_item) if role == "main" else None
         if converted_factor is not None:
             factor = converted_factor
@@ -923,6 +958,34 @@ def _thickness_mm(work_item: WorkItem) -> float | None:
     except (TypeError, ValueError):
         return None
     return thickness if thickness > 0 else None
+
+
+def _title_measurement_mm(value: object, labels: str) -> float | None:
+    match = re.search(
+        rf"(?:{labels})\s*(\d+(?:\.\d+)?)\s*(mm|毫米|cm|厘米|m|米)",
+        str(value or ""),
+        re.I,
+    )
+    if not match:
+        return None
+    measurement = float(match.group(1))
+    unit = match.group(2).lower()
+    return measurement * (10 if unit in {"cm", "厘米"} else 1000 if unit in {"m", "米"} else 1)
+
+
+def _thickness_adjustment_factor(
+    work_item: WorkItem,
+    main: dict[str, Any] | None,
+    adjustment: dict[str, Any],
+) -> float | None:
+    thickness = _thickness_mm(work_item)
+    if thickness is None or not main:
+        return None
+    base = _title_measurement_mm(main.get("title"), r"厚度|厚")
+    increment = _title_measurement_mm(adjustment.get("title"), r"每增减|每增加|每减少|增减")
+    if base is None or increment is None or increment <= 0:
+        return None
+    return round((thickness - base) / increment, 6)
 
 
 def _requires_thickness_conversion(bill_unit: object, quota_unit: object) -> bool:

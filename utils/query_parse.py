@@ -51,6 +51,12 @@ def normalize_trade_description(value: str) -> str:
     )
     for pattern, replacement in replacements:
         text = re.sub(pattern, replacement, text, flags=re.I)
+    if (
+        re.search(r"小区.*(?:道路|内部路)|(?:混凝土路|内部路)", text)
+        and re.search(r"混凝土|砼|C\s*\d{2,3}", text, re.I)
+        and "水泥混凝土路面" not in text
+    ):
+        text = f"{text} 水泥混凝土路面"
     text = re.sub(
         r"(?P<size>\d+(?:\.\d+)?)\s*的\s*(?P<kind>JDG|KBG|SC|PVC)",
         lambda match: f"{match.group('kind').upper()}{match.group('size')}",
@@ -118,6 +124,12 @@ def parse_query_conditions(query: str) -> QueryConditions:
     else:
         method = None
     thickness_mm = _measurement_mm(text, r"厚度|板厚|壁厚|厚")
+    if thickness_mm is None:
+        suffix_thickness = re.search(r"(\d+(?:\.\d+)?)\s*(cm|厘米|mm|毫米|m|米)\s*厚", text, re.I)
+        if suffix_thickness:
+            value = float(suffix_thickness.group(1))
+            unit = suffix_thickness.group(2).lower()
+            thickness_mm = value * (10 if unit in {"cm", "厘米"} else 1000 if unit in {"m", "米"} else 1)
     diameter_mm = _measurement_mm(text, r"土球直径|土球|公称直径|外径|管径|直径")
     diameter_match = re.search(r"(?<![A-Za-z])DN\s*(\d+(?:\.\d+)?)", text, re.I)
     if diameter_mm is None and diameter_match:

@@ -478,6 +478,41 @@ class RealCataloguePricingRegressionTests(unittest.TestCase):
         self.assertIn("040202014-000", bills)
         self.assertIn("2-1-18", quotas)
 
+    def test_residential_concrete_road_selects_road_surface_instead_of_support(self):
+        result, bills, quotas = self._proposal_codes(
+            "我要在小区的室外道路上修一条混凝土路,20cm厚,c30混凝土",
+            "building",
+        )
+
+        self.assertEqual(len(result["work_items"]), 1)
+        self.assertEqual(result["discipline"], "municipal")
+        self.assertTrue(result["discipline_auto_switched"])
+        self.assertIn("040203007-000", bills)
+        self.assertIn("2-2-59", quotas)
+        self.assertNotIn("040302013-000", bills)
+        self.assertNotIn("010202005-000", bills)
+        self.assertFalse(result.get("clarification_questions"))
+
+    def test_thirty_centimetre_internal_road_uses_ten_thickness_adjustments(self):
+        result, bills, quotas = self._proposal_codes(
+            "我要在小区修一条内部路,用C20混凝土30cm厚",
+            "building",
+        )
+
+        self.assertEqual(len(result["work_items"]), 1)
+        self.assertEqual(result["discipline"], "municipal")
+        self.assertTrue(result["discipline_auto_switched"])
+        self.assertIn("040203007-000", bills)
+        self.assertIn("2-2-59", quotas)
+        proposal = result["proposals"][0]
+        adjustment = next(line for line in proposal["quota_lines"] if line["code"] == "2-2-60")
+        self.assertEqual(adjustment["factor"], 10.0)
+        self.assertIn("混凝土强度等级：C20", proposal["bill_feature_description"])
+        self.assertIn("厚度：300mm", proposal["bill_feature_description"])
+        self.assertIn("嵌缝材料：未明确", proposal["bill_feature_description"])
+        self.assertFalse(result.get("clarification_questions"))
+        self.assertNotIn("010202005-000", bills)
+
     def test_newcomer_tree_wording_selects_80cm_soil_ball_bracket(self):
         _result, bills, quotas = self._proposal_codes("种一棵土球80公分的香樟", "landscape")
         self.assertIn("050103001-000", bills)

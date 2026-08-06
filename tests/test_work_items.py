@@ -33,6 +33,16 @@ class WorkItemSegmentationTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].source_span, "挖沟槽土方，三类土，机械开挖，深2.5m")
 
+    def test_road_material_grade_and_suffix_thickness_stay_on_one_item(self):
+        items = segment_description("我要在小区修一条内部路,用C20混凝土30cm厚", discipline="municipal")
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].object, "路面")
+        attributes = {attribute.key: attribute for attribute in items[0].attributes}
+        self.assertEqual(attributes["strength_grade"].value, "C20")
+        self.assertEqual(attributes["thickness"].value, 300.0)
+        self.assertEqual(attributes["thickness"].unit, "mm")
+
     def test_typed_attributes_and_negative_constraints_keep_source_text(self):
         item = extract_work_item(
             "4mm SBS防水两道，不含保护层和外运",

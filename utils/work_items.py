@@ -45,11 +45,11 @@ def _number_source(text: str, pattern: str) -> tuple[float, str, str] | None:
     if not match:
         return None
     groups = match.groupdict()
-    raw_value = groups.get("value") or groups.get("value2")
+    raw_value = groups.get("value") or groups.get("value2") or groups.get("value3")
     if raw_value is None:
         return None
     value = float(raw_value)
-    unit = (groups.get("unit") or groups.get("unit2") or "mm").lower()
+    unit = (groups.get("unit") or groups.get("unit2") or groups.get("unit3") or "mm").lower()
     normalized_unit = unit
     if unit in {"毫米", "厚"}:
         normalized_unit = "mm"
@@ -76,7 +76,8 @@ def extract_work_item(source_span: str, *, item_id: str, discipline: str | None 
     thickness = _number_source(
         analysis_text,
         r"(?:(?:厚度|板厚|壁厚|厚)\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米|m|米)?|"
-        r"(?P<value2>\d+(?:\.\d+)?)\s*(?P<unit2>mm|毫米|cm|厘米|m|米|厚)(?=\s*(?:SBS|防水|水泥|砂浆|混凝土|灰土|保温|保护|基层|面层)))",
+        r"(?P<value2>\d+(?:\.\d+)?)\s*(?P<unit2>mm|毫米|cm|厘米|m|米|厚)(?=\s*(?:SBS|防水|水泥|砂浆|混凝土|灰土|保温|保护|基层|面层))|"
+        r"(?P<value3>\d+(?:\.\d+)?)\s*(?P<unit3>mm|毫米|cm|厘米|m|米)\s*厚)",
     )
     if thickness is None:
         fallback = re.search(r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|毫米|cm|厘米|m|米)(?=\s*(?:SBS|防水|水泥|砂浆|混凝土|灰土|保温|保护|基层|面层))", analysis_text, re.I)
@@ -167,6 +168,13 @@ def _starts_new_item(fragment: str) -> bool:
     objects = sum(term in compact for term in _OBJECT_TERMS)
     actions = sum(term in compact for term in _ACTION_TERMS)
     materials = sum(term.lower() in compact.lower() for term in _MATERIALS)
+    if (
+        actions == 0
+        and "混凝土" in compact
+        and re.search(r"(?:C\s*\d{2,3}|\d+(?:\.\d+)?\s*(?:mm|毫米|cm|厘米|m|米)\s*厚)", compact, re.I)
+        and not any(term in compact for term in _OBJECT_TERMS if term not in {"混凝土"})
+    ):
+        return False
     return bool(objects and (actions or materials or re.search(r"\d+(?:\.\d+)?(?:mm|毫米|cm|厘米|厚)", compact)))
 
 

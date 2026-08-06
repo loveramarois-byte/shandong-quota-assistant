@@ -2,10 +2,45 @@ from __future__ import annotations
 
 import unittest
 
-from utils.ai_structured import parse_structured_ai_response, validate_structured_ai_response
+from utils.ai_structured import build_structured_ai_prompt, parse_structured_ai_response, validate_structured_ai_response
 
 
 class StructuredAiTests(unittest.TestCase):
+    def test_prompt_only_sends_evidence_referenced_by_local_proposals(self):
+        result = {
+            "discipline": "municipal",
+            "quota_edition": "2025",
+            "standard_edition": "2024",
+            "work_items": [{"id": "W1", "source_span": "混凝土路面"}],
+            "clarification_questions": [],
+            "proposals": [{
+                "work_item_id": "W1",
+                "bill_record_id": "bill:road",
+                "quota_lines": [{"record_id": "quota:road", "source_link_record_id": "link:road", "role": "main"}],
+                "review_candidates": [],
+                "status": "ready_for_review",
+            }],
+            "bills": [
+                {"record_id": "bill:road", "code": "040203007-000", "title": "水泥混凝土"},
+                {"record_id": "bill:unrelated", "code": "010202005-000", "title": "预制钢筋混凝土板桩"},
+            ],
+            "quotas": [],
+            "links": [
+                {"record_id": "link:road", "bill_record_id": "bill:road", "quota_record_id": "quota:road", "code": "2-2-59", "title": "水泥混凝土路面"},
+                {"record_id": "link:unrelated", "bill_record_id": "bill:unrelated", "quota_record_id": "quota:unrelated", "code": "19-2-1", "title": "构件运输"},
+            ],
+            "guidance": [{"record_id": "guide:unrelated", "title": "无关说明"}],
+        }
+
+        prompt = build_structured_ai_prompt("混凝土路面", result)
+
+        self.assertIn("bill:road", prompt)
+        self.assertIn("link:road", prompt)
+        self.assertIn("quota:road", prompt)
+        self.assertNotIn("bill:unrelated", prompt)
+        self.assertNotIn("link:unrelated", prompt)
+        self.assertNotIn("guide:unrelated", prompt)
+        self.assertLess(len(prompt), 8000)
     def test_json_code_fence_is_parsed(self):
         payload = parse_structured_ai_response('```json\n{"analysis_version":"1","work_items":[],"clarification_questions":[],"proposals":[]}\n```')
         self.assertEqual(payload["analysis_version"], "1")

@@ -173,11 +173,26 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
 
 
 def build_structured_ai_prompt(description: str, result: dict[str, Any]) -> str:
-    allowed_bills = [str(value.get("record_id") or "") for value in result.get("bills") or []]
-    allowed_quotas = list(dict.fromkeys([
-        *[str(value.get("record_id") or "") for value in result.get("quotas") or []],
-        *[str(value.get("quota_record_id") or "") for value in result.get("links") or []],
-    ]))
+    selected_bill_ids: set[str] = set()
+    selected_quota_ids: set[str] = set()
+    selected_link_ids: set[str] = set()
+    selected_references: set[str] = set()
+    for proposal in result.get("proposals") or []:
+        bill_id = str(proposal.get("bill_record_id") or "")
+        if bill_id:
+            selected_bill_ids.add(bill_id)
+        selected_references.update(str(value) for value in proposal.get("evidence_refs") or [] if value)
+        for line in [*(proposal.get("quota_lines") or []), *(proposal.get("review_candidates") or [])]:
+            quota_id = str(line.get("record_id") or "")
+            link_id = str(line.get("source_link_record_id") or "")
+            if quota_id:
+                selected_quota_ids.add(quota_id)
+            if link_id:
+                selected_link_ids.add(link_id)
+            selected_references.update(str(value) for value in line.get("evidence_refs") or [] if value)
+
+    allowed_bills = sorted(selected_bill_ids)
+    allowed_quotas = sorted(selected_quota_ids)
     local_draft = {
         "work_items": result.get("work_items") or [],
         "clarification_questions": result.get("clarification_questions") or [],
@@ -186,6 +201,17 @@ def build_structured_ai_prompt(description: str, result: dict[str, Any]) -> str:
     evidence = []
     for group in ("bills", "quotas", "links", "guidance"):
         for item in result.get(group) or []:
+            record_id = str(item.get("record_id") or "")
+            reference = str(item.get("reference") or "")
+            quota_id = str(item.get("quota_record_id") or "")
+            if group == "bills" and record_id not in selected_bill_ids:
+                continue
+            if group == "quotas" and record_id not in selected_quota_ids:
+                continue
+            if group == "links" and record_id not in selected_link_ids and quota_id not in selected_quota_ids:
+                continue
+            if group == "guidance" and reference not in selected_references:
+                continue
             evidence.append({
                 "reference": item.get("reference"),
                 "record_id": item.get("record_id"),
@@ -230,7 +256,7 @@ discipline={json.dumps(result.get('discipline'), ensure_ascii=False)}
 {json.dumps(local_draft, ensure_ascii=False)}
 
 本地证据：
-{json.dumps(evidence[:80], ensure_ascii=False)}
+{json.dumps(evidence, ensure_ascii=False)}
 
 严格返回此结构，所有数组均必须存在：
 {{

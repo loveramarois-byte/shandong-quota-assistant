@@ -236,8 +236,23 @@ class QtThemeTests(unittest.TestCase):
             window.ai_status.setText(window._ai_status_text())
             self.assertFalse(window.ai_status.property("connected"))
             window.settings.update({"ai_enabled": True, "ai_model": "deepseek-chat", "ai_provider": "deepseek"})
+            window._ai_connection_state = "configured"
+            window.ai_status.setText(window._ai_status_text())
+            self.assertIn("已配置", window.ai_status.text())
+            self.assertFalse(window.ai_status.property("connected"))
+            window._ai_connection_state = "connected"
             window.ai_status.setText(window._ai_status_text())
             self.assertTrue(window.ai_status.property("connected"))
+            self.assertIn("已连接", window.ai_status.text())
+            window._ai_connection_state = "unavailable"
+            window.ai_status.setText(window._ai_status_text())
+            self.assertIn("暂不可用", window.ai_status.text())
+            self.assertFalse(window.ai_status.property("connected"))
+            window._ai_connection_state = "configured"
+            window._pending[91] = {"superseded": False}
+            window._on_ai_error(91, "ccSwitch（本机） HTTP 503")
+            self.assertEqual(window._ai_connection_state, "unavailable")
+            self.assertIn("暂不可用", window.ai_status.text())
         finally:
             window._session = None
             window.close()

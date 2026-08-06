@@ -10,6 +10,7 @@ import csv
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -365,6 +366,9 @@ class QuotaQtApp(QMainWindow):
         setup_logging()
         self.log = logging.getLogger("qt-app")
         self.settings = load_settings()
+        self._ai_connection_state = (
+            "configured" if self.settings.get("ai_enabled") and self.settings.get("ai_model") else "disabled"
+        )
         self.theme_name = str(self.settings.get("theme") or "light")
         self.tokens: ThemeTokens = get_theme(self.theme_name)
         self.signals = WorkerSignals()
@@ -722,12 +726,18 @@ class QuotaQtApp(QMainWindow):
         _set_combo_data(self.discipline, str(self.settings.get("discipline") or "建筑"))
 
     def _ai_status_text(self) -> str:
-        connected = bool(self.settings.get("ai_enabled") and self.settings.get("ai_model"))
+        configured = bool(self.settings.get("ai_enabled") and self.settings.get("ai_model"))
+        state = self._ai_connection_state if configured else "disabled"
+        connected = state == "connected"
         self.ai_status.setProperty("connected", connected)
         self.ai_status.style().unpolish(self.ai_status)
         self.ai_status.style().polish(self.ai_status)
         if connected:
             return f"●  {provider_config(self.settings.get('ai_provider')).label} 已连接"
+        if state == "unavailable":
+            return f"○  {provider_config(self.settings.get('ai_provider')).label} 暂不可用"
+        if state == "configured":
+            return f"○  {provider_config(self.settings.get('ai_provider')).label} 已配置"
         return "○  AI 未连接"
 
     def _show_welcome(self) -> None:
@@ -1014,6 +1024,8 @@ class QuotaQtApp(QMainWindow):
         pending = self._pending.get(request_id)
         if not pending:
             return
+        self._ai_connection_state = "connected"
+        self.ai_status.setText(self._ai_status_text())
         session_store.finish_ai_attempt(session_store_save_target(pending), pending["turn_id"], request_id=request_id, status="completed", response=text, validation=validation)
         self._save_session()
         if not pending.get("superseded"):
@@ -1041,6 +1053,11 @@ class QuotaQtApp(QMainWindow):
 
     def _on_ai_error(self, request_id: int, detail: str) -> None:
         pending = self._pending.get(request_id) or {}
+        self._ai_connection_state = "unavailable"
+        self.ai_status.setText(self._ai_status_text())
+        upstream_error = re.search(r"HTTP\s+(502|503)", detail, re.I)
+        if upstream_error and str(self.settings.get("ai_provider") or "") == "ccswitch":
+            detail = f"ccSwitch 上游服务暂不可用（HTTP {upstream_error.group(1)}）"
         if not pending.get("superseded"):
             self.feed.add_warning(f"AI 暂不可用：{detail}。本地套价草案仍可继续使用。", error=True)
         self._pending.pop(request_id, None)
@@ -1062,6 +1079,9 @@ class QuotaQtApp(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self.settings = sanitize_settings({**self.settings, **dialog.values()})
+        self._ai_connection_state = (
+            "configured" if self.settings.get("ai_enabled") and self.settings.get("ai_model") else "disabled"
+        )
         save_settings(self.settings)
         self.ai_status.setText(self._ai_status_text())
 
