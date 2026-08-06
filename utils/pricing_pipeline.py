@@ -159,6 +159,8 @@ def _formatted_attribute(work_item: WorkItem, key: str) -> str:
         return ""
     if key == "layers":
         return f"{attribute.value:g}层" if isinstance(attribute.value, (int, float)) else f"{attribute.value}层"
+    if key == "strength_grade":
+        return str(attribute.value or attribute.source or "").upper()
     if key in {"thickness", "diameter", "depth", "distance"}:
         value = f"{attribute.value:g}" if isinstance(attribute.value, (int, float)) else str(attribute.value)
         return value + str(attribute.unit or "")
@@ -578,6 +580,9 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
         "material": _material_facets(all_links),
         "plant_spec": _facet_values(all_links, ("土球直径20cm以内", "土球直径40cm以内", "土球直径60cm以内", "裸根")),
         "method": _facet_values(all_links, ("热熔法", "冷粘法", "自粘法", "热风焊接法", "明配", "暗配", "人工", "机械")),
+        "thickness": ("20cm", "25cm", "30cm", "其他厚度")
+        if "道路路面" in _family_hits(work_item.search_text(), _OBJECT_FAMILIES)
+        else (),
     }
     if work_item.material:
         known_fields.add("material")
@@ -723,6 +728,12 @@ def _assemble_proposal(
         extra_hints.append("给排水管材未明确，请补充钢管、塑料管或复合管等真实管材")
     if int(attributes.get("layers") or 1) > 1 and not by_role.get("adjustment"):
         extra_hints.append("候选未形成层数增减项，请确认设计遍数如何组合")
+    if (
+        "道路路面" in _family_hits(work_item.search_text(), _OBJECT_FAMILIES)
+        and attributes.get("thickness") is None
+        and any(re.search(r"厚度|厚", str(value.get("title") or "")) for value in main_options)
+    ):
+        extra_hints.append("水泥混凝土路面厚度未明确，会影响厚度增减定额组合")
     method_facets = [value for value in ("热熔", "冷粘", "自粘", "明配", "暗配", "人工", "机械") if any(value in str(link.get("title") or "") for link in main_options[:12])]
     if len(method_facets) > 1 and not any(value in work_item.source_span for value in method_facets):
         extra_hints.append("候选区分" + "/".join(method_facets[:4]) + "施工方法，请补充施工方法")

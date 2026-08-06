@@ -52,7 +52,10 @@ def normalize_trade_description(value: str) -> str:
     for pattern, replacement in replacements:
         text = re.sub(pattern, replacement, text, flags=re.I)
     if (
-        re.search(r"小区.*(?:道路|内部路)|(?:混凝土路|内部路)", text)
+        re.search(
+            r"小区.*(?:道路|内部路|路面)|(?:混凝土路|内部路)|(?:建|修|铺|做)[^，,；;。]{0,10}(?:一条|一段)?路",
+            text,
+        )
         and re.search(r"混凝土|砼|C\s*\d{2,3}", text, re.I)
         and "水泥混凝土路面" not in text
     ):
@@ -69,7 +72,7 @@ def normalize_trade_description(value: str) -> str:
         text = f"{text} 乔木"
     if re.search(r"基础(?:下|下面|底下)", text) and re.search(r"素?混凝土", text) and "垫层" not in text:
         text = f"{text} 基础垫层"
-    if re.search(r"(?:垫层|基层|保温|防水)", text) and not re.search(r"(?:厚度|板厚|壁厚|厚)\s*\d", text):
+    if re.search(r"(?:垫层|基层|路面|保温|防水)", text) and not re.search(r"(?:厚度|板厚|壁厚|厚)\s*\d", text):
         text = re.sub(
             r"(?<![A-Za-z\d])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm|毫米|厘米)(?![A-Za-z])",
             lambda match: f"厚度{match.group('value')}{match.group('unit')}",

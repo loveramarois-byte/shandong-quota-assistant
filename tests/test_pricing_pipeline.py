@@ -513,6 +513,40 @@ class RealCataloguePricingRegressionTests(unittest.TestCase):
         self.assertFalse(result.get("clarification_questions"))
         self.assertNotIn("010202005-000", bills)
 
+    def test_build_a_road_wording_with_bare_thickness_selects_municipal_surface(self):
+        result, bills, quotas = self._proposal_codes(
+            "我在小区里打算建一条路,c20混凝土30cm",
+            "building",
+        )
+
+        self.assertEqual(len(result["work_items"]), 1)
+        self.assertEqual(result["discipline"], "municipal")
+        self.assertTrue(result["discipline_auto_switched"])
+        self.assertIn("040203007-000", bills)
+        self.assertIn("2-2-59", quotas)
+        proposal = result["proposals"][0]
+        adjustment = next(line for line in proposal["quota_lines"] if line["code"] == "2-2-60")
+        self.assertEqual(adjustment["factor"], 10.0)
+        self.assertIn("混凝土强度等级：C20", proposal["bill_feature_description"])
+        self.assertNotIn("010202005-000", bills)
+        self.assertNotIn("010202009-000", bills)
+
+    def test_build_a_road_without_thickness_asks_for_it_instead_of_confirming_spray_concrete(self):
+        result, bills, quotas = self._proposal_codes(
+            "我在小区里打算建一条路,c20混凝土",
+            "building",
+        )
+
+        self.assertEqual(result["discipline"], "municipal")
+        self.assertTrue(result["discipline_auto_switched"])
+        self.assertIn("040203007-000", bills)
+        self.assertIn("2-2-59", quotas)
+        self.assertNotIn("010202009-000", bills)
+        proposal = result["proposals"][0]
+        self.assertEqual(proposal["status"], "needs_clarification")
+        thickness = next(value for value in result["clarification_questions"] if value["field"] == "thickness")
+        self.assertEqual(thickness["options"], ["20cm", "25cm", "30cm", "其他厚度"])
+
     def test_newcomer_tree_wording_selects_80cm_soil_ball_bracket(self):
         _result, bills, quotas = self._proposal_codes("种一棵土球80公分的香樟", "landscape")
         self.assertIn("050103001-000", bills)
