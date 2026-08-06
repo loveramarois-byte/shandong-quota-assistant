@@ -1,6 +1,6 @@
 # 山东定额助手 · Design System
 
-**Version:** 0.9.1
+**Version:** 0.9.2
 **Product:** Windows AI 套价辅助工具
 **Design dials:** variance 5/10 · motion 3/10 · density 5/10
 

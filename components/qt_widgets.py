@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from html import escape
 from typing import Callable
 
-from PyQt6.QtCore import QAbstractAnimation, QByteArray, QEasingCurve, QEvent, QPropertyAnimation, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QAbstractAnimation, QByteArray, QEasingCurve, QEvent, QMimeData, QPropertyAnimation, QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPen, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QFrame,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -32,6 +34,7 @@ from PyQt6.QtWidgets import (
 
 from utils.paths import resource_path
 from utils.ai_presentation import build_ai_suggestion_view_model, option_presentation
+from utils.formatting import candidate_row_tsv, candidate_row_values, discipline_label
 
 
 def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: bool = False) -> QFont:
@@ -45,6 +48,38 @@ def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: boo
     font.setPixelSize(size)
     font.setWeight(weight)
     return font
+
+
+def candidate_row_mime(item: dict) -> QMimeData:
+    fields = candidate_row_values(item)
+    mime = QMimeData()
+    mime.setText(candidate_row_tsv(item))
+    cells = "".join(f'<td style="mso-number-format:\'\\@\';">{escape(value)}</td>' for value in fields)
+    mime.setHtml(f"<table><tr>{cells}</tr></table>")
+    return mime
+
+
+def _copy_row_button(item: dict) -> QPushButton:
+    button = QPushButton("复制整行")
+    button.setObjectName("copyRowButton")
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.setAccessibleName("复制整行到剪贴板")
+    timer = QTimer(button)
+    timer.setSingleShot(True)
+
+    def restore() -> None:
+        button.setText("复制整行")
+        button.setEnabled(True)
+
+    def copy_row() -> None:
+        QApplication.clipboard().setMimeData(candidate_row_mime(item))
+        button.setText("已复制")
+        button.setEnabled(False)
+        timer.start(1500)
+
+    timer.timeout.connect(restore)
+    button.clicked.connect(copy_row)
+    return button
 
 
 def _pricing_summary_row(kind: str, item: dict) -> QFrame:
@@ -84,6 +119,7 @@ def _pricing_summary_row(kind: str, item: dict) -> QFrame:
         unit_label = QLabel(unit)
         unit_label.setObjectName("aiPricingUnit")
         layout.addWidget(unit_label, 0, Qt.AlignmentFlag.AlignTop)
+    layout.addWidget(_copy_row_button(item), 0, Qt.AlignmentFlag.AlignTop)
     return row
 
 
@@ -435,6 +471,16 @@ class MessageFeed(QWidget):
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
         proposals = result.get("proposals") or []
+        bill_records = {
+            str(value.get("record_id") or ""): value
+            for value in result.get("bills") or []
+            if isinstance(value, dict) and value.get("record_id")
+        }
+        quota_records = {
+            str(value.get("record_id") or ""): value
+            for value in result.get("quotas") or []
+            if isinstance(value, dict) and value.get("record_id")
+        }
         header = QHBoxLayout()
         header.setSpacing(10)
         title = QLabel("本地匹配")
@@ -472,6 +518,19 @@ class MessageFeed(QWidget):
             status = QLabel(_proposal_status(proposal))
             status.setObjectName("proposalStatus")
             title_row.addWidget(status)
+            bill_source = bill_records.get(str(proposal.get("bill_record_id") or ""), {})
+            title_row.addWidget(
+                _copy_row_button(
+                    {
+                        "code": code,
+                        "title": item_title,
+                        "unit": proposal.get("bill_unit"),
+                        "version": bill_source.get("edition") or result.get("standard_edition"),
+                        "discipline": bill_source.get("discipline") or result.get("discipline"),
+                        "pdf_page": bill_source.get("pdf_page"),
+                    }
+                )
+            )
             row_layout.addLayout(title_row)
             meta = QLabel(" · ".join(value for value in (code, str(proposal.get("bill_unit") or "")) if value))
             meta.setObjectName("secondaryText")
@@ -494,6 +553,19 @@ class MessageFeed(QWidget):
                     quota_unit = QLabel(unit)
                     quota_unit.setObjectName("secondaryText")
                     quota_layout.addWidget(quota_unit)
+                quota_source = quota_records.get(str(quota.get("record_id") or ""), {})
+                quota_layout.addWidget(
+                    _copy_row_button(
+                        {
+                            "code": quota.get("code"),
+                            "title": quota.get("title"),
+                            "unit": quota.get("unit"),
+                            "version": quota_source.get("edition") or result.get("quota_edition"),
+                            "discipline": quota_source.get("discipline") or result.get("discipline"),
+                            "pdf_page": quota_source.get("pdf_page"),
+                        }
+                    )
+                )
                 row_layout.addWidget(quota_row)
             review_candidates = proposal.get("review_candidates") or []
             if not (proposal.get("quota_lines") or []) and review_candidates:
@@ -515,6 +587,19 @@ class MessageFeed(QWidget):
                     quota_unit = QLabel(str(quota.get("unit") or ""))
                     quota_unit.setObjectName("secondaryText")
                     quota_layout.addWidget(quota_unit)
+                    quota_source = quota_records.get(str(quota.get("record_id") or ""), {})
+                    quota_layout.addWidget(
+                        _copy_row_button(
+                            {
+                                "code": quota.get("code"),
+                                "title": quota.get("title"),
+                                "unit": quota.get("unit"),
+                                "version": quota_source.get("edition") or result.get("quota_edition"),
+                                "discipline": quota_source.get("discipline") or result.get("discipline"),
+                                "pdf_page": quota_source.get("pdf_page"),
+                            }
+                        )
+                    )
                     row_layout.addWidget(quota_row)
             layout.addWidget(row)
         questions = [value for value in result.get("clarification_questions") or [] if isinstance(value, dict)]

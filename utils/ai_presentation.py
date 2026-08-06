@@ -225,7 +225,23 @@ def build_ai_suggestion_view_model(text: str, result: dict[str, Any] | None) -> 
         "code": _text(proposal.get("bill_code")),
         "unit": _text(proposal.get("bill_unit")),
         "sources": "、".join(str(value) for value in proposal.get("evidence_refs") or []) or "未获取到",
+        "version": str(payload.get("standard_edition") or ""),
+        "discipline": str(payload.get("discipline") or ""),
+        "pdf_page": "",
     }
+    full_bills = {
+        str(value.get("record_id") or ""): value
+        for value in payload.get("bills") or []
+        if isinstance(value, dict) and value.get("record_id")
+    }
+    bill_source = full_bills.get(str(proposal.get("bill_record_id") or ""), {})
+    bill.update(
+        {
+            "version": str(bill_source.get("edition") or bill["version"]),
+            "discipline": str(bill_source.get("discipline") or bill["discipline"]),
+            "pdf_page": bill_source.get("pdf_page") or "",
+        }
+    )
     quota_items = [
         {
             "name": _text(value.get("title")),
@@ -233,6 +249,9 @@ def build_ai_suggestion_view_model(text: str, result: dict[str, Any] | None) -> 
             "unit": _text(value.get("unit")),
             "sources": "、".join(str(ref) for ref in value.get("evidence_refs") or []) or "未获取到",
             "is_candidate": not bool(quota_lines),
+            "version": str((full_quotas.get(str(value.get("record_id") or "")) or value).get("edition") or payload.get("quota_edition") or ""),
+            "discipline": str((full_quotas.get(str(value.get("record_id") or "")) or value).get("discipline") or payload.get("discipline") or ""),
+            "pdf_page": (full_quotas.get(str(value.get("record_id") or "")) or value).get("pdf_page") or "",
             "work_summary": _plain_work_summary(
                 (full_quotas.get(str(value.get("record_id") or "")) or value).get("work_content"),
                 _text(value.get("title")),

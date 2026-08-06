@@ -56,6 +56,30 @@ def normalize_unit(value: Any) -> str:
     return re.sub(r"(?<![A-Za-z0-9])(\d+\s*)m([23])\b", lambda m: f"{m.group(1).replace(' ', '')}m{'²' if m.group(2) == '2' else '³'}", unit, flags=re.I)
 
 
+def candidate_row_values(item: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
+    """Return the six stable spreadsheet columns used by candidate copy actions."""
+    discipline = item.get("discipline")
+    return (
+        str(item.get("code") or "").strip(),
+        str(item.get("name") or item.get("title") or "").strip(),
+        normalize_unit(item.get("unit")),
+        str(
+            item.get("version")
+            or item.get("quota_edition")
+            or item.get("standard_edition")
+            or item.get("edition")
+            or ""
+        ).strip(),
+        discipline_label(discipline) if discipline else "",
+        str(item.get("pdf_page") or "").strip(),
+    )
+
+
+def candidate_row_tsv(item: dict[str, Any]) -> str:
+    """Serialize one candidate as 编码、名称、单位、版本、专业、页码."""
+    return "\t".join(candidate_row_values(item))
+
+
 def _clean(value: str | None, *, limit: int = 1200) -> str:
     value = (value or "").replace("\r", "").replace("\ue015", "m³").replace("\ue016", "m²")
     value = re.sub(r"[ \t]+", " ", value)

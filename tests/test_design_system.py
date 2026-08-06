@@ -1,18 +1,33 @@
 from __future__ import annotations
 
 import json
+import math
 import unittest
 from pathlib import Path
 
 from components.button import blend_hex
 from components.result import CandidateSection
-from themes.tokens import DARK, LIGHT
+from themes.tokens import DARK, LIGHT, Typography
+from utils.formatting import candidate_row_tsv
 from utils.svg import _fallback_icon, _render_svg_cached, svg_image
 from utils.motion import motion_enabled
 from utils.windows_theme import hex_to_colorref
 
 
 class DesignSystemTests(unittest.TestCase):
+    @staticmethod
+    def _contrast_ratio(foreground: str, background: str) -> float:
+        def luminance(color: str) -> float:
+            channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+            channels = [
+                value / 12.92 if value <= 0.04045 else math.pow((value + 0.055) / 1.055, 2.4)
+                for value in channels
+            ]
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+        lighter, darker = sorted((luminance(foreground), luminance(background)), reverse=True)
+        return (lighter + 0.05) / (darker + 0.05)
+
     def test_light_and_dark_tokens_are_complete(self):
         for theme in (LIGHT, DARK):
             self.assertTrue(theme.colors.background)
@@ -59,6 +74,32 @@ class DesignSystemTests(unittest.TestCase):
 
     def test_motion_preference_probe_has_a_stable_boolean_contract(self):
         self.assertIsInstance(motion_enabled(), bool)
+
+    def test_normal_text_tokens_meet_wcag_aa(self):
+        self.assertGreaterEqual(self._contrast_ratio(LIGHT.colors.text_muted, LIGHT.colors.background), 4.5)
+        self.assertGreaterEqual(self._contrast_ratio(DARK.colors.on_accent, DARK.colors.accent_fill), 4.5)
+
+    def test_typography_tokens_never_drop_below_eleven_pixels(self):
+        self.assertGreaterEqual(min(vars(Typography()).values()), 11)
+
+    def test_candidate_copy_has_six_spreadsheet_columns(self):
+        value = candidate_row_tsv(
+            {
+                "code": "010101001001",
+                "title": "平整场地",
+                "unit": "m2",
+                "edition": "2025",
+                "discipline": "building",
+            }
+        )
+        self.assertEqual(value, "010101001001\t平整场地\tm²\t2025\t建筑\t")
+        self.assertEqual(len(value.split("\t")), 6)
+
+    def test_legacy_header_uses_one_grid_layout_manager(self):
+        source = (Path(__file__).parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+        header_source = source.split("    def _build_header", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn("self.controls.grid(", header_source)
+        self.assertNotIn("self.controls.place(", header_source)
 
 
 if __name__ == "__main__":

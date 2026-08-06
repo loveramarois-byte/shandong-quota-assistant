@@ -9,7 +9,7 @@ import customtkinter as ctk
 
 from themes.tokens import ThemeTokens
 from utils.evidence import open_source_page, resolve_source_path
-from utils.formatting import discipline_label, normalize_unit
+from utils.formatting import candidate_row_tsv, discipline_label, normalize_unit
 from utils.paths import resource_path
 from utils.pricing_pipeline import proposal_confirmable, proposal_plain_text
 from utils.svg import svg_image
@@ -283,8 +283,16 @@ class CandidateRow(ctk.CTkFrame):
         actions.grid(row=0, column=2, rowspan=2, padx=(0, 8), pady=5, sticky="ne")
         self.detail_button = IconButton(actions, tokens=self.tokens, image=self._icon("chevron-down"), tooltip="展开依据", command=self._toggle_details)
         self.detail_button.pack(side="left")
-        self.full_copy_button = IconButton(actions, tokens=self.tokens, image=self._icon("clipboard"), tooltip="复制整条", command=self._copy_full)
-        self.full_copy_button.pack(side="left")
+        self.full_copy_button = DSButton(
+            actions,
+            tokens=self.tokens,
+            text="复制整行",
+            variant="ghost",
+            width=76,
+            height=34,
+            command=self._copy_full,
+        )
+        self.full_copy_button.pack(side="left", padx=(2, 0))
         self.copy_button = IconButton(actions, tokens=self.tokens, image=self._icon("copy"), tooltip="复制编码", command=self._copy_code)
         self.copy_button.pack(side="left")
         if self.on_set_primary and self.kind in {"bill", "quota"}:
@@ -400,26 +408,7 @@ class CandidateRow(ctk.CTkFrame):
         self._copy(code, self.copy_button)
 
     def _copy_full(self) -> None:
-        lines = [
-            f"编码：{self.item.get('code') or '未确认'}",
-            f"名称：{self.item.get('title') or '未命名候选'}",
-            f"单位：{_unit(self.item) or '未标注'}",
-            f"专业：{discipline_label(self.item.get('discipline'))}",
-            f"版本：{_edition(self.item) or '未标注'}",
-        ]
-        for label, key in (("项目特征", "characteristics"), ("工程量计算规则", "calculation_rule"), ("工作内容", "work_content"), ("适用条件", "condition_text"), ("人材机", "resources")):
-            value = self.item.get(key)
-            if isinstance(value, list):
-                value = "；".join(value)
-            if value:
-                lines.append(f"{label}：{value}")
-        if self.item.get("match_reasons"):
-            lines.append(f"命中原因：{'；'.join(self.item['match_reasons'])}")
-        if self.item.get("missing_conditions"):
-            lines.append(f"待补条件：{'；'.join(self.item['missing_conditions'])}")
-        if self.item.get("conflicts"):
-            lines.append(f"冲突提示：{'；'.join(self.item['conflicts'])}")
-        self._copy("\n".join(line for line in lines if line), self.full_copy_button)
+        self._copy(candidate_row_tsv(self.item), self.full_copy_button)
 
     def _copy(self, text: str, button: DSButton) -> None:
         try:
@@ -427,13 +416,21 @@ class CandidateRow(ctk.CTkFrame):
             root.clipboard_clear()
             root.clipboard_append(text)
             root.update_idletasks()
-            original = "clipboard" if button is self.full_copy_button else "copy"
-            button.configure(image=self._icon("check", self.tokens.colors.success), fg_color=self.tokens.colors.success_soft)
-            old_tooltip = button.tooltip
-            button.tooltip = "已复制"
-            self.after(1100, lambda: self._restore_copy_button(button, original, old_tooltip))
+            if button is self.full_copy_button:
+                button.configure(text="已复制", state="disabled", fg_color=self.tokens.colors.success_soft)
+                self.after(1500, self._restore_full_copy_button)
+            else:
+                button.configure(image=self._icon("check", self.tokens.colors.success), fg_color=self.tokens.colors.success_soft)
+                old_tooltip = button.tooltip
+                button.tooltip = "已复制"
+                self.after(1500, lambda: self._restore_copy_button(button, "copy", old_tooltip))
         except tk.TclError:
             pass
+
+    def _restore_full_copy_button(self) -> None:
+        if not self.winfo_exists():
+            return
+        self.full_copy_button.configure(text="复制整行", state="normal", **self.full_copy_button._style("ghost"))
 
     def _restore_copy_button(self, button: IconButton, icon_name: str, tooltip: str) -> None:
         if not self.winfo_exists():
@@ -467,7 +464,6 @@ class CandidateRow(ctk.CTkFrame):
             self.primary_button.apply_theme(tokens)
         self.detail_button.configure(image=self._icon("chevron-up" if self._details_visible else "chevron-down"))
         self.copy_button.configure(image=self._icon("copy"))
-        self.full_copy_button.configure(image=self._icon("clipboard"))
 
     def set_wraplength(self, width: int) -> None:
         width = max(320, width)

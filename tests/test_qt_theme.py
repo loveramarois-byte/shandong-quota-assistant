@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtCore import QRect, QTimer, Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy, QWidget
 
 from app.qt_main import QuotaQtApp, SettingsDialog, _load_qt_fonts
-from components.qt_widgets import CheckRow, LoadingSpinner
+from components.qt_widgets import CheckRow, LoadingSpinner, _copy_row_button, candidate_row_mime
 from themes.tokens import get_theme
 
 
@@ -122,6 +122,47 @@ class QtThemeTests(unittest.TestCase):
             self.assertEqual(rank.text(), "01")
         finally:
             window.close()
+
+    def test_candidate_copy_mime_preserves_codes_as_excel_text(self) -> None:
+        mime = candidate_row_mime(
+            {
+                "code": "010101001001",
+                "title": "平整场地",
+                "unit": "m2",
+                "edition": "2025",
+                "discipline": "building",
+            }
+        )
+        self.assertEqual(mime.text(), "010101001001\t平整场地\tm²\t2025\t建筑\t")
+        self.assertIn("mso-number-format", mime.html())
+        self.assertIn("010101001001", mime.html())
+
+    def test_candidate_copy_button_writes_clipboard_and_shows_feedback(self) -> None:
+        button = _copy_row_button(
+            {
+                "code": "010101001001",
+                "title": "平整场地",
+                "unit": "m2",
+                "edition": "2025",
+                "discipline": "building",
+                "pdf_page": 42,
+            }
+        )
+        try:
+            button.click()
+            self.app.processEvents()
+            self.assertEqual(
+                QApplication.clipboard().text(),
+                "010101001001\t平整场地\tm²\t2025\t建筑\t42",
+            )
+            self.assertEqual(button.text(), "已复制")
+            self.assertFalse(button.isEnabled())
+            timer = button.findChild(QTimer)
+            self.assertIsNotNone(timer)
+            self.assertGreater(timer.remainingTime(), 1000)
+            self.assertLessEqual(timer.remainingTime(), 1500)
+        finally:
+            button.deleteLater()
 
     def test_long_user_message_gets_a_readable_width_without_exceeding_the_feed(self) -> None:
         window = QuotaQtApp()

@@ -610,6 +610,11 @@ class QuotaQtApp(QMainWindow):
         #aiPricingName {{ color: {c.text}; font-size: 13px; font-weight: 500; }}
         #aiPricingWork {{ color: {c.text_secondary}; font-size: 12px; }}
         #aiPricingUnit {{ color: {c.text_muted}; font-family: Consolas; font-size: 11px; }}
+        #copyRowButton {{ color: {c.text_secondary}; background: transparent; border: 1px solid {c.border}; border-radius: 6px; min-height: 27px; padding: 2px 8px; font-size: 11px; font-weight: 500; }}
+        #copyRowButton:hover {{ color: {c.text}; background: {c.subtle}; border-color: {c.border_strong}; }}
+        #copyRowButton:pressed {{ background: {c.accent_soft}; }}
+        #copyRowButton:disabled {{ color: {c.success}; background: {c.success_soft}; border-color: {c.success_soft}; }}
+        #copyRowButton:focus {{ border-color: {c.focus}; }}
         #aiReasonRow {{ background: transparent; border: 0; }}
         #aiReasonMarker {{ color: {c.success}; font-family: 'Source Han Sans SC'; font-size: 12px; font-weight: 500; }}
         #aiReasonMarker[missing="true"] {{ color: {c.warning}; }}
