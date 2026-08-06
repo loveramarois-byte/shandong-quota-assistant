@@ -207,7 +207,7 @@ class QtThemeTests(unittest.TestCase):
         finally:
             window.close()
 
-    def test_ai_suggestion_hides_codes_until_details_are_expanded(self) -> None:
+    def test_ai_suggestion_shows_primary_codes_and_keeps_extended_details_collapsed(self) -> None:
         window = QuotaQtApp()
         try:
             card = window.feed.add_ai(
@@ -242,10 +242,10 @@ class QtThemeTests(unittest.TestCase):
             self.app.processEvents()
             details = next(value for value in card.findChildren(QWidget) if value.objectName() == "aiDetails")
             labels = card.findChildren(QLabel)
-            code_labels = [value for value in labels if "010903001-000" in value.text() or "9-2-11" in value.text()]
+            summary_lines = [value.text() for value in labels if value.objectName() == "aiSummaryLine"]
             self.assertFalse(details.isVisible())
-            self.assertTrue(code_labels)
-            self.assertTrue(all(not value.isVisible() for value in code_labels))
+            self.assertIn("清单项目  ·  010903001-000  墙面卷材防水", summary_lines)
+            self.assertIn("对应定额  ·  9-2-11  改性沥青卷材热熔法一层 立面", summary_lines)
             button = next(value for value in card.findChildren(QPushButton) if value.objectName() == "aiDetailsButton")
             button.click()
             self.app.processEvents()
@@ -257,8 +257,50 @@ class QtThemeTests(unittest.TestCase):
             self.assertTrue(details.isHidden())
 
             visible_primary_text = " ".join(value.text() for value in labels if not details.isAncestorOf(value))
-            self.assertNotIn("010903001-000", visible_primary_text)
-            self.assertNotIn("9-2-11", visible_primary_text)
+            self.assertIn("010903001-000", visible_primary_text)
+            self.assertIn("9-2-11", visible_primary_text)
+        finally:
+            window.close()
+
+    def test_manual_scroll_at_old_bottom_is_not_rearmed_by_a_stale_value_event(self) -> None:
+        window = QuotaQtApp()
+        try:
+            window.resize(1080, 680)
+            window.show()
+            window.feed.clear_feed()
+            for index in range(14):
+                window.feed.add_user(f"历史施工描述 {index + 1}：用于形成足够长的滚动内容。")
+            self.app.processEvents()
+            bar = window.scroll.verticalScrollBar()
+            bar.setValue(bar.maximum())
+            window._last_scroll_value = bar.value()
+            window._pause_follow_latest()
+            window._track_scroll_position(bar.value())
+            self.assertTrue(window._manual_scroll_active)
+            self.assertFalse(window._follow_latest)
+        finally:
+            window.close()
+
+    def test_ai_result_replacement_restores_manual_reader_position(self) -> None:
+        window = QuotaQtApp()
+        try:
+            window.resize(1080, 680)
+            window.show()
+            window.feed.clear_feed()
+            for index in range(14):
+                window.feed.add_user(f"历史施工描述 {index + 1}：用于形成足够长的滚动内容。")
+            window.feed.add_status("AI 正在复核", "只基于本地候选方案生成解释。")
+            self.app.processEvents()
+            bar = window.scroll.verticalScrollBar()
+            bar.setValue(max(bar.minimum(), bar.maximum() - 120))
+            window._pause_follow_latest()
+            reader_position = bar.value()
+            epoch = window._manual_scroll_epoch
+            window.feed.add_ai("## 结论\n复核完成。")
+            window._restore_manual_scroll_position(reader_position, epoch)
+            self.app.processEvents()
+            self.assertEqual(bar.value(), reader_position)
+            self.assertFalse(window._follow_latest)
         finally:
             window.close()
 

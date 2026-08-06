@@ -380,6 +380,8 @@ class QuotaQtApp(QMainWindow):
         self._sidebar_loading = False
         self._follow_latest = True
         self._manual_scroll_active = False
+        self._manual_scroll_epoch = 0
+        self._last_scroll_value = 0
         self._build()
         self._connect_signals()
         self._apply_theme()
@@ -889,18 +891,35 @@ class QuotaQtApp(QMainWindow):
             self.scroll.verticalScrollBar().setValue(maximum)
 
     def _pause_follow_latest(self) -> None:
+        self._manual_scroll_epoch += 1
+        self.scroll.cancel_scroll_motion()
+        self._last_scroll_value = self.scroll.verticalScrollBar().value()
         self._manual_scroll_active = True
         self._follow_latest = False
 
     def _track_scroll_position(self, value: int) -> None:
         bar = self.scroll.verticalScrollBar()
-        if bar.maximum() - value <= 1:
-            self._manual_scroll_active = False
-            self._follow_latest = True
-        elif self._manual_scroll_active:
+        at_latest = bar.maximum() - value <= 1
+        moving_toward_latest = value > self._last_scroll_value
+        self._last_scroll_value = value
+        if self._manual_scroll_active:
+            if at_latest and moving_toward_latest:
+                self._manual_scroll_active = False
+                self._follow_latest = True
+                return
             self._follow_latest = False
-        else:
-            self._follow_latest = False
+            return
+        self._follow_latest = at_latest
+
+    def _restore_manual_scroll_position(self, value: int, epoch: int) -> None:
+        if not self._manual_scroll_active or epoch != self._manual_scroll_epoch:
+            return
+        self.scroll.cancel_scroll_motion()
+        bar = self.scroll.verticalScrollBar()
+        bar.setValue(max(bar.minimum(), min(bar.maximum(), value)))
+        self._last_scroll_value = bar.value()
+        self._manual_scroll_active = True
+        self._follow_latest = False
 
     def _cancel_active(self) -> None:
         if self._cancel:
@@ -945,8 +964,14 @@ class QuotaQtApp(QMainWindow):
         if not pending.get("superseded"):
             turn = session_store.find_turn(pending.get("session"), pending.get("turn_id")) or {}
             snapshot = turn.get("retrieval_snapshot") if isinstance(turn, dict) else None
+            reader_position = self.scroll.verticalScrollBar().value() if self._manual_scroll_active else None
+            reader_epoch = self._manual_scroll_epoch
+            self.scroll.cancel_scroll_motion()
             ai_widget = self.feed.add_ai(text, snapshot if isinstance(snapshot, dict) else None)
             self._turn_widgets.setdefault(str(pending["turn_id"]), {"ai": []}).setdefault("ai", []).append(ai_widget)
+            if reader_position is not None:
+                QTimer.singleShot(0, lambda value=reader_position, epoch=reader_epoch: self._restore_manual_scroll_position(value, epoch))
+                QTimer.singleShot(40, lambda value=reader_position, epoch=reader_epoch: self._restore_manual_scroll_position(value, epoch))
         self._pending.pop(request_id, None)
 
     def _on_ai_skipped(self, request_id: int) -> None:

@@ -47,6 +47,11 @@ def _font(size: int, weight: QFont.Weight = QFont.Weight.Normal, *, display: boo
     return font
 
 
+def _summary_identity(item: dict) -> str:
+    values = [str(item.get(key) or "").strip() for key in ("code", "name")]
+    return "  ".join(value for value in values if value and value != "未获取到") or "未获取到"
+
+
 class PanelCard(QFrame):
     def __init__(self, parent: QWidget | None = None, *, elevated: bool = False) -> None:
         super().__init__(parent)
@@ -169,6 +174,10 @@ class SmoothScrollArea(QScrollArea):
         self._scroll_animation = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
         self._scroll_animation.setDuration(150)
         self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def cancel_scroll_motion(self) -> None:
+        self._scroll_animation.stop()
+        self._scroll_target = self.verticalScrollBar().value()
 
     def wheelEvent(self, event) -> None:
         pixel_delta = event.pixelDelta().y()
@@ -594,14 +603,16 @@ class MessageFeed(QWidget):
             summary_layout = QVBoxLayout(summary)
             summary_layout.setContentsMargins(12, 8, 12, 8)
             summary_layout.setSpacing(7)
-            bill_name = QLabel(f"清单项目  ·  {view['bill']['name']}")
+            bill_name = QLabel(f"清单项目  ·  {_summary_identity(dict(view['bill']))}")
             bill_name.setObjectName("aiSummaryLine")
             bill_name.setWordWrap(True)
+            bill_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             summary_layout.addWidget(bill_name)
             quotas = list(view.get("quotas") or [])
-            quota_name = QLabel(f"对应定额  ·  {(quotas[0] if quotas else {}).get('name') or '未获取到'}")
+            quota_name = QLabel(f"对应定额  ·  {_summary_identity(dict(quotas[0] if quotas else {}))}")
             quota_name.setObjectName("aiSummaryLine")
             quota_name.setWordWrap(True)
+            quota_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             summary_layout.addWidget(quota_name)
             layout.addWidget(summary)
 
