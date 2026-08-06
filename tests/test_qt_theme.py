@@ -5,7 +5,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy, QWidget
 
 from app.qt_main import QuotaQtApp, SettingsDialog, _load_qt_fonts
@@ -57,6 +57,27 @@ class QtThemeTests(unittest.TestCase):
             window._clear_welcome_for_first_turn()
             self.app.processEvents()
             self.assertIsNone(window.feed.findChild(QWidget, "welcomePanel"))
+        finally:
+            window.close()
+
+    def test_welcome_description_receives_its_full_wrapped_height(self) -> None:
+        window = QuotaQtApp()
+        try:
+            window.resize(1190, 790)
+            window.show()
+            self.app.processEvents()
+            detail = next(
+                label
+                for label in window.findChildren(QLabel)
+                if label.text().startswith("从山东清单与定额资料中定位候选项")
+            )
+            required_height = detail.fontMetrics().boundingRect(
+                QRect(0, 0, detail.width(), 1000),
+                int(Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignHCenter),
+                detail.text(),
+            ).height()
+            self.assertGreaterEqual(detail.height(), required_height)
+            self.assertGreater(detail.width(), 400)
         finally:
             window.close()
 
