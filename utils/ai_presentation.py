@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .pricing_pipeline import proposal_confirmable
+
 
 _ATTRIBUTE_LABELS = {
     "thickness": "材料厚度",
@@ -56,6 +58,22 @@ def option_presentation(value: str) -> dict[str, str]:
 def _text(value: Any, fallback: str = "未获取到") -> str:
     cleaned = str(value or "").strip()
     return cleaned or fallback
+
+
+def _plain_work_summary(value: Any, quota_title: str) -> str:
+    """Turn noisy extracted quota prose into a short, factual explanation."""
+    content = str(value or "").replace("\r", " ").replace("\n", " ")
+    content = content.replace("\ue015", "m³").replace("\ue016", "m²").replace("\ue01b", "m²")
+    content = re.sub(r"^\s*工作内容\s*[:：]\s*", "", content)
+    content = re.split(r"\s*(?:计量单位|定\s*额\s*编\s*号|项\s*目\s*名\s*称|人\s*材\s*机)\s*[:：]?", content, maxsplit=1)[0]
+    content = re.sub(r"\s+", "", content).strip("，,、；;。 ")
+    content = re.sub(r"[,，;；]+", "、", content)
+    content = content.replace("等全部操作过程", "等操作").replace("全部操作过程", "全部操作")
+    if content:
+        return f"简单说，这项定额已经包括：{content}。"
+    if quota_title and quota_title != "未获取到":
+        return f"这项定额按“{quota_title}”计取，具体工序可在专业明细中核对。"
+    return "当前资料没有提取到可读的工作内容，确认前请查看专业明细。"
 
 
 def _question_label(question: dict[str, Any] | None) -> str:
@@ -168,6 +186,11 @@ def build_ai_suggestion_view_model(text: str, result: dict[str, Any] | None) -> 
     needs_confirmation = bool(question) or status == "needs_clarification"
     bill_title = _text(proposal.get("bill_title"))
     quota_title = _text((quotas[0] if quotas else {}).get("title"))
+    full_quotas = {
+        str(value.get("record_id") or ""): value
+        for value in payload.get("quotas") or []
+        if isinstance(value, dict) and value.get("record_id")
+    }
 
     if needs_confirmation:
         state = "needs_confirmation"
@@ -210,6 +233,10 @@ def build_ai_suggestion_view_model(text: str, result: dict[str, Any] | None) -> 
             "unit": _text(value.get("unit")),
             "sources": "、".join(str(ref) for ref in value.get("evidence_refs") or []) or "未获取到",
             "is_candidate": not bool(quota_lines),
+            "work_summary": _plain_work_summary(
+                (full_quotas.get(str(value.get("record_id") or "")) or value).get("work_content"),
+                _text(value.get("title")),
+            ),
         }
         for value in quotas
     ]
@@ -230,4 +257,6 @@ def build_ai_suggestion_view_model(text: str, result: dict[str, Any] | None) -> 
         "bill": bill,
         "quotas": quota_items,
         "has_details": bool(proposal),
+        "confirmable": proposal_confirmable(proposal),
+        "confirmed": bool(proposal.get("confirmed")),
     }

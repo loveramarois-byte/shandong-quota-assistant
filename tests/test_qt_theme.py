@@ -239,6 +239,77 @@ class QtThemeTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_ai_conclusion_keeps_clarification_choices_actionable(self) -> None:
+        window = QuotaQtApp()
+        try:
+            selected: list[tuple[str, str]] = []
+            window.feed.clarification_selected.connect(lambda question, answer: selected.append((question, answer)))
+            card = window.feed.add_ai(
+                "## 结论\n还需要确认施工方式。",
+                {
+                    "work_items": [{"location": "地下室外墙", "material": "SBS 防水卷材"}],
+                    "clarification_questions": [
+                        {"id": "Q1", "field": "method", "question": "现场采用哪种施工方式？", "options": ["热熔法", "冷粘法"]}
+                    ],
+                    "proposals": [{"status": "needs_clarification", "bill_title": "墙面卷材防水"}],
+                },
+            )
+            button = next(value for value in card.findChildren(QPushButton) if "热熔法" in value.text())
+            button.click()
+            self.assertEqual(selected, [("Q1", "热熔法")])
+            self.assertIn("使用喷灯加热粘贴", button.text())
+        finally:
+            window.close()
+
+    def test_confirmable_ai_result_emits_and_persists_manual_confirmation(self) -> None:
+        window = QuotaQtApp()
+        proposal = {
+            "status": "ready_for_review",
+            "bill_record_id": "B1",
+            "bill_code": "010903001-000",
+            "bill_title": "墙面卷材防水",
+            "bill_unit": "m²",
+            "hard_conflicts": [],
+            "unresolved_question_ids": [],
+            "quota_lines": [
+                {"record_id": "Q1", "role": "main", "code": "9-2-11", "title": "改性沥青卷材热熔法一层 立面", "unit": "10m²"}
+            ],
+        }
+        snapshot = {"work_items": [{}], "proposals": [proposal], "quotas": []}
+        session = {
+            "id": "session1",
+            "schema_version": 2,
+            "title": "防水",
+            "created_at": 1.0,
+            "updated_at": 1.0,
+            "revision": 0,
+            "turns": [
+                {
+                    "turn_id": "T1",
+                    "query": "地下室外墙防水",
+                    "filters": {},
+                    "human_selections": {"primary": {}},
+                    "human_edits": [],
+                    "retrieval_snapshot": snapshot,
+                    "ai_attempts": [],
+                }
+            ],
+        }
+        try:
+            window._session = session
+            with patch("app.qt_main.session_store.save_session"):
+                card = window.feed.add_ai("## 结论\n方案已生成。", snapshot, context_id="T1")
+                button = next(value for value in card.findChildren(QPushButton) if value.objectName() == "confirmButton")
+                self.assertEqual(button.text(), "人工确认")
+                button.click()
+            self.assertTrue(proposal["confirmed"])
+            self.assertEqual(button.text(), "已人工确认")
+            stored = session["turns"][0]["human_selections"]["proposals"]
+            self.assertTrue(stored[0]["confirmed"])
+        finally:
+            window._session = None
+            window.close()
+
     def test_ai_suggestion_shows_primary_codes_and_keeps_extended_details_collapsed(self) -> None:
         window = QuotaQtApp()
         try:

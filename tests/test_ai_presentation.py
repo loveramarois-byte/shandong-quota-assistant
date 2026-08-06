@@ -88,6 +88,36 @@ class AiPresentationTests(unittest.TestCase):
         self.assertEqual(view["bill"]["code"], "010903001-000")
         self.assertEqual(view["quotas"][0]["code"], "9-2-11")
 
+    def test_quota_work_content_is_explained_in_plain_language_without_table_noise(self) -> None:
+        result = {
+            "proposals": [
+                {
+                    "status": "ready_for_review",
+                    "bill_title": "墙面卷材防水",
+                    "quota_lines": [
+                        {
+                            "record_id": "Q1",
+                            "code": "9-2-11",
+                            "title": "改性沥青卷材热熔法一层 立面",
+                        }
+                    ],
+                }
+            ],
+            "quotas": [
+                {
+                    "record_id": "Q1",
+                    "work_content": "清理基层,刷基底处理剂,收头钉压条等全部操作过程。 计量单位：10m² 定额编号 9-2-11",
+                }
+            ],
+        }
+
+        view = build_ai_suggestion_view_model("", result)
+
+        summary = view["quotas"][0]["work_summary"]
+        self.assertEqual(summary, "简单说，这项定额已经包括：清理基层、刷基底处理剂、收头钉压条等操作。")
+        self.assertNotIn("计量单位", summary)
+        self.assertNotIn("定额编号", summary)
+
     def test_missing_fields_degrade_to_clear_placeholder(self) -> None:
         view = build_ai_suggestion_view_model("", {"proposals": [{}]})
 

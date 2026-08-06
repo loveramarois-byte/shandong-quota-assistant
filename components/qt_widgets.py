@@ -62,11 +62,23 @@ def _pricing_summary_row(kind: str, item: dict) -> QFrame:
     code.setMinimumWidth(112)
     code.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     layout.addWidget(code, 0, Qt.AlignmentFlag.AlignTop)
+    name_group = QWidget()
+    name_layout = QVBoxLayout(name_group)
+    name_layout.setContentsMargins(0, 0, 0, 0)
+    name_layout.setSpacing(3)
     name = QLabel(str(item.get("name") or "未获取到"))
     name.setObjectName("aiPricingName")
     name.setWordWrap(True)
     name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    layout.addWidget(name, 1)
+    name_layout.addWidget(name)
+    work_summary = str(item.get("work_summary") or "").strip()
+    if kind == "定额" and work_summary:
+        work = QLabel(work_summary)
+        work.setObjectName("aiPricingWork")
+        work.setWordWrap(True)
+        work.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        name_layout.addWidget(work)
+    layout.addWidget(name_group, 1)
     unit = str(item.get("unit") or "").strip()
     if unit and unit != "未获取到":
         unit_label = QLabel(unit)
@@ -263,6 +275,7 @@ class MessageFeed(QWidget):
     content_added = pyqtSignal()
     interaction_started = pyqtSignal()
     clarification_selected = pyqtSignal(str, str)
+    confirmation_changed = pyqtSignal(str, int, bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -539,7 +552,7 @@ class MessageFeed(QWidget):
             layout.addWidget(empty)
         return self._insert(card, animate=False)
 
-    def add_ai(self, text: str, result: dict | None = None) -> QWidget:
+    def add_ai(self, text: str, result: dict | None = None, *, context_id: str = "") -> QWidget:
         self._clear_transient()
         card = PanelCard()
         card.setObjectName("aiSuggestionCard")
@@ -576,15 +589,30 @@ class MessageFeed(QWidget):
 
         question = view.get("question")
         if isinstance(question, dict):
-            prompt = QLabel(f"下一步：请确认{question.get('label') or '关键信息'}")
+            prompt = QLabel(str(question.get("prompt") or f"请确认{question.get('label') or '关键信息'}"))
             prompt.setObjectName("aiNextStep")
             prompt.setWordWrap(True)
             layout.addSpacing(3)
             layout.addWidget(prompt)
-            help_text = QLabel("不同选择可能对应不同定额，并影响人工、材料和机械消耗。请在上方套价建议中选择实际做法。")
+            help_text = QLabel("选择现场实际做法后，我会重新匹配对应的清单和定额。")
             help_text.setObjectName("aiNote")
             help_text.setWordWrap(True)
             layout.addWidget(help_text)
+            choices = QVBoxLayout()
+            choices.setSpacing(7)
+            question_id = str(question.get("id") or "")
+            for option in question.get("options") or []:
+                option_data = dict(option)
+                value = str(option_data.get("value") or "")
+                button = QPushButton(str(option_data.get("display") or value))
+                button.setObjectName("choiceButton")
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.setAccessibleName(f"补充条件：{value}")
+                button.clicked.connect(
+                    lambda _checked=False, selected=value, target=question_id: self.clarification_selected.emit(target, selected)
+                )
+                choices.addWidget(button)
+            layout.addLayout(choices)
         elif view.get("state") in {"ready", "partial"}:
             summary_title = QLabel("建议套用")
             summary_title.setObjectName("aiSectionTitle")
@@ -603,6 +631,23 @@ class MessageFeed(QWidget):
             else:
                 summary_layout.addWidget(_pricing_summary_row("定额", {}))
             layout.addWidget(summary)
+
+            if view.get("confirmable"):
+                confirm = QPushButton("已人工确认" if view.get("confirmed") else "人工确认")
+                confirm.setObjectName("confirmButton")
+                confirm.setCheckable(True)
+                confirm.setChecked(bool(view.get("confirmed")))
+                confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+                confirm.setAccessibleName("取消人工确认" if view.get("confirmed") else "人工确认当前套价方案")
+
+                def toggle_confirmation(confirmed: bool) -> None:
+                    confirm.setText("已人工确认" if confirmed else "人工确认")
+                    confirm.setAccessibleName("取消人工确认" if confirmed else "人工确认当前套价方案")
+                    self.confirmation_changed.emit(context_id, 0, confirmed)
+
+                confirm.toggled.connect(toggle_confirmation)
+                layout.addSpacing(7)
+                layout.addWidget(confirm, 0, Qt.AlignmentFlag.AlignLeft)
 
         reasons = list(view.get("reasons") or [])[:4]
         if reasons:

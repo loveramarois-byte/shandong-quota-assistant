@@ -49,7 +49,7 @@ from utils.ai_validate import validate_ai_answer
 from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch, fetch_models, probe_ccswitch
 from utils.logging_setup import log_exception, setup_logging
 from utils.paths import APP_VERSION, catalog_manifest_path, resource_path
-from utils.pricing_pipeline import analyze_pricing_description, merge_clarification_context
+from utils.pricing_pipeline import analyze_pricing_description, merge_clarification_context, proposal_confirmable
 from utils.settings import DISCIPLINE_LABEL_TO_CODE, DISCIPLINE_OPTIONS, load_settings, sanitize_settings, save_settings, validate_ai_endpoint
 from utils.secrets import load_api_key, save_api_key
 from utils.single_instance import SingleInstanceGuard, activate_existing_window
@@ -532,6 +532,7 @@ class QuotaQtApp(QMainWindow):
     def _connect_signals(self) -> None:
         self.composer.send_requested.connect(self._send)
         self.feed.clarification_selected.connect(self._answer_clarification)
+        self.feed.confirmation_changed.connect(self._set_proposal_confirmation)
         self.signals.local_result.connect(self._on_local_result)
         self.signals.ai_answer.connect(self._on_ai_answer)
         self.signals.ai_error.connect(self._on_ai_error)
@@ -607,6 +608,7 @@ class QuotaQtApp(QMainWindow):
         #aiPricingType {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; }}
         #aiPricingCode {{ color: {c.accent}; font-family: Consolas; font-size: 12px; font-weight: 500; }}
         #aiPricingName {{ color: {c.text}; font-size: 13px; font-weight: 500; }}
+        #aiPricingWork {{ color: {c.text_secondary}; font-size: 12px; }}
         #aiPricingUnit {{ color: {c.text_muted}; font-family: Consolas; font-size: 11px; }}
         #aiReasonRow {{ background: transparent; border: 0; }}
         #aiReasonMarker {{ color: {c.success}; font-family: 'Source Han Sans SC'; font-size: 12px; font-weight: 500; }}
@@ -619,6 +621,11 @@ class QuotaQtApp(QMainWindow):
         #aiDetailsButton:focus {{ border-bottom: 2px solid {c.focus}; }}
         #aiDetails {{ background: transparent; border: 0; border-top: 1px solid {c.border}; border-radius: 0; }}
         #aiDetailLine {{ color: {c.text_secondary}; font-family: 'Source Han Sans SC'; font-size: 12px; }}
+        #confirmButton {{ color: {c.on_accent}; background: {c.accent_fill}; border: 1px solid {c.accent_fill}; border-radius: 7px; min-height: 32px; padding: 5px 14px; font-size: 13px; font-weight: 500; }}
+        #confirmButton:hover {{ background: {c.accent_hover}; border-color: {c.accent_hover}; }}
+        #confirmButton:pressed {{ background: {c.accent_pressed}; border-color: {c.accent_pressed}; }}
+        #confirmButton:checked {{ color: {c.success}; background: {c.success_soft}; border-color: {c.success}; }}
+        #confirmButton:focus {{ border-color: {c.focus}; }}
         #warningText {{ color: {c.warning}; background: {c.warning_soft}; border: 0; border-left: 2px solid {c.warning}; border-radius: 4px; padding: 9px 11px; }}
         #errorText {{ color: {c.danger}; background: {c.danger_soft}; border: 0; border-left: 2px solid {c.danger}; border-radius: 4px; padding: 9px 11px; }}
         #composer {{ background: transparent; border: 0; }}
@@ -774,7 +781,13 @@ class QuotaQtApp(QMainWindow):
             if completed_attempts:
                 latest = completed_attempts[-1]
                 widgets["result"] = None
-                widgets["ai"].append(self.feed.add_ai(str(latest["response"]), snapshot if isinstance(snapshot, dict) else None))
+                widgets["ai"].append(
+                    self.feed.add_ai(
+                        str(latest["response"]),
+                        snapshot if isinstance(snapshot, dict) else None,
+                        context_id=turn_id,
+                    )
+                )
             elif isinstance(snapshot, dict):
                 widgets["result"] = self.feed.add_result(snapshot)
             if turn_id:
@@ -870,6 +883,24 @@ class QuotaQtApp(QMainWindow):
             return
         self.composer.set_text(option_presentation(answer)["display"])
         self._send()
+
+    def _set_proposal_confirmation(self, turn_id: str, proposal_index: int, confirmed: bool) -> None:
+        if not self._session or not turn_id:
+            return
+        turn = session_store.find_turn(self._session, turn_id)
+        snapshot = turn.get("retrieval_snapshot") if isinstance(turn, dict) else None
+        proposals = snapshot.get("proposals") if isinstance(snapshot, dict) else None
+        if not isinstance(proposals, list) or not 0 <= proposal_index < len(proposals):
+            return
+        proposal = proposals[proposal_index]
+        if not isinstance(proposal, dict):
+            return
+        if not proposal_confirmable(proposal):
+            proposal["confirmed"] = False
+            return
+        proposal["confirmed"] = bool(confirmed)
+        session_store.set_turn_proposals(self._session, turn_id, proposals)
+        self._save_session()
 
     def _finish_job(self, request_id: int | None = None) -> None:
         if request_id is not None and self._active_request_id != request_id:
@@ -983,7 +1014,11 @@ class QuotaQtApp(QMainWindow):
             turn_widgets = self._turn_widgets.setdefault(str(pending["turn_id"]), {"ai": []})
             self.feed.remove_widget(turn_widgets.get("result"))
             turn_widgets["result"] = None
-            ai_widget = self.feed.add_ai(text, snapshot if isinstance(snapshot, dict) else None)
+            ai_widget = self.feed.add_ai(
+                text,
+                snapshot if isinstance(snapshot, dict) else None,
+                context_id=str(pending["turn_id"]),
+            )
             turn_widgets.setdefault("ai", []).append(ai_widget)
             if reader_position is not None:
                 QTimer.singleShot(0, lambda value=reader_position, epoch=reader_epoch: self._restore_manual_scroll_position(value, epoch))
