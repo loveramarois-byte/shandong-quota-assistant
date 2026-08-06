@@ -166,6 +166,11 @@ def _rank_rows(rows: Iterable[sqlite3.Row], terms: list[str], query: str, limit:
         for decisive_term in DECISIVE_TITLE_TERMS:
             if decisive_term in normalized and decisive_term in title:
                 score += 42
+                if decisive_term in {"暗配", "明配"}:
+                    # Installation method is more specific than the generic
+                    # operation word "配管" and must win without relying on a
+                    # PDF page number as an accidental tie-breaker.
+                    score += 28
                 phrase_hits.append(f"核心作业词命中“{decisive_term}”")
         for phrase in dict.fromkeys(phrase_variants):
             if phrase in title:

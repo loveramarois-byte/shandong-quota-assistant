@@ -13,7 +13,7 @@ from utils.catalog import search_catalog, validate_catalog_schema
 
 
 class CompactCatalogTests(unittest.TestCase):
-    def test_compact_catalog_keeps_runtime_records_without_fts_shadow_tables(self):
+    def test_compact_catalog_keeps_only_structured_runtime_records(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = build_demo_catalog(root / "source.sqlite")
@@ -22,6 +22,8 @@ class CompactCatalogTests(unittest.TestCase):
 
             self.assertTrue(output.is_file())
             self.assertFalse(result["fts5_included"])
+            self.assertFalse(result["pdf_content_included"])
+            self.assertLess(output.stat().st_size, source.stat().st_size)
             connection = sqlite3.connect(output)
             try:
                 validate_catalog_schema(connection)
@@ -32,6 +34,7 @@ class CompactCatalogTests(unittest.TestCase):
                     )
                 }
                 self.assertNotIn("chunks_fts", tables)
+                self.assertNotIn("pages", tables)
                 self.assertIn("idx_chunks_scope_title", {
                     row[0]
                     for row in connection.execute(
@@ -41,6 +44,22 @@ class CompactCatalogTests(unittest.TestCase):
                 self.assertEqual(
                     connection.execute("SELECT COUNT(*) FROM chunks").fetchone()[0],
                     result["counts"]["chunks"],
+                )
+                self.assertEqual(
+                    {
+                        row[0]
+                        for row in connection.execute(
+                            "SELECT DISTINCT chunk_type FROM chunks"
+                        )
+                    },
+                    {"quota_item", "bill_item"},
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM chunks "
+                        "WHERE source_path IS NOT NULL OR pdf_page IS NOT NULL"
+                    ).fetchone()[0],
+                    0,
                 )
             finally:
                 connection.close()
@@ -54,6 +73,8 @@ class CompactCatalogTests(unittest.TestCase):
                 )
             self.assertTrue(search["quotas"])
             self.assertTrue(search["bills"])
+            self.assertIsNone(search["quotas"][0]["source_path"])
+            self.assertIsNone(search["quotas"][0]["pdf_page"])
 
 
 if __name__ == "__main__":

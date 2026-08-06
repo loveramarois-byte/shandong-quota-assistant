@@ -66,8 +66,14 @@ class ValidateAnswerTests(unittest.TestCase):
         self.assertIn(code, validation["codes"])
         self.assertEqual(validation["codes"][code], "candidate")
         self.assertEqual(validation["claims"][0]["record_id"], item["record_id"])
-        self.assertTrue(validation["evidence_verified"])
-        self.assertEqual(validation["evidence_located"], 1)
+        if item.get("source_path") and item.get("pdf_page"):
+            self.assertTrue(validation["evidence_verified"])
+            self.assertEqual(validation["evidence_located"], 1)
+        else:
+            self.assertTrue(validation["catalog_verified"])
+            self.assertTrue(validation["source_pages_optional"])
+            self.assertFalse(validation["evidence_verified"])
+            self.assertEqual(validation["evidence_located"], 0)
         self.assertEqual(validation["evidence_total"], 1)
         self.assertEqual(validation["evidence"][0]["reference"], item["reference"])
 

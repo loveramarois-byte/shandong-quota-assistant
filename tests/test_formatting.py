@@ -41,6 +41,23 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(item["resources"], ["综合工日(土建) 1.45 工日"])
         self.assertIn("挖土", item["work_content"])
 
+    def test_compact_quota_resources_fall_back_to_structured_text(self):
+        item = enrich_item({
+            "type": "quota_item",
+            "text": (
+                "定额编号: 4-1-1\n定额名称: 砖基础\n单位: 10m3\n"
+                "工作内容: 调运砂浆，砌砖。\n人材机:\n"
+                "综合工日(土建) 10.97 工日\n"
+                "烧结煤矸石普通砖 240x115x53 5.3032 千块"
+            ),
+            "metadata": {"alignment": "master_only"},
+        })
+
+        self.assertEqual(item["resources"], [
+            "综合工日(土建) 10.97 工日",
+            "烧结煤矸石普通砖 240x115x53 5.3032 千块",
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -123,6 +123,15 @@ def _resource_summary(metadata: dict[str, Any] | None) -> list[str]:
     return result[:8]
 
 
+def _text_resource_summary(value: str | None) -> list[str]:
+    """Read the compact catalogue's human-readable resource lines."""
+    return [
+        line.strip()
+        for line in str(value or "").splitlines()
+        if line.strip()
+    ][:8]
+
+
 def enrich_item(item: dict[str, Any]) -> dict[str, Any]:
     """Add stable display fields used by result cards and AI context."""
     enriched = dict(item)
@@ -135,7 +144,11 @@ def enrich_item(item: dict[str, Any]) -> dict[str, Any]:
     enriched["calculation_rule"] = sections.get("工程量计算规则", "")
     enriched["work_content"] = sections.get("工作内容", "")
     enriched["remark"] = sections.get("备注", "")
-    enriched["resources"] = enriched.get("resources") or _resource_summary(metadata)
+    enriched["resources"] = (
+        enriched.get("resources")
+        or _resource_summary(metadata)
+        or _text_resource_summary(sections.get("人材机"))
+    )
     if enriched.get("condition_text"):
         enriched["condition_text"] = _clean(str(enriched["condition_text"]), limit=800)
     if enriched.get("type") in {"conversion", "work_content", "chapter_guidance"}:

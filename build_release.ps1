@@ -41,7 +41,7 @@ $releaseRoot = if ($InternalEvaluation) {
 $bundleRoot = Join-Path $releaseRoot $bundleName
 $requiresSigning = -not ($InternalEvaluation -or $AuthorizedInternalDistribution -or $AuthorizedPublicDistribution)
 $signPublicArtifacts = $AuthorizedPublicDistribution -and -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)
-$useCompactCatalog = $AuthorizedPublicDistribution -and -not $IncludeEvidenceSources
+$useCompactCatalog = -not $IncludeEvidenceSources
 
 function Get-FileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
@@ -353,6 +353,7 @@ $releaseManifest = [ordered]@{
         database_sha256 = Get-FileSha256 $stagedDatabase
         source_database_sha256 = Get-FileSha256 $database
         compact_runtime_catalog = $useCompactCatalog
+        pdf_content_bundled = -not $useCompactCatalog
         evidence_source_files_bundled = $evidenceSourceCount
         hardlinks_forbidden = $true
         evidence_source_files = $evidenceSourceCount

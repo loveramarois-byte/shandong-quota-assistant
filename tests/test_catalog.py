@@ -93,12 +93,26 @@ class CatalogTests(unittest.TestCase):
     def test_fts_query_plan_uses_virtual_table(self):
         connection = connect_database()
         try:
-            expression = _fts_expression(query_terms("挖沟槽土方"), "挖沟槽土方")
-            plan = [str(row[3]) for row in connection.execute("EXPLAIN QUERY PLAN SELECT c.chunk_id FROM chunks_fts JOIN chunks c ON c.chunk_id=chunks_fts.chunk_id WHERE c.edition=? AND chunks_fts MATCH ?", ("2025", expression))]
+            has_fts = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+            ).fetchone()
+            if has_fts:
+                expression = _fts_expression(query_terms("挖沟槽土方"), "挖沟槽土方")
+                plan = [str(row[3]) for row in connection.execute("EXPLAIN QUERY PLAN SELECT c.chunk_id FROM chunks_fts JOIN chunks c ON c.chunk_id=chunks_fts.chunk_id WHERE c.edition=? AND chunks_fts MATCH ?", ("2025", expression))]
+            else:
+                plan = [str(row[3]) for row in connection.execute(
+                    "EXPLAIN QUERY PLAN SELECT chunk_id FROM chunks "
+                    "WHERE chunk_type=? AND edition=? AND discipline=? AND title LIKE ? "
+                    "ORDER BY title LIMIT 20",
+                    ("quota_item", "2025", "building", "%沟槽%"),
+                )]
         finally:
             connection.close()
-        self.assertTrue(any("VIRTUAL TABLE" in detail for detail in plan), plan)
-        self.assertFalse(any(detail.startswith("SCAN c ") for detail in plan), plan)
+        if has_fts:
+            self.assertTrue(any("VIRTUAL TABLE" in detail for detail in plan), plan)
+            self.assertFalse(any(detail.startswith("SCAN c ") for detail in plan), plan)
+        else:
+            self.assertTrue(any("idx_chunks_scope_title" in detail for detail in plan), plan)
 
     def test_empty_query_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "不能为空"):
