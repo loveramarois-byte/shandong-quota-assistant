@@ -394,6 +394,9 @@ class QtThemeTests(unittest.TestCase):
                             "bill_code": "010903001-000",
                             "bill_title": "墙面卷材防水",
                             "bill_unit": "m²",
+                            "bill_feature_description": "施工部位：地下室外墙\n卷材品种、规格、厚度：SBS防水卷材；4mm",
+                            "bill_calculation_rule": "按设计图示尺寸以面积计算",
+                            "bill_work_content": "基层处理；铺贴卷材；搭接缝处理",
                             "evidence_refs": ["R1"],
                             "quota_lines": [
                                 {
@@ -418,6 +421,12 @@ class QtThemeTests(unittest.TestCase):
             self.assertFalse(details.isVisible())
             self.assertIn("清单 010903001-000 墙面卷材防水 m²", pricing_text)
             self.assertIn("定额 9-2-11 改性沥青卷材热熔法一层 立面 10m²", pricing_text)
+            bill_details = card.findChildren(QLabel, "aiPricingBillDetail")
+            self.assertEqual(len(bill_details), 3)
+            self.assertIn("项目特征：施工部位：地下室外墙", bill_details[0].text())
+            self.assertIn("计算规则：按设计图示尺寸以面积计算", bill_details[1].text())
+            self.assertIn("工作内容：基层处理；铺贴卷材；搭接缝处理", bill_details[2].text())
+            self.assertIsNone(card.findChild(QWidget, "billSheet"))
             button = next(value for value in card.findChildren(QPushButton) if value.objectName() == "aiDetailsButton")
             button.click()
             self.app.processEvents()

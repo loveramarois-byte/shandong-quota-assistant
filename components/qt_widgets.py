@@ -173,6 +173,21 @@ def _pricing_summary_row(kind: str, item: dict) -> QFrame:
     name.setWordWrap(True)
     name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     name_layout.addWidget(name)
+    if kind == "清单":
+        for label, key, detail_kind in (
+            ("项目特征", "feature_description", "feature"),
+            ("计算规则", "calculation_rule", "rule"),
+            ("工作内容", "work_content", "work"),
+        ):
+            value = str(item.get(key) or "").strip()
+            if not value:
+                continue
+            detail = QLabel(f"{label}：{value}")
+            detail.setObjectName("aiPricingBillDetail")
+            detail.setProperty("detailKind", detail_kind)
+            detail.setWordWrap(True)
+            detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            name_layout.addWidget(detail)
     work_summary = str(item.get("work_summary") or "").strip()
     if kind == "定额" and work_summary:
         work = QLabel(work_summary)
@@ -750,9 +765,6 @@ class MessageFeed(QWidget):
         layout.addWidget(note)
 
         bill = dict(view.get("bill") or {})
-        if view.get("has_details") and bill.get("code") != "未获取到":
-            layout.addSpacing(4)
-            layout.addWidget(_bill_sheet(bill))
 
         question = view.get("question")
         if isinstance(question, dict):

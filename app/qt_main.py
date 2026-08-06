@@ -612,6 +612,8 @@ class QuotaQtApp(QMainWindow):
         #aiPricingType {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; }}
         #aiPricingCode {{ color: {c.accent}; font-family: Consolas; font-size: 12px; font-weight: 500; }}
         #aiPricingName {{ color: {c.text}; font-size: 13px; font-weight: 500; }}
+        #aiPricingBillDetail {{ color: {c.text_secondary}; font-size: 12px; padding-top: 2px; }}
+        #aiPricingBillDetail[detailKind="feature"] {{ color: {c.text}; }}
         #aiPricingWork {{ color: {c.text_secondary}; font-size: 12px; }}
         #aiPricingUnit {{ color: {c.text_muted}; font-family: Consolas; font-size: 11px; }}
         #copyRowButton {{ color: {c.text_secondary}; background: transparent; border: 1px solid {c.border}; border-radius: 6px; min-height: 27px; padding: 2px 8px; font-size: 11px; font-weight: 500; }}
