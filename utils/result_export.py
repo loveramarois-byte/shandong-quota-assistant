@@ -41,7 +41,10 @@ def _source_basis_text(proposal: dict[str, Any], line: dict[str, Any] | None = N
 
 
 def proposal_csv(result: dict[str, Any], *, confirmed_only: bool = True) -> list[list[str]]:
-    rows = [["施工事项", "类型", "角色", "编码", "名称", "单位", "状态", "假设/换算", "资料依据"]]
+    rows = [[
+        "施工事项", "类型", "角色", "编码", "名称", "项目特征描述", "单位",
+        "工程量计算规则", "工作内容", "状态", "假设/换算", "资料依据",
+    ]]
     work_items = {str(value.get("id") or ""): value for value in result.get("work_items") or []}
     status_labels = {
         "ready_for_review": "可确认",
@@ -56,10 +59,20 @@ def proposal_csv(result: dict[str, Any], *, confirmed_only: bool = True) -> list
         span = str(work_item.get("source_span") or proposal.get("work_item_id") or "")
         status = status_labels.get(str(proposal.get("status") or ""), str(proposal.get("status") or ""))
         if proposal.get("bill_record_id"):
-            rows.append([span, "清单", "", str(proposal.get("bill_code") or ""), str(proposal.get("bill_title") or ""), str(proposal.get("bill_unit") or ""), status, "；".join(proposal.get("assumptions") or []), _source_basis_text(proposal)])
+            rows.append([
+                span, "清单", "", str(proposal.get("bill_code") or ""),
+                str(proposal.get("bill_title") or ""), str(proposal.get("bill_feature_description") or ""),
+                str(proposal.get("bill_unit") or ""), str(proposal.get("bill_calculation_rule") or ""),
+                str(proposal.get("bill_work_content") or ""), status,
+                "；".join(proposal.get("assumptions") or []), _source_basis_text(proposal),
+            ])
         for quota in proposal.get("quota_lines") or []:
             role = {"main": "主项", "supplement": "增补", "adjustment": "调整", "transport": "运输", "conversion": "换算", "alternative": "备选"}.get(str(quota.get("role") or ""), str(quota.get("role") or ""))
-            rows.append([span, "定额", role, str(quota.get("code") or ""), str(quota.get("title") or ""), str(quota.get("unit") or ""), status, "；".join(proposal.get("assumptions") or []), _source_basis_text(proposal, quota)])
+            rows.append([
+                span, "定额", role, str(quota.get("code") or ""), str(quota.get("title") or ""), "",
+                str(quota.get("unit") or ""), "", "", status,
+                "；".join(proposal.get("assumptions") or []), _source_basis_text(proposal, quota),
+            ])
     return rows
 
 

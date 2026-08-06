@@ -66,6 +66,9 @@ class AiPresentationTests(unittest.TestCase):
                     "bill_code": "010903001-000",
                     "bill_title": "墙面卷材防水",
                     "bill_unit": "m²",
+                    "bill_feature_description": "施工部位：地下室外墙\n卷材品种、规格、厚度：SBS防水卷材；4mm",
+                    "bill_calculation_rule": "按设计图示尺寸以面积计算",
+                    "bill_work_content": "基层处理；铺贴卷材",
                     "quota_lines": [
                         {
                             "code": "9-2-11",
@@ -86,6 +89,9 @@ class AiPresentationTests(unittest.TestCase):
         self.assertNotIn("010903001-000", view["headline"])
         self.assertNotIn("9-2-11", view["headline"])
         self.assertEqual(view["bill"]["code"], "010903001-000")
+        self.assertIn("施工部位：地下室外墙", view["bill"]["feature_description"])
+        self.assertEqual(view["bill"]["calculation_rule"], "按设计图示尺寸以面积计算")
+        self.assertEqual(view["bill"]["work_content"], "基层处理；铺贴卷材")
         self.assertEqual(view["quotas"][0]["code"], "9-2-11")
 
     def test_quota_work_content_is_explained_in_plain_language_without_table_noise(self) -> None:

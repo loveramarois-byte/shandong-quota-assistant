@@ -125,6 +125,13 @@ def validate_structured_ai_response(payload: dict[str, Any], result: dict[str, A
         normalized["data_basis"] = str(local_proposal.get("data_basis") or "")
         normalized["source_review_required"] = bool(local_proposal.get("source_review_required"))
         normalized["source_review_reasons"] = list(local_proposal.get("source_review_reasons") or [])
+        for key in (
+            "bill_characteristics",
+            "bill_feature_description",
+            "bill_calculation_rule",
+            "bill_work_content",
+        ):
+            normalized[key] = str(local_proposal.get(key) or "")
         if local_proposal.get("status") == "ready_for_review" and status != "ready_for_review":
             schema_errors.append(f"{normalized.get('work_item_id')} 的本地方案已可确认，AI 不得随机降级")
         if (

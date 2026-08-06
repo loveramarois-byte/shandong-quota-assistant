@@ -59,6 +59,90 @@ class PricingPipelineTests(unittest.TestCase):
         self.assertTrue(all(line["source_status"] == "source_page_linked" for line in proposal["quota_lines"]))
         self.assertTrue(analysis["validation"]["valid"])
 
+    def test_proposal_fills_a_formal_bill_description_from_catalog_and_user_text(self):
+        item = extract_work_item(
+            "地下室外墙4mm厚SBS改性沥青防水卷材，热熔法施工一层",
+            item_id="W1",
+            discipline="building",
+        )
+        bill = _candidate(
+            "bill:2024:293",
+            "010903001-000",
+            "墙面卷材防水",
+            "bill_item",
+            edition="2024",
+            unit="m2",
+            characteristics="1.卷材品种、规格、厚度\n2.防水层数\n3.防水层做法",
+            calculation_rule="按设计图示尺寸以面积计算",
+            work_content="基层处理；刷粘结剂；铺防水卷材；搭接缝处理",
+        )
+        main = _candidate(
+            "link:2024:3202",
+            "9-2-11",
+            "改性沥青卷材热熔法 一层 立面",
+            "bill_quota_link",
+            quota_edition="2025",
+            standard_edition="2024",
+            bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:938",
+            bill_code=bill["code"],
+            unit="10m2",
+        )
+
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [bill], "quotas": [], "links": [main], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        proposal = analysis["proposals"][0]
+        self.assertEqual(proposal["bill_characteristics"], bill["characteristics"])
+        self.assertIn("施工部位：地下室外墙", proposal["bill_feature_description"])
+        self.assertIn("卷材品种、规格、厚度：SBS改性沥青防水卷材；4mm", proposal["bill_feature_description"])
+        self.assertIn("防水层数：1层", proposal["bill_feature_description"])
+        self.assertIn("防水层做法：热熔法", proposal["bill_feature_description"])
+        self.assertEqual(proposal["bill_calculation_rule"], bill["calculation_rule"])
+        self.assertEqual(proposal["bill_work_content"], bill["work_content"])
+
+    def test_formal_bill_description_marks_required_values_missing_from_user_text(self):
+        bill = _candidate(
+            "bill:2024:293",
+            "010903001-000",
+            "墙面卷材防水",
+            "bill_item",
+            edition="2024",
+            unit="m2",
+            characteristics="1.卷材品种、规格、厚度\n2.防水层数\n3.防水层做法",
+        )
+        main = _candidate(
+            "link:2024:3202",
+            "9-2-11",
+            "改性沥青卷材热熔法 一层 立面",
+            "bill_quota_link",
+            quota_edition="2025",
+            standard_edition="2024",
+            bill_record_id=bill["record_id"],
+            quota_record_id="quota:171:938",
+            bill_code=bill["code"],
+            unit="10m2",
+        )
+        item = extract_work_item("SBS防水卷材两层", item_id="W1", discipline="building")
+
+        analysis = assemble_pricing_result(
+            item.source_span,
+            [(item, {"bills": [bill], "quotas": [], "links": [main], "guidance": [], "hints": []})],
+            quota_edition="2025",
+            standard_edition="2024",
+            discipline="building",
+        )
+
+        description = analysis["proposals"][0]["bill_feature_description"]
+        self.assertIn("卷材品种、规格、厚度：SBS防水卷材；规格未明确；厚度未明确", description)
+        self.assertIn("防水层数：2层", description)
+        self.assertIn("防水层做法：做法未明确", description)
+
     def test_material_thickness_does_not_add_an_extra_layer_quota(self):
         item = extract_work_item("地下室外墙4mm SBS防水卷材", item_id="W1", discipline="building")
         analysis = assemble_pricing_result(

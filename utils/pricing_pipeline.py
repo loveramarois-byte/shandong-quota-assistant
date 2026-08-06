@@ -101,6 +101,7 @@ _MATERIAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("实心砖", ("实心砖",)),
 )
 _NON_MAIN_ACTION_TERMS = ("试验", "液压", "水压", "气密", "吹扫", "冲洗", "充气保护", "拆除", "安拆")
+_MISSING_FEATURE_VALUE = "未明确（原描述未提供）"
 
 
 def infer_discipline(description: str) -> str | None:
@@ -149,6 +150,132 @@ def _quota_role_for_item(title: str, work_item: WorkItem) -> str:
 
 def _attribute_values(work_item: WorkItem) -> dict[str, Any]:
     return {value.key: value.value for value in work_item.attributes}
+
+
+def _formatted_attribute(work_item: WorkItem, key: str) -> str:
+    attribute = next((value for value in work_item.attributes if value.key == key), None)
+    if attribute is None:
+        return ""
+    if key == "layers":
+        return f"{attribute.value:g}层" if isinstance(attribute.value, (int, float)) else f"{attribute.value}层"
+    if key in {"thickness", "diameter", "depth", "distance"}:
+        value = f"{attribute.value:g}" if isinstance(attribute.value, (int, float)) else str(attribute.value)
+        return value + str(attribute.unit or "")
+    return str(attribute.source or attribute.value or "").strip()
+
+
+def _method_values(work_item: WorkItem) -> list[str]:
+    labels = {
+        "manual": "人工",
+        "mechanical": "机械",
+        "pump": "泵送",
+        "cast_in_place": "现浇",
+        "hot_melt": "热熔法",
+        "self_adhesive": "自粘法",
+    }
+    values: list[str] = []
+    for attribute in work_item.attributes:
+        if attribute.key not in {"method", "pump", "cast_in_place", "hot_melt", "self_adhesive"}:
+            continue
+        raw = str(attribute.value or "")
+        value = labels.get(raw) or labels.get(attribute.key) or str(attribute.source or raw).strip()
+        if value:
+            values.append(value)
+    return list(dict.fromkeys(values))
+
+
+def _bill_feature_description(work_item: WorkItem, characteristics: object) -> str:
+    """Fill 福莱清单特征 labels only from facts present in the user description."""
+    requirements = [
+        re.sub(r"^\s*(?:\d+[.、)]|[（(]?\d+[）)])\s*", "", line).strip()
+        for line in str(characteristics or "").replace("\r", "").splitlines()
+        if line.strip()
+    ]
+    attributes = _attribute_values(work_item)
+    methods = _method_values(work_item)
+    lines: list[str] = []
+
+    if work_item.location and not any("部位" in value or "位置" in value for value in requirements):
+        lines.append(f"施工部位：{work_item.location}")
+
+    for requirement in requirements:
+        values: list[str] = []
+        missing: list[str] = []
+        if any(term in requirement for term in ("部位", "位置")) and work_item.location:
+            values.append(work_item.location)
+        elif any(term in requirement for term in ("部位", "位置")):
+            missing.append("部位未明确")
+        material_required = any(term in requirement for term in ("品种", "种类", "材质", "材料"))
+        if material_required:
+            if work_item.material:
+                values.append(work_item.material)
+            else:
+                missing.append("材料未明确")
+        dimension_required = any(term in requirement for term in ("直径", "管径", "公称"))
+        specification_required = "规格" in requirement
+        if specification_required or dimension_required:
+            diameter = _formatted_attribute(work_item, "diameter")
+            if diameter:
+                values.append(diameter)
+            elif specification_required:
+                missing.append("规格未明确")
+            else:
+                missing.append("直径未明确")
+        if "厚" in requirement:
+            thickness = _formatted_attribute(work_item, "thickness")
+            if thickness:
+                values.append(thickness)
+            else:
+                missing.append("厚度未明确")
+        if "强度等级" in requirement:
+            strength = _formatted_attribute(work_item, "strength_grade")
+            if strength:
+                values.append(strength)
+            else:
+                missing.append("强度等级未明确")
+        if any(term in requirement for term in ("层数", "遍数", "道数")):
+            layers = _formatted_attribute(work_item, "layers")
+            if layers:
+                values.append(layers)
+            else:
+                missing.append("层数未明确")
+        if any(term in requirement for term in ("做法", "施工方法", "施工方式", "粘贴方法")):
+            if methods:
+                values.extend(methods)
+            else:
+                missing.append("做法未明确")
+        if "土类别" in requirement or "土类" in requirement:
+            soil_type = _formatted_attribute(work_item, "soil_type")
+            if soil_type:
+                values.append(soil_type)
+        if "深" in requirement:
+            depth = _formatted_attribute(work_item, "depth")
+            if depth:
+                values.append(depth)
+        if "运距" in requirement or "运输距离" in requirement:
+            distance = _formatted_attribute(work_item, "distance")
+            if distance:
+                values.append(distance)
+        feature_values = list(dict.fromkeys([*values, *missing]))
+        lines.append(f"{requirement}：{'；'.join(feature_values) or _MISSING_FEATURE_VALUE}")
+
+    if methods and not any(any(term in value for term in ("做法", "方法", "方式")) for value in requirements):
+        lines.append("施工方式：" + "；".join(methods))
+    if not requirements:
+        if work_item.material:
+            lines.append(f"材料：{work_item.material}")
+        for key, label in (
+            ("strength_grade", "强度等级"),
+            ("thickness", "厚度"),
+            ("diameter", "规格直径"),
+            ("layers", "层数"),
+        ):
+            value = _formatted_attribute(work_item, key)
+            if value:
+                lines.append(f"{label}：{value}")
+    if not lines:
+        lines.append(f"施工描述：{work_item.source_span or _MISSING_FEATURE_VALUE}")
+    return "\n".join(lines)
 
 
 def _normalized_trade_text(value: str) -> str:
@@ -669,6 +796,10 @@ def _assemble_proposal(
         bill_code=str(bill.get("code") or ""),
         bill_title=str(bill.get("title") or ""),
         bill_unit=str(bill.get("unit") or ""),
+        bill_characteristics=str(bill.get("characteristics") or ""),
+        bill_feature_description=_bill_feature_description(work_item, bill.get("characteristics")),
+        bill_calculation_rule=str(bill.get("calculation_rule") or ""),
+        bill_work_content=str(bill.get("work_content") or ""),
         quota_lines=tuple(lines),
         review_candidates=tuple(review_candidates),
         assumptions=tuple(assumptions),
@@ -1003,7 +1134,7 @@ def analyze_pricing_description(
 
 def proposal_plain_text(result: dict[str, Any], *, confirmed_only: bool = False) -> str:
     work_items = {str(value.get("id") or ""): value for value in result.get("work_items") or []}
-    lines = ["事项\t类型\t角色\t编码\t名称\t单位\t状态"]
+    lines = ["事项\t类型\t角色\t编码\t名称\t项目特征描述\t单位\t工程量计算规则\t工作内容\t状态"]
     for proposal in result.get("proposals") or []:
         if confirmed_only and (not proposal.get("confirmed") or not proposal_confirmable(proposal)):
             continue
@@ -1011,9 +1142,17 @@ def proposal_plain_text(result: dict[str, Any], *, confirmed_only: bool = False)
         span = str(work_item.get("source_span") or proposal.get("work_item_id") or "")
         status = _STATUS_LABELS.get(str(proposal.get("status") or ""), str(proposal.get("status") or ""))
         if proposal.get("bill_record_id"):
-            lines.append("\t".join((span, "清单", "", str(proposal.get("bill_code") or ""), str(proposal.get("bill_title") or ""), str(proposal.get("bill_unit") or ""), status)))
+            lines.append("\t".join((
+                span, "清单", "", str(proposal.get("bill_code") or ""), str(proposal.get("bill_title") or ""),
+                str(proposal.get("bill_feature_description") or "").replace("\n", "；"),
+                str(proposal.get("bill_unit") or ""), str(proposal.get("bill_calculation_rule") or "").replace("\n", "；"),
+                str(proposal.get("bill_work_content") or "").replace("\n", "；"), status,
+            )))
         for quota in proposal.get("quota_lines") or []:
-            lines.append("\t".join((span, "定额", _ROLE_LABELS.get(str(quota.get("role") or ""), str(quota.get("role") or "")), str(quota.get("code") or ""), str(quota.get("title") or ""), str(quota.get("unit") or ""), status)))
+            lines.append("\t".join((
+                span, "定额", _ROLE_LABELS.get(str(quota.get("role") or ""), str(quota.get("role") or "")),
+                str(quota.get("code") or ""), str(quota.get("title") or ""), "", str(quota.get("unit") or ""), "", "", status,
+            )))
     return "\n".join(lines if len(lines) > 1 else [])
 
 

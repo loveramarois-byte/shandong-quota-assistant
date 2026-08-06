@@ -10,7 +10,7 @@ from PyQt6.QtCore import QRect, QTimer, Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QLayout, QPushButton, QSizePolicy, QWidget
 
 from app.qt_main import QuotaQtApp, SettingsDialog, _load_qt_fonts
-from components.qt_widgets import CheckRow, LoadingSpinner, _copy_row_button, candidate_row_mime
+from components.qt_widgets import CheckRow, LoadingSpinner, _copy_row_button, bill_result_mime, candidate_row_mime
 from themes.tokens import get_theme
 
 
@@ -109,6 +109,9 @@ class QtThemeTests(unittest.TestCase):
                             "bill_code": "010903001-000",
                             "bill_title": "墙面卷材防水",
                             "bill_unit": "m²",
+                            "bill_feature_description": "施工部位：地下室外墙\n卷材品种、规格、厚度：SBS防水卷材；4mm",
+                            "bill_calculation_rule": "按设计图示尺寸以面积计算",
+                            "bill_work_content": "基层处理；铺贴卷材",
                             "quota_lines": [{"code": "9-2-11", "title": "改性沥青卷材热熔法", "unit": "10m²"}],
                         }
                     ],
@@ -120,6 +123,10 @@ class QtThemeTests(unittest.TestCase):
             rank = next(label for label in card.findChildren(QLabel) if label.objectName() == "rankBadge")
             self.assertEqual((rank.width(), rank.height()), (28, 24))
             self.assertEqual(rank.text(), "01")
+            self.assertIsNotNone(card.findChild(QWidget, "billSheet"))
+            feature = card.findChild(QLabel, "billFeatureDescription")
+            self.assertIsNotNone(feature)
+            self.assertIn("SBS防水卷材；4mm", feature.text())
         finally:
             window.close()
 
@@ -136,6 +143,23 @@ class QtThemeTests(unittest.TestCase):
         self.assertEqual(mime.text(), "010101001001\t平整场地\tm²\t2025\t建筑\t")
         self.assertIn("mso-number-format", mime.html())
         self.assertIn("010101001001", mime.html())
+
+    def test_formal_bill_copy_includes_feature_rule_and_work_content(self) -> None:
+        mime = bill_result_mime(
+            {
+                "code": "010903001-000",
+                "name": "墙面卷材防水",
+                "feature_description": "卷材品种：SBS卷材；厚度：4mm",
+                "unit": "m²",
+                "calculation_rule": "按设计图示面积计算",
+                "work_content": "基层处理；铺贴卷材",
+            }
+        )
+
+        self.assertEqual(len(mime.text().split("\t")), 6)
+        self.assertIn("卷材品种：SBS卷材；厚度：4mm", mime.text())
+        self.assertIn("按设计图示面积计算", mime.text())
+        self.assertIn("铺贴卷材", mime.text())
 
     def test_candidate_copy_button_writes_clipboard_and_shows_feedback(self) -> None:
         button = _copy_row_button(

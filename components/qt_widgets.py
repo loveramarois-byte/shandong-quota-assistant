@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QApplication,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QLayout,
     QListWidget,
@@ -59,7 +60,26 @@ def candidate_row_mime(item: dict) -> QMimeData:
     return mime
 
 
-def _copy_row_button(item: dict) -> QPushButton:
+def bill_result_mime(item: dict) -> QMimeData:
+    fields = tuple(
+        str(value or "").replace("\r", "").replace("\n", "；").strip()
+        for value in (
+            item.get("code"),
+            item.get("name") or item.get("title"),
+            item.get("feature_description"),
+            item.get("unit"),
+            item.get("calculation_rule"),
+            item.get("work_content"),
+        )
+    )
+    mime = QMimeData()
+    mime.setText("\t".join(fields))
+    cells = "".join(f'<td style="mso-number-format:\'\\@\';">{escape(value)}</td>' for value in fields)
+    mime.setHtml(f"<table><tr>{cells}</tr></table>")
+    return mime
+
+
+def _copy_button(item: dict, mime_builder: Callable[[dict], QMimeData]) -> QPushButton:
     button = QPushButton("复制整行")
     button.setObjectName("copyRowButton")
     button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -72,7 +92,7 @@ def _copy_row_button(item: dict) -> QPushButton:
         button.setEnabled(True)
 
     def copy_row() -> None:
-        QApplication.clipboard().setMimeData(candidate_row_mime(item))
+        QApplication.clipboard().setMimeData(mime_builder(item))
         button.setText("已复制")
         button.setEnabled(False)
         timer.start(1500)
@@ -80,6 +100,53 @@ def _copy_row_button(item: dict) -> QPushButton:
     timer.timeout.connect(restore)
     button.clicked.connect(copy_row)
     return button
+
+
+def _copy_row_button(item: dict) -> QPushButton:
+    return _copy_button(item, candidate_row_mime)
+
+
+def _copy_bill_row_button(item: dict) -> QPushButton:
+    return _copy_button(item, bill_result_mime)
+
+
+def _bill_sheet(bill: dict) -> QFrame:
+    """Render one proposal as a formal bill-of-quantities row."""
+    frame = QFrame()
+    frame.setObjectName("billSheet")
+    grid = QGridLayout(frame)
+    grid.setContentsMargins(0, 0, 0, 0)
+    grid.setHorizontalSpacing(0)
+    grid.setVerticalSpacing(0)
+    grid.setColumnStretch(0, 2)
+    grid.setColumnStretch(1, 5)
+    grid.setColumnStretch(2, 1)
+
+    def cell(text: object, object_name: str, *, wrap: bool = True) -> QLabel:
+        label = QLabel(str(text or "未明确"))
+        label.setObjectName(object_name)
+        label.setWordWrap(wrap)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        return label
+
+    for column, title in enumerate(("项目编码", "项目名称", "计量单位")):
+        grid.addWidget(cell(title, "billSheetHeader", wrap=False), 0, column)
+    grid.addWidget(cell(bill.get("code"), "billSheetValue"), 1, 0)
+    grid.addWidget(cell(bill.get("name") or bill.get("title"), "billSheetValue"), 1, 1)
+    grid.addWidget(cell(bill.get("unit"), "billSheetValue"), 1, 2)
+
+    rows = (
+        ("项目特征描述", bill.get("feature_description"), "billFeatureDescription"),
+        ("工程量计算规则", bill.get("calculation_rule"), "billCalculationRule"),
+        ("工作内容", bill.get("work_content"), "billWorkContent"),
+    )
+    row = 2
+    for title, value, object_name in rows:
+        grid.addWidget(cell(title, "billSheetHeader", wrap=False), row, 0, 1, 3)
+        grid.addWidget(cell(value, object_name), row + 1, 0, 1, 3)
+        row += 2
+    return frame
 
 
 def _pricing_summary_row(kind: str, item: dict) -> QFrame:
@@ -119,7 +186,11 @@ def _pricing_summary_row(kind: str, item: dict) -> QFrame:
         unit_label = QLabel(unit)
         unit_label.setObjectName("aiPricingUnit")
         layout.addWidget(unit_label, 0, Qt.AlignmentFlag.AlignTop)
-    layout.addWidget(_copy_row_button(item), 0, Qt.AlignmentFlag.AlignTop)
+    layout.addWidget(
+        _copy_bill_row_button(item) if kind == "清单" else _copy_row_button(item),
+        0,
+        Qt.AlignmentFlag.AlignTop,
+    )
     return row
 
 
@@ -471,11 +542,6 @@ class MessageFeed(QWidget):
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
         proposals = result.get("proposals") or []
-        bill_records = {
-            str(value.get("record_id") or ""): value
-            for value in result.get("bills") or []
-            if isinstance(value, dict) and value.get("record_id")
-        }
         quota_records = {
             str(value.get("record_id") or ""): value
             for value in result.get("quotas") or []
@@ -510,7 +576,7 @@ class MessageFeed(QWidget):
             rank.setAlignment(Qt.AlignmentFlag.AlignCenter)
             rank.setFixedSize(28, 24)
             title_row.addWidget(rank)
-            line = QLabel(item_title)
+            line = QLabel("工程量清单")
             line.setObjectName("proposalTitle")
             line.setFont(_font(14, QFont.Weight.DemiBold))
             line.setWordWrap(True)
@@ -518,16 +584,15 @@ class MessageFeed(QWidget):
             status = QLabel(_proposal_status(proposal))
             status.setObjectName("proposalStatus")
             title_row.addWidget(status)
-            bill_source = bill_records.get(str(proposal.get("bill_record_id") or ""), {})
             title_row.addWidget(
-                _copy_row_button(
+                _copy_bill_row_button(
                     {
                         "code": code,
-                        "title": item_title,
+                        "name": item_title,
+                        "feature_description": proposal.get("bill_feature_description"),
                         "unit": proposal.get("bill_unit"),
-                        "version": bill_source.get("edition") or result.get("standard_edition"),
-                        "discipline": bill_source.get("discipline") or result.get("discipline"),
-                        "pdf_page": bill_source.get("pdf_page"),
+                        "calculation_rule": proposal.get("bill_calculation_rule"),
+                        "work_content": proposal.get("bill_work_content"),
                     }
                 )
             )
@@ -536,6 +601,18 @@ class MessageFeed(QWidget):
             meta.setObjectName("secondaryText")
             meta.setWordWrap(True)
             row_layout.addWidget(meta)
+            row_layout.addWidget(
+                _bill_sheet(
+                    {
+                        "code": code,
+                        "name": item_title,
+                        "unit": proposal.get("bill_unit"),
+                        "feature_description": proposal.get("bill_feature_description"),
+                        "calculation_rule": proposal.get("bill_calculation_rule"),
+                        "work_content": proposal.get("bill_work_content"),
+                    }
+                )
+            )
             for quota in proposal.get("quota_lines") or []:
                 quota_row = QFrame()
                 quota_row.setObjectName("quotaLine")
@@ -672,6 +749,11 @@ class MessageFeed(QWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        bill = dict(view.get("bill") or {})
+        if view.get("has_details") and bill.get("code") != "未获取到":
+            layout.addSpacing(4)
+            layout.addWidget(_bill_sheet(bill))
+
         question = view.get("question")
         if isinstance(question, dict):
             prompt = QLabel(str(question.get("prompt") or f"请确认{question.get('label') or '关键信息'}"))
@@ -772,7 +854,6 @@ class MessageFeed(QWidget):
         details_layout = QVBoxLayout(details)
         details_layout.setContentsMargins(12, 9, 12, 9)
         details_layout.setSpacing(6)
-        bill = dict(view.get("bill") or {})
         for label_text, value in (("清单名称", bill.get("name")), ("清单编码", bill.get("code")), ("清单单位", bill.get("unit")), ("匹配来源", bill.get("sources"))):
             detail = QLabel(f"{label_text}  ·  {value or '未获取到'}")
             detail.setObjectName("aiDetailLine")

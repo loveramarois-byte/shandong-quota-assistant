@@ -202,6 +202,21 @@ def result_markdown(result: dict, selections: dict | None = None, ai_text: str |
             item = primary.get(key)
             if item:
                 lines.append(f"- {label}：{item.get('code', '')} {item.get('title', '')}（{item.get('unit') or '单位未标注'}）")
+    proposals = [value for value in result.get("proposals") or [] if isinstance(value, dict) and value.get("bill_record_id")]
+    if proposals:
+        lines.extend(["", "## 工程量清单"])
+        for proposal in proposals:
+            lines.append(
+                f"- {proposal.get('bill_code') or '未确认'} {proposal.get('bill_title') or '未命名'}"
+                f"（{proposal.get('bill_unit') or '单位未标注'}）"
+            )
+            for label, key in (
+                ("项目特征描述", "bill_feature_description"),
+                ("工程量计算规则", "bill_calculation_rule"),
+                ("工作内容", "bill_work_content"),
+            ):
+                if proposal.get(key):
+                    lines.append(f"  {label}：{_display_text(proposal.get(key), 800)}")
     for group, title, kind in (("bills", "清单候选", "bill"), ("quotas", "定额候选", "quota"), ("links", "关联定额", "link"), ("guidance", "规则与换算", "guidance")):
         items = result.get(group) or []
         if not items:
@@ -667,6 +682,24 @@ class ProposalCard(ctk.CTkFrame):
             str(self.proposal.get("bill_unit") or ""),
             "accent" if bill_id else "text_muted",
         )
+        for label, key in (
+            ("项目特征描述", "bill_feature_description"),
+            ("工程量计算规则", "bill_calculation_rule"),
+            ("工作内容", "bill_work_content"),
+        ):
+            value = str(self.proposal.get(key) or "").strip()
+            if value:
+                detail = self._label(
+                    self.content,
+                    text=f"{label} · {value}",
+                    text_color=c.text_secondary,
+                    font=self.tokens.font(self.tokens.typography.meta),
+                    anchor="w",
+                    justify="left",
+                    wraplength=self._wrap_width,
+                    _tone="text_secondary",
+                )
+                detail.pack(fill="x", pady=(2, 4))
         quota_lines = self.proposal.get("quota_lines") or []
         if quota_lines:
             for line in quota_lines:

@@ -131,6 +131,10 @@ class PricingProposal:
     bill_code: str = ""
     bill_title: str = ""
     bill_unit: str = ""
+    bill_characteristics: str = ""
+    bill_feature_description: str = ""
+    bill_calculation_rule: str = ""
+    bill_work_content: str = ""
     quota_lines: tuple[QuotaSelection, ...] = field(default_factory=tuple)
     review_candidates: tuple[QuotaSelection, ...] = field(default_factory=tuple)
     assumptions: tuple[str, ...] = field(default_factory=tuple)
@@ -153,6 +157,10 @@ class PricingProposal:
             "bill_code": self.bill_code,
             "bill_title": self.bill_title,
             "bill_unit": self.bill_unit,
+            "bill_characteristics": self.bill_characteristics,
+            "bill_feature_description": self.bill_feature_description,
+            "bill_calculation_rule": self.bill_calculation_rule,
+            "bill_work_content": self.bill_work_content,
             "quota_lines": [value.to_dict() for value in self.quota_lines],
             "review_candidates": [value.to_dict() for value in self.review_candidates],
             "assumptions": list(self.assumptions),

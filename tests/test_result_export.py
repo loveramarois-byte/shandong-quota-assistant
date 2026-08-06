@@ -51,6 +51,9 @@ class ExportTests(unittest.TestCase):
             "proposals": [{
                 "work_item_id": "W1", "confirmed": False, "status": "ready_for_review",
                 "bill_record_id": "bill:1", "bill_code": "0101", "bill_title": "测试清单", "bill_unit": "m2",
+                "bill_feature_description": "材料品种：SBS卷材\n厚度：4mm",
+                "bill_calculation_rule": "按设计图示尺寸以面积计算",
+                "bill_work_content": "基层处理；铺贴卷材",
                 "quota_lines": [{"record_id": "quota:1", "role": "main", "code": "1-1", "title": "测试定额", "unit": "10m2", "evidence_refs": ["R2"]}],
                 "evidence_refs": ["R1"], "evidence_pages": ["清单第1页", "定额第2页"], "evidence_located": True, "unresolved_question_ids": [], "hard_conflicts": [],
             }],
@@ -62,6 +65,13 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(len(confirmed_proposal_payload(proposal_result)["proposals"]), 1)
         self.assertIn("假设/换算", proposal_csv(proposal_result)[0])
         self.assertIn("资料依据", proposal_csv(proposal_result)[0])
+        self.assertIn("项目特征描述", proposal_csv(proposal_result)[0])
+        self.assertIn("工程量计算规则", proposal_csv(proposal_result)[0])
+        self.assertIn("工作内容", proposal_csv(proposal_result)[0])
+        header = proposal_csv(proposal_result)[0]
+        bill_row = proposal_csv(proposal_result)[1]
+        self.assertIn("材料品种：SBS卷材", bill_row[header.index("项目特征描述")])
+        self.assertEqual(bill_row[header.index("工程量计算规则")], "按设计图示尺寸以面积计算")
 
     def test_confirmed_structured_proposal_exports_without_pdf_evidence(self):
         result = {

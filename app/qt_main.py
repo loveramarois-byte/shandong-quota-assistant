@@ -584,6 +584,10 @@ class QuotaQtApp(QMainWindow):
         #proposalRow {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px; }}
         #rankBadge {{ color: {c.accent}; background: transparent; border: 0; font-family: Consolas; font-size: 11px; font-weight: 500; }}
         #proposalTitle {{ color: {c.text}; }}
+        #billSheet {{ background: {c.elevated}; border: 1px solid {c.border}; border-radius: 4px; }}
+        #billSheetHeader {{ color: {c.text_muted}; background: {c.subtle}; border: 0; border-bottom: 1px solid {c.border}; padding: 6px 8px; font-size: 11px; font-weight: 500; }}
+        #billSheetValue, #billFeatureDescription, #billCalculationRule, #billWorkContent {{ color: {c.text}; background: transparent; border: 0; border-bottom: 1px solid {c.border}; padding: 8px; font-size: 12px; }}
+        #billFeatureDescription {{ color: {c.text}; font-weight: 500; }}
         #quotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}
