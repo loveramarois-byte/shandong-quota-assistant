@@ -72,7 +72,7 @@ def _pricing_cases() -> list[DrillCase]:
         ("建筑", "土方回填，机械夯实", "building", None, None),
         ("建筑", "平整场地", "building", None, None),
         ("建筑", "M5混合砂浆砌筑240mm实心砖墙", "building", None, None),
-        ("建筑", "现浇C30混凝土矩形柱", "building", None, None),
+        ("建筑", "现浇C30混凝土矩形柱", "building", "010502006-000", "5-1-15"),
         ("建筑", "现浇C30混凝土有梁板", "building", None, None),
         ("建筑", "HRB400钢筋直径20mm绑扎", "building", None, None),
         ("建筑", "外墙20mm厚水泥砂浆抹灰", "building", None, None),
@@ -93,19 +93,19 @@ def _pricing_cases() -> list[DrillCase]:
         ("安装", "PVC20电线管暗配", "installation", "030412001-000", None),
         ("安装", "BV2.5平方铜芯线管内穿线", "installation", None, None),
         ("安装", "YJV电力电缆5×16敷设", "installation", None, None),
-        ("安装", "室内PPR给水管DN25热熔连接", "installation", None, None),
-        ("安装", "室内PVC排水管DN110粘接", "installation", None, None),
+        ("安装", "室内PPR给水管DN25热熔连接", "installation", "031001008-000", "10-1-214"),
+        ("安装", "室内PVC排水管DN110粘接", "installation", "031001008-000", "10-1-263"),
         ("安装", "镀锌钢管DN100消防管道安装，沟槽连接", "installation", None, None),
-        ("安装", "消火栓箱安装", "installation", None, None),
-        ("安装", "自动喷淋喷头安装", "installation", None, None),
-        ("安装", "桥架300×100安装", "installation", None, None),
-        ("安装", "配电箱安装，暗装", "installation", None, None),
+        ("安装", "消火栓箱安装", "installation", "030901010-000", None),
+        ("安装", "自动喷淋喷头安装", "installation", "030901003-000", "9-1-46"),
+        ("安装", "桥架300×100安装", "installation", "030412003-000", None),
+        ("安装", "配电箱安装，暗装", "installation", "030402011-000", "4-2-87"),
         ("安装", "矩形镀锌钢板风管安装", "installation", None, None),
         ("安装", "橡塑管道保温30mm厚", "installation", None, None),
-        ("安装", "LED吸顶灯安装", "installation", None, None),
+        ("安装", "LED吸顶灯安装", "installation", "030413001-000", "4-14-1"),
         # 市政：道路、排水、构筑物
         ("市政", "道路水泥稳定碎石基层18cm厚", "municipal", "040202014-000", "2-1-18"),
-        ("市政", "沥青混凝土路面4cm厚", "municipal", None, None),
+        ("市政", "沥青混凝土路面4cm厚", "municipal", "040203006-000", "2-2-37"),
         ("市政", "级配碎石基层20cm厚", "municipal", None, None),
         ("市政", "道路混凝土侧石安装", "municipal", None, None),
         ("市政", "市政雨水管道DN600铺设", "municipal", None, None),
@@ -150,8 +150,40 @@ def _pricing_cases() -> list[DrillCase]:
             "expected_bill": bill,
             "expected_quota": quota,
         }
-        if query == "屋顶防水，材料还没定":
-            data.update(expected_status="needs_clarification", expected_question_field="material")
+        expectation_overrides = {
+            "屋顶防水，材料还没定": {
+                "expected_status": "needs_clarification",
+                "expected_question_field": "material",
+            },
+            "消火栓箱安装": {
+                "expected_status": "needs_clarification",
+                "expected_question_field": "hydrant_spec",
+                "forbidden_bills": ["030101003-000"],
+            },
+            "自动喷淋喷头安装": {
+                "expected_status": "needs_clarification",
+                "expected_question_field": "diameter",
+                "forbidden_bills": ["030101003-000"],
+            },
+            "桥架300×100安装": {
+                "expected_status": "needs_clarification",
+                "expected_question_field": "bridge_spec",
+                "forbidden_bills": ["030101003-000"],
+            },
+            "LED吸顶灯安装": {
+                "expected_status": "needs_clarification",
+                "expected_question_field": "diameter",
+                "forbidden_bills": ["030101003-000"],
+            },
+            "沥青混凝土路面4cm厚": {
+                "expected_status": "needs_clarification",
+                "expected_question_field": "method",
+                "forbidden_bills": ["040203007-000"],
+            },
+            "室内PPR给水管DN25热熔连接": {"forbidden_bills": ["031001007-000"]},
+            "室内PVC排水管DN110粘接": {"forbidden_bills": ["031002013-000", "031001001-000"]},
+        }
+        data.update(expectation_overrides.get(query, {}))
         axes = ("ease_of_use", "maturity", "novice") if group == "小白" else ("ease_of_use", "maturity")
         cases.append(DrillCase(
             id=f"P{index:03d}",
@@ -353,6 +385,10 @@ def _pricing_run(case: DrillCase) -> tuple[bool, list[str], dict[str, Any]]:
     proposal_bills = {str(value.get("bill_code") or "") for value in result.get("proposals") or []}
     if expected_bill and expected_bill not in proposal_bills:
         errors.append(f"主方案清单不是 {expected_bill}")
+    forbidden_bills = {str(value) for value in data.get("forbidden_bills") or []}
+    forbidden_bill_hits = sorted(proposal_bills & forbidden_bills)
+    if forbidden_bill_hits:
+        errors.append("出现禁止的错误清单：" + ", ".join(forbidden_bill_hits))
     expected_quota = data.get("expected_quota")
     proposal_quotas = {
         str(line.get("code") or "")

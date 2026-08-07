@@ -1,0 +1,2207 @@
+{
+  "schema_version": 2,
+  "app_version": "0.9.4",
+  "platform": "win32",
+  "catalogue": {
+    "quotas": 61807,
+    "bills": 53441,
+    "resources": 748156
+  },
+  "warmup_ms": 1753.2,
+  "api_probe_ms": 6518.4,
+  "api_connectivity": {
+    "deepseek": {
+      "configured": true,
+      "status": "connected",
+      "models": 2,
+      "selected_model": "deepseek-v4-flash",
+      "fallback_models": false,
+      "elapsed_ms": 4043.9
+    },
+    "zhipu": {
+      "configured": false,
+      "status": "unconfigured",
+      "models": 0,
+      "elapsed_ms": 0.0
+    },
+    "ccswitch": {
+      "configured": true,
+      "status": "connected",
+      "models": 2,
+      "selected_model": "gpt-5.6-sol",
+      "fallback_models": true,
+      "elapsed_ms": 2472.7
+    }
+  },
+  "case_count": 100,
+  "passed": 100,
+  "failed": 0,
+  "duration_ms": 74395.6,
+  "category_counts": {
+    "实际检索": 75,
+    "AI": 4,
+    "设置": 2,
+    "欢迎": 1,
+    "结果": 3,
+    "输入": 4,
+    "布局": 3,
+    "滚动": 3,
+    "主题": 2,
+    "资源": 1,
+    "运行": 2
+  },
+  "axis_scores": {
+    "ease_of_use": {
+      "label": "易用性",
+      "cases": 85,
+      "passed": 85,
+      "score": 100.0
+    },
+    "maturity": {
+      "label": "成熟度",
+      "cases": 86,
+      "passed": 86,
+      "score": 100.0
+    },
+    "novice": {
+      "label": "新手使用",
+      "cases": 24,
+      "passed": 24,
+      "score": 100.0
+    },
+    "api_connectivity": {
+      "label": "API 连通性",
+      "cases": 5,
+      "passed": 5,
+      "score": 100.0
+    },
+    "ui_clarity": {
+      "label": "UI 直观性",
+      "cases": 9,
+      "passed": 9,
+      "score": 100.0
+    },
+    "simplicity": {
+      "label": "简洁一目了然",
+      "cases": 5,
+      "passed": 5,
+      "score": 100.0
+    }
+  },
+  "latency_ms": {
+    "p50": 828.1,
+    "p95": 1851.5,
+    "max": 1981.3
+  },
+  "scope_note": "100 次是在 Windows 实机和完整结构化山东资料库上执行的产品回归；它验证流程、召回、专业边界和关键样例，不等于工程计价准确率证明。",
+  "results": [
+    {
+      "id": "P001",
+      "category": "实际检索/建筑",
+      "title": "屋面SBS改性沥青卷材防水3mm，两道，热熔",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 948.5,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010902001-000"
+        ],
+        "main_quota_codes": [
+          "9-2-10"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P002",
+      "category": "实际检索/建筑",
+      "title": "地下室外墙SBS卷材防水4mm，热熔",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 798.5,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010903001-000"
+        ],
+        "main_quota_codes": [
+          "9-2-11"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P003",
+      "category": "实际检索/建筑",
+      "title": "楼地面聚氨酯涂膜防水2mm",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 569.3,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010904002-000"
+        ],
+        "main_quota_codes": [
+          "9-2-47"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P004",
+      "category": "实际检索/建筑",
+      "title": "基础C15混凝土垫层100mm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1408.5,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010501001-000"
+        ],
+        "main_quota_codes": [
+          "2-1-28"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P005",
+      "category": "实际检索/建筑",
+      "title": "楼地面C15细石混凝土垫层80mm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 989.7,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010501002-000"
+        ],
+        "main_quota_codes": [
+          "2-1-28"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P006",
+      "category": "实际检索/建筑",
+      "title": "人工挖沟槽土方，三类土，深度2.5m",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 451.6,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010102002-000"
+        ],
+        "main_quota_codes": [
+          "1-2-9"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P007",
+      "category": "实际检索/建筑",
+      "title": "机械挖基坑土方，普通土，深度3m",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 537.8,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010102001-000"
+        ],
+        "main_quota_codes": [
+          "1-2-43"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P008",
+      "category": "实际检索/建筑",
+      "title": "土方回填，机械夯实",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 313.1,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010102007-000"
+        ],
+        "main_quota_codes": [
+          "1-4-12"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P009",
+      "category": "实际检索/建筑",
+      "title": "平整场地",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 42.7,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P010",
+      "category": "实际检索/建筑",
+      "title": "M5混合砂浆砌筑240mm实心砖墙",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 190.0,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          "010401002-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P011",
+      "category": "实际检索/建筑",
+      "title": "现浇C30混凝土矩形柱",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 891.3,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010502006-000"
+        ],
+        "main_quota_codes": [
+          "5-1-15"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P012",
+      "category": "实际检索/建筑",
+      "title": "现浇C30混凝土有梁板",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 985.5,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P013",
+      "category": "实际检索/建筑",
+      "title": "HRB400钢筋直径20mm绑扎",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 418.2,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          "020414004-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P014",
+      "category": "实际检索/建筑",
+      "title": "外墙20mm厚水泥砂浆抹灰",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 665.5,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P015",
+      "category": "实际检索/建筑",
+      "title": "内墙乳胶漆两遍",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 628.3,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P016",
+      "category": "实际检索/建筑",
+      "title": "外墙80mm挤塑板保温",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 446.3,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          "010404002-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P017",
+      "category": "实际检索/建筑",
+      "title": "屋面水泥砂浆找平层20mm",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 656.3,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "011101006-000"
+        ],
+        "main_quota_codes": [
+          "11-1-1"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P018",
+      "category": "实际检索/建筑",
+      "title": "楼地面水泥砂浆面层20mm",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 657.7,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "011101001-000"
+        ],
+        "main_quota_codes": [
+          "11-2-1"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P019",
+      "category": "实际检索/建筑",
+      "title": "现浇混凝土梁模板",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 849.7,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P020",
+      "category": "实际检索/建筑",
+      "title": "外脚手架搭设",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 611.7,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "011601001-000"
+        ],
+        "main_quota_codes": [
+          "17-1-1"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "scaffold_spec"
+        ]
+      }
+    },
+    {
+      "id": "P021",
+      "category": "实际检索/建筑",
+      "title": "拆除240mm砖墙",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1065.4,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010401002-000"
+        ],
+        "main_quota_codes": [
+          "4-1-4"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P022",
+      "category": "实际检索/建筑",
+      "title": "基础三七灰土垫层300mm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 645.5,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010501001-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 1,
+        "question_fields": [
+          "material_application"
+        ]
+      }
+    },
+    {
+      "id": "P023",
+      "category": "实际检索/建筑",
+      "title": "散水C20混凝土100mm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1046.4,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010202005-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 1,
+        "question_fields": [
+          "distance"
+        ]
+      }
+    },
+    {
+      "id": "P024",
+      "category": "实际检索/建筑",
+      "title": "预制混凝土过梁安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 770.3,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P025",
+      "category": "实际检索/建筑",
+      "title": "010501001",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 522.9,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010501001-000"
+        ],
+        "main_quota_codes": [
+          "2-1-28"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "critical_condition"
+        ]
+      }
+    },
+    {
+      "id": "P026",
+      "category": "实际检索/安装",
+      "title": "JDG20电气配管，砖混结构暗配",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1879.0,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "030412001-000"
+        ],
+        "main_quota_codes": [
+          "4-12-8"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P027",
+      "category": "实际检索/安装",
+      "title": "KBG16电气配管，吊顶内明配",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1610.3,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "030412001-000"
+        ],
+        "main_quota_codes": [
+          "4-12-1"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P028",
+      "category": "实际检索/安装",
+      "title": "PVC20电线管暗配",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1851.5,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "030412001-000"
+        ],
+        "main_quota_codes": [
+          "4-12-155"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P029",
+      "category": "实际检索/安装",
+      "title": "BV2.5平方铜芯线管内穿线",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1128.0,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P030",
+      "category": "实际检索/安装",
+      "title": "YJV电力电缆5×16敷设",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 605.5,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030409001-000"
+        ],
+        "main_quota_codes": [
+          "4-9-106"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "cross_section"
+        ]
+      }
+    },
+    {
+      "id": "P031",
+      "category": "实际检索/安装",
+      "title": "室内PPR给水管DN25热熔连接",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1592.6,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "031001008-000"
+        ],
+        "main_quota_codes": [
+          "10-1-214"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P032",
+      "category": "实际检索/安装",
+      "title": "室内PVC排水管DN110粘接",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1552.6,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "031001008-000"
+        ],
+        "main_quota_codes": [
+          "10-1-263"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P033",
+      "category": "实际检索/安装",
+      "title": "镀锌钢管DN100消防管道安装，沟槽连接",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 667.7,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          "030813011-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P034",
+      "category": "实际检索/安装",
+      "title": "消火栓箱安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1034.3,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030901010-000"
+        ],
+        "main_quota_codes": [
+          "9-1-91"
+        ],
+        "question_count": 2,
+        "question_fields": [
+          "diameter",
+          "hydrant_spec"
+        ]
+      }
+    },
+    {
+      "id": "P035",
+      "category": "实际检索/安装",
+      "title": "自动喷淋喷头安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 828.1,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030901003-000"
+        ],
+        "main_quota_codes": [
+          "9-1-46"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "diameter"
+        ]
+      }
+    },
+    {
+      "id": "P036",
+      "category": "实际检索/安装",
+      "title": "桥架300×100安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1769.5,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030412003-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 1,
+        "question_fields": [
+          "bridge_spec"
+        ]
+      }
+    },
+    {
+      "id": "P037",
+      "category": "实际检索/安装",
+      "title": "配电箱安装，暗装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 344.4,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "030402011-000"
+        ],
+        "main_quota_codes": [
+          "4-2-87"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P038",
+      "category": "实际检索/安装",
+      "title": "矩形镀锌钢板风管安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1594.6,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030702003-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 1,
+        "question_fields": [
+          "material_application"
+        ]
+      }
+    },
+    {
+      "id": "P039",
+      "category": "实际检索/安装",
+      "title": "橡塑管道保温30mm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1358.7,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "031208002-000"
+        ],
+        "main_quota_codes": [
+          "12-4-100"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "diameter"
+        ]
+      }
+    },
+    {
+      "id": "P040",
+      "category": "实际检索/安装",
+      "title": "LED吸顶灯安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 576.0,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030413001-000"
+        ],
+        "main_quota_codes": [
+          "4-14-1"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "diameter"
+        ]
+      }
+    },
+    {
+      "id": "P041",
+      "category": "实际检索/市政",
+      "title": "道路水泥稳定碎石基层18cm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 990.8,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "040202014-000"
+        ],
+        "main_quota_codes": [
+          "2-1-18"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P042",
+      "category": "实际检索/市政",
+      "title": "沥青混凝土路面4cm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1313.8,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "040203006-000"
+        ],
+        "main_quota_codes": [
+          "2-2-37"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "method"
+        ]
+      }
+    },
+    {
+      "id": "P043",
+      "category": "实际检索/市政",
+      "title": "级配碎石基层20cm厚",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 461.4,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "040202016-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 1,
+        "question_fields": [
+          "material_application"
+        ]
+      }
+    },
+    {
+      "id": "P044",
+      "category": "实际检索/市政",
+      "title": "道路混凝土侧石安装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1208.5,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "040303001-000"
+        ],
+        "main_quota_codes": [
+          "3-2-2"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P045",
+      "category": "实际检索/市政",
+      "title": "市政雨水管道DN600铺设",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1853.7,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "040501008-000"
+        ],
+        "main_quota_codes": [
+          "5-1-42"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P046",
+      "category": "实际检索/市政",
+      "title": "砖砌圆形雨水检查井",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 155.3,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P047",
+      "category": "实际检索/市政",
+      "title": "道路机械挖沟槽土方，三类土，深度3m",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 888.0,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "040101002-000"
+        ],
+        "main_quota_codes": [
+          "1-1-104"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P048",
+      "category": "实际检索/市政",
+      "title": "人行道透水砖铺设",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 213.9,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "040204001-000"
+        ],
+        "main_quota_codes": [
+          "2-3-2"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P049",
+      "category": "实际检索/市政",
+      "title": "路床整形碾压",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 343.3,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P050",
+      "category": "实际检索/市政",
+      "title": "道路标线施工",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 929.2,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P051",
+      "category": "实际检索/园林",
+      "title": "栽植香樟，土球直径80cm",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 616.0,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "050103001-000"
+        ],
+        "main_quota_codes": [
+          "1-2-32"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P052",
+      "category": "实际检索/园林",
+      "title": "栽植乔木，裸根，胸径8cm",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 913.4,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "050103001-000"
+        ],
+        "main_quota_codes": [
+          "1-2-41"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P053",
+      "category": "实际检索/园林",
+      "title": "栽植灌木，冠幅1.2m",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1167.2,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "050103002-000"
+        ],
+        "main_quota_codes": [
+          "1-2-68"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P054",
+      "category": "实际检索/园林",
+      "title": "铺种草坪",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 957.2,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P055",
+      "category": "实际检索/园林",
+      "title": "栽植绿篱，高度80cm",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 535.8,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "050103004-000"
+        ],
+        "main_quota_codes": [
+          "1-2-109"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P056",
+      "category": "实际检索/园林",
+      "title": "整理绿化用地",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 37.1,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P057",
+      "category": "实际检索/园林",
+      "title": "园路透水砖铺装",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1335.4,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P058",
+      "category": "实际检索/园林",
+      "title": "树木支撑，三脚桩",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 37.2,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P059",
+      "category": "实际检索/园林",
+      "title": "乔木养护一年",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1176.8,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "050102001-000"
+        ],
+        "main_quota_codes": [
+          "1-1-73"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "plant_spec"
+        ]
+      }
+    },
+    {
+      "id": "P060",
+      "category": "实际检索/园林",
+      "title": "伐除胸径20cm乔木",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 350.7,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          "050101001-000"
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P061",
+      "category": "实际检索/小白",
+      "title": "做防水",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 450.7,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010902001-000"
+        ],
+        "main_quota_codes": [
+          "9-2-23"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "method"
+        ]
+      }
+    },
+    {
+      "id": "P062",
+      "category": "实际检索/小白",
+      "title": "屋顶防水，材料还没定",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 427.6,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010902002-000"
+        ],
+        "main_quota_codes": [
+          "9-2-47"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "material"
+        ]
+      }
+    },
+    {
+      "id": "P063",
+      "category": "实际检索/小白",
+      "title": "垫层100厚",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1469.0,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010501001-000"
+        ],
+        "main_quota_codes": [
+          "2-1-28"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "cushion_location"
+        ]
+      }
+    },
+    {
+      "id": "P064",
+      "category": "实际检索/小白",
+      "title": "基础下面浇一层C15素混凝土，10公分",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1410.0,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010501001-000"
+        ],
+        "main_quota_codes": [
+          "2-1-28"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P065",
+      "category": "实际检索/小白",
+      "title": "砖墙",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1476.7,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "010401002-000"
+        ],
+        "main_quota_codes": [
+          "4-1-4"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P066",
+      "category": "实际检索/小白",
+      "title": "挖沟槽，深2.5米，不知道土类",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 442.4,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010102002-000"
+        ],
+        "main_quota_codes": [
+          "1-2-10"
+        ],
+        "question_count": 2,
+        "question_fields": [
+          "method",
+          "soil_type"
+        ]
+      }
+    },
+    {
+      "id": "P067",
+      "category": "实际检索/小白",
+      "title": "电线管埋墙里，20的JDG",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1981.3,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "030412001-000"
+        ],
+        "main_quota_codes": [
+          "4-12-8"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P068",
+      "category": "实际检索/小白",
+      "title": "卫生间排水管110PVC",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 305.8,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P069",
+      "category": "实际检索/小白",
+      "title": "道路基层18公分水稳",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 697.1,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "040202014-000"
+        ],
+        "main_quota_codes": [
+          "2-1-18"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P070",
+      "category": "实际检索/小白",
+      "title": "种一棵土球80公分的香樟",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1217.9,
+        "decision_status": "ready_for_review",
+        "bill_codes": [
+          "050103001-000"
+        ],
+        "main_quota_codes": [
+          "1-2-32"
+        ],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P071",
+      "category": "实际检索/小白",
+      "title": "屋面防水；外墙保温80mm；内墙刷乳胶漆",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1535.0,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          "",
+          "010404002-000",
+          "010902001-000"
+        ],
+        "main_quota_codes": [
+          "9-2-23"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "method"
+        ]
+      }
+    },
+    {
+      "id": "P072",
+      "category": "实际检索/小白",
+      "title": "C30柱子和梁板一起浇",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 994.8,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "P073",
+      "category": "实际检索/小白",
+      "title": "只知道清单编码030412001",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 1604.0,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "030412001-000"
+        ],
+        "main_quota_codes": [
+          "4-12-1"
+        ],
+        "question_count": 3,
+        "question_fields": [
+          "critical_condition",
+          "diameter",
+          "method"
+        ]
+      }
+    },
+    {
+      "id": "P074",
+      "category": "实际检索/小白",
+      "title": "不知道该选哪个专业的防水",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 759.3,
+        "decision_status": "needs_clarification",
+        "bill_codes": [
+          "010905001-000"
+        ],
+        "main_quota_codes": [
+          "9-2-23"
+        ],
+        "question_count": 1,
+        "question_fields": [
+          "method"
+        ]
+      }
+    },
+    {
+      "id": "P075",
+      "category": "实际检索/小白",
+      "title": "人工挖土，不外运",
+      "axes": [
+        "ease_of_use",
+        "maturity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "elapsed_ms": 338.4,
+        "decision_status": "no_reliable_match",
+        "bill_codes": [
+          ""
+        ],
+        "main_quota_codes": [],
+        "question_count": 0,
+        "question_fields": []
+      }
+    },
+    {
+      "id": "S001",
+      "category": "AI/未连接",
+      "title": "未配置 AI 时明确保留本地模式",
+      "axes": [
+        "api_connectivity",
+        "ease_of_use"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "AI 未连接 · 可先使用本地资料",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S002",
+      "category": "AI/DeepSeek",
+      "title": "已配置 DeepSeek 完成真实模型读取与对话",
+      "axes": [
+        "api_connectivity",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "connected · 2 models",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S003",
+      "category": "AI/智谱",
+      "title": "未配置智谱时准确显示未配置",
+      "axes": [
+        "api_connectivity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "unconfigured",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S004",
+      "category": "AI/ccSwitch",
+      "title": "ccSwitch 可用或给出明确恢复路径",
+      "axes": [
+        "api_connectivity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "connected",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S005",
+      "category": "设置/默认专业",
+      "title": "小白默认不会落入全部专业",
+      "axes": [
+        "novice",
+        "simplicity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "建筑",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S006",
+      "category": "设置/一键连接",
+      "title": "AI 配置只有一个主连接动作",
+      "axes": [
+        "api_connectivity",
+        "novice",
+        "ease_of_use"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "连接并获取模型",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S007",
+      "category": "欢迎/示例",
+      "title": "欢迎页示例不超过三项",
+      "axes": [
+        "novice",
+        "ui_clarity",
+        "simplicity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "3",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S008",
+      "category": "结果/动作",
+      "title": "结果折叠态只保留两个直观动作",
+      "axes": [
+        "ease_of_use",
+        "ui_clarity",
+        "simplicity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "复制方案 / 查看依据",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S009",
+      "category": "输入/DN",
+      "title": "DN25 可提取管径",
+      "axes": [
+        "novice",
+        "ease_of_use"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "25.0",
+        "elapsed_ms": 0.1
+      }
+    },
+    {
+      "id": "S010",
+      "category": "输入/厚度",
+      "title": "18cm 可提取为 180mm",
+      "axes": [
+        "novice",
+        "ease_of_use"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "180.0",
+        "elapsed_ms": 0.1
+      }
+    },
+    {
+      "id": "S011",
+      "category": "输入/分项",
+      "title": "三条口语事项可正确拆分",
+      "axes": [
+        "novice",
+        "ease_of_use"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "3",
+        "elapsed_ms": 0.7
+      }
+    },
+    {
+      "id": "S012",
+      "category": "输入/原文",
+      "title": "施工描述原文不被改写丢失",
+      "axes": [
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "JDG20电气配管暗配",
+        "elapsed_ms": 0.3
+      }
+    },
+    {
+      "id": "S013",
+      "category": "结果/结论",
+      "title": "首屏结论优先给主清单与主定额",
+      "axes": [
+        "ui_clarity",
+        "simplicity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "建议清单 010501001-000 基础垫层，主定额 2-1-28 混凝土垫层 无筋。",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S014",
+      "category": "结果/导出",
+      "title": "本地方案可生成可复制文本",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "事项\t类型\t角色\t编码\t名称\t项目特征描述\t单位\t工程量计算规则\t工作内容\t状态",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S015",
+      "category": "布局/窗口",
+      "title": "150% DPI 初始窗口不重复缩放",
+      "axes": [
+        "ui_clarity",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "(1360, 860)",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S016",
+      "category": "布局/窄窗",
+      "title": "窄窗口保留最小内容边距",
+      "axes": [
+        "ui_clarity",
+        "simplicity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "18",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S017",
+      "category": "布局/长文",
+      "title": "长结果在高 DPI 下限制可读行宽",
+      "axes": [
+        "ui_clarity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "600",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S018",
+      "category": "滚动/标准滚轮",
+      "title": "标准滚轮步长稳定",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "56.0",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S019",
+      "category": "滚动/高精度滚轮",
+      "title": "高精度滚轮保留细粒度",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "-14.0",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S020",
+      "category": "滚动/边缘",
+      "title": "滚动到边缘时允许父容器接管",
+      "axes": [
+        "ease_of_use",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "None",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S021",
+      "category": "主题/对比度",
+      "title": "浅色与深色正文对比度均达 4.5:1",
+      "axes": [
+        "ui_clarity",
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "13.15:1 / 5.82:1 / 14.47:1 / 9.26:1",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S022",
+      "category": "主题/字号",
+      "title": "正文与辅助文字达到可读下限",
+      "axes": [
+        "ui_clarity",
+        "novice"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "15/12",
+        "elapsed_ms": 0.0
+      }
+    },
+    {
+      "id": "S023",
+      "category": "资源/视觉",
+      "title": "Inter 字重与核心 SVG 图标随包提供",
+      "axes": [
+        "maturity",
+        "ui_clarity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "fonts=True, svg=True",
+        "elapsed_ms": 0.7
+      }
+    },
+    {
+      "id": "S024",
+      "category": "运行/数据库",
+      "title": "完整结构化资料库可读",
+      "axes": [
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "2708590592",
+        "elapsed_ms": 0.4
+      }
+    },
+    {
+      "id": "S025",
+      "category": "运行/清单",
+      "title": "资料库发布清单存在",
+      "axes": [
+        "maturity"
+      ],
+      "passed": true,
+      "errors": [],
+      "details": {
+        "detail": "D:\\SoftwareProject\\manifests\\catalog-baseline.json",
+        "elapsed_ms": 0.2
+      }
+    }
+  ]
+}

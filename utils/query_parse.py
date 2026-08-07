@@ -72,6 +72,8 @@ def normalize_trade_description(value: str) -> str:
         text = f"{text} 乔木"
     if re.search(r"基础(?:下|下面|底下)", text) and re.search(r"素?混凝土", text) and "垫层" not in text:
         text = f"{text} 基础垫层"
+    if re.search(r"现浇", text) and re.search(r"(?:矩形)?柱", text) and "钢筋混凝土柱" not in text:
+        text = f"{text} 钢筋混凝土柱"
     if re.search(r"(?:垫层|基层|路面|保温|防水)", text) and not re.search(r"(?:厚度|板厚|壁厚|厚)\s*\d", text):
         text = re.sub(
             r"(?<![A-Za-z\d])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm|毫米|厘米)(?![A-Za-z])",

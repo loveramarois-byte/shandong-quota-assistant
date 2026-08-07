@@ -18,7 +18,10 @@ STOP_TERMS = {"安装", "工程", "定额", "清单", "项目", "山东", "套�
 VALID_QUOTA_EDITIONS = {"2016", "2025"}
 VALID_STANDARD_EDITIONS = {"2013", "2024"}
 TYPE_PRIORITY = {"quota_item": 60, "bill_item": 55, "bill_quota_link": 50, "work_content": 35, "conversion": 35, "chapter_guidance": 30, "page": 10}
-DECISIVE_TITLE_TERMS = {"垫层", "基层", "配管", "暗配", "明配", "给水", "排水", "通风", "沟槽", "管沟", "基坑", "电缆", "管道", "路面", "找平层"}
+DECISIVE_TITLE_TERMS = {
+    "垫层", "基层", "配管", "暗配", "明配", "给水", "排水", "通风", "沟槽", "管沟", "基坑", "电缆", "管道", "路面", "找平层",
+    "桥架", "吸顶灯", "灯具", "喷淋", "喷头", "配电箱", "矩形柱", "圆形柱", "有梁板", "沥青混凝土",
+}
 MAX_QUERY_CHARS = 500
 _BILL_CODE_QUERY_RE = re.compile(r"^\s*(\d{9,12})(?:-\d{3})?\s*$")
 _QUOTA_CODE_QUERY_RE = re.compile(r"^\s*(\d{1,2}(?:-\d{1,3}){1,4})\s*$")
@@ -275,11 +278,14 @@ def _search_chunks_fts(connection: sqlite3.Connection, query: str, *, edition: s
         # text before a decisive title term is seen. Give a few specific
         # Chinese terms their own indexed recall window, then rank everything
         # with the same business scorer below.
-        focused_terms = [
+        focused_terms = list(dict.fromkeys([
+            term for term in DECISIVE_TITLE_TERMS
+            if len(term) >= 3 and term in normalize_query(query)
+        ] + [
             term for term in terms
             if len(term) >= 3 and all("\u3400" <= char <= "\u9fff" for char in term)
-        ][:4]
-        if focused_terms and len(rows) < limit:
+        ]))[:4]
+        if focused_terms:
             by_id = {row["chunk_id"]: row for row in rows}
             for term in focused_terms:
                 by_id.update({row["chunk_id"]: row for row in fetch(f'"{term}"')})

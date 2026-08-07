@@ -473,6 +473,75 @@ class RealCataloguePricingRegressionTests(unittest.TestCase):
         self.assertIn("5-1-15", quotas)
         self.assertNotIn("010506002-000", bills)
 
+    def test_rectangular_column_recalls_cast_in_place_bill_instead_of_precast_installation(self):
+        result, bills, quotas = self._proposal_codes("现浇C30混凝土矩形柱", "building")
+
+        self.assertEqual(result["decision_status"], "ready_for_review")
+        self.assertIn("010502006-000", bills)
+        self.assertIn("5-1-15", quotas)
+        self.assertNotIn("010503001-000", bills)
+
+    def test_bridge_tray_does_not_drift_to_generic_equipment_installation(self):
+        result, bills, quotas = self._proposal_codes("桥架300×100安装", "installation")
+
+        self.assertEqual(result["decision_status"], "needs_clarification")
+        self.assertIn("030412003-000", bills)
+        self.assertFalse(quotas)
+        question = next(value for value in result["clarification_questions"] if value["field"] == "bridge_spec")
+        self.assertEqual(question["options"][:3], ["钢制槽式", "钢制梯式", "钢制托盘式"])
+        self.assertNotIn("030101003-000", bills)
+
+    def test_ceiling_light_selects_lighting_bill_and_asks_fixture_size(self):
+        result, bills, quotas = self._proposal_codes("LED吸顶灯安装", "installation")
+
+        self.assertEqual(result["decision_status"], "needs_clarification")
+        self.assertIn("030413001-000", bills)
+        self.assertIn("4-14-1", quotas)
+        question = next(value for value in result["clarification_questions"] if value["field"] == "diameter")
+        self.assertEqual(question["options"][0], "灯罩直径250mm以内")
+        self.assertNotIn("030101003-000", bills)
+
+    def test_asphalt_surface_never_uses_cement_concrete_bill(self):
+        result, bills, quotas = self._proposal_codes("沥青混凝土路面4cm厚，机械摊铺", "municipal")
+
+        self.assertEqual(result["decision_status"], "ready_for_review")
+        self.assertIn("040203006-000", bills)
+        self.assertIn("2-2-39", quotas)
+        self.assertNotIn("040203007-000", bills)
+
+    def test_ppr_water_pipe_selects_plastic_pipe_instead_of_composite_pipe(self):
+        result, bills, quotas = self._proposal_codes("室内PPR给水管DN25热熔连接", "installation")
+
+        self.assertEqual(result["decision_status"], "ready_for_review")
+        self.assertIn("031001008-000", bills)
+        self.assertIn("10-1-214", quotas)
+        self.assertNotIn("031001007-000", bills)
+
+    def test_pvc_drain_pipe_does_not_drift_to_silencer_or_cast_iron(self):
+        result, bills, quotas = self._proposal_codes("室内PVC排水管DN110粘接", "installation")
+
+        self.assertEqual(result["decision_status"], "ready_for_review")
+        self.assertIn("031001008-000", bills)
+        self.assertIn("10-1-263", quotas)
+        self.assertNotIn("031002013-000", bills)
+        self.assertNotIn("031001001-000", bills)
+
+    def test_recessed_distribution_box_selects_recessed_quota(self):
+        result, bills, quotas = self._proposal_codes("配电箱安装，暗装", "installation")
+
+        self.assertEqual(result["decision_status"], "ready_for_review")
+        self.assertIn("030402011-000", bills)
+        self.assertIn("4-2-87", quotas)
+        self.assertNotIn("4-2-81", quotas)
+
+    def test_hydrant_box_selects_fire_bill_and_asks_mounting_configuration(self):
+        result, bills, _quotas = self._proposal_codes("消火栓箱安装", "installation")
+
+        self.assertEqual(result["decision_status"], "needs_clarification")
+        self.assertIn("030901010-000", bills)
+        self.assertNotIn("030101003-000", bills)
+        self.assertIn("hydrant_spec", {value["field"] for value in result["clarification_questions"]})
+
     def test_newcomer_road_base_wording_selects_water_stabilized_base(self):
         _result, bills, quotas = self._proposal_codes("道路基层18公分水稳", "municipal")
         self.assertIn("040202014-000", bills)

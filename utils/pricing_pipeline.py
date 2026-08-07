@@ -68,6 +68,13 @@ _OBJECT_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("配管", ("配管", "穿线管", "电线管", "导管")),
     ("电缆", ("电缆",)),
     ("风管", ("风管",)),
+    ("桥架", ("桥架", "电缆桥架")),
+    ("灯具", ("灯具", "吸顶灯", "壁灯", "吊灯", "普通灯具", "照明灯")),
+    ("消防喷头", ("喷淋喷头", "水喷淋", "喷淋", "喷头", "消火栓箱", "消火栓")),
+    ("配电箱", ("配电箱", "控制箱", "插座箱")),
+    ("柱构件", ("矩形柱", "圆形柱", "异形柱", "柱子", "柱")),
+    ("梁构件", ("有梁板", "矩形梁", "异形梁", "悬挑梁", "梁板", "梁")),
+    ("板构件", ("有梁板", "无梁板", "平板", "楼板", "板")),
     ("防水", ("防水", "卷材", "涂膜")),
     ("混凝土", ("混凝土", "现浇", "预制")),
     ("道路路面", ("道路", "内部路", "小区路", "混凝土路", "路面")),
@@ -90,6 +97,7 @@ _ACTION_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 _MATERIAL_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("钢导管", ("JDG", "KBG", "紧定式", "扣压式", "钢导管")),
     ("塑料导管", ("PVC电线管", "PVC导管", "塑料管", "塑料导管")),
+    ("塑料管材", ("PPR", "PVC", "PE", "PVC排水管", "PVC给水管", "PE管", "塑料给水管", "塑料排水管", "塑料管")),
     ("镀锌钢管", ("SC管", "镀锌钢管")),
     ("橡塑", ("橡塑",)),
     ("挤塑板", ("挤塑板", "xps")),
@@ -312,6 +320,7 @@ def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: 
     source = _normalized_trade_text(work_item.search_text())
     target_title = _normalized_trade_text(str(candidate.get("title") or ""))
     target = _normalized_trade_text(f"{candidate.get('title') or ''} {candidate.get('condition_text') or ''}")
+    target_work_content = _normalized_trade_text(str(candidate.get("work_content") or ""))
     source_objects = _family_hits(source, _OBJECT_FAMILIES)
     target_objects = _family_hits(target, _OBJECT_FAMILIES)
     source_actions = _family_hits(source, _ACTION_FAMILIES)
@@ -324,7 +333,11 @@ def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: 
     target_materials = _family_hits(target, _MATERIAL_GROUPS)
     conflicts: list[str] = []
 
-    exclusive_objects = {"涂饰", "抹灰", "保温", "给水管道", "排水管道", "配管", "电缆", "风管", "防水", "砌筑", "乔木", "灌木"}
+    exclusive_objects = {
+        "涂饰", "抹灰", "保温", "给水管道", "排水管道", "配管", "电缆", "风管",
+        "桥架", "灯具", "消防喷头", "配电箱", "柱构件", "梁构件", "板构件",
+        "防水", "砌筑", "乔木", "灌木",
+    }
     decisive = source_objects & exclusive_objects
     generic_pipe_ok = bool(
         decisive & {"给水管道", "排水管道"}
@@ -355,12 +368,36 @@ def semantic_conflicts(work_item: WorkItem, candidate: dict[str, Any], *, main: 
         candidate_discipline = str(candidate.get("discipline") or "")
         if candidate_discipline and candidate_discipline != "municipal":
             conflicts.append("专业冲突：道路路面主体项目必须使用市政专业候选")
+        source_is_asphalt = "沥青" in source
+        target_is_asphalt = "沥青" in target
+        source_is_cement = bool(re.search(r"(?:水泥)?混凝土", source))
+        target_is_cement = bool(re.search(r"(?:水泥)?混凝土", target))
+        if source_is_asphalt and target_is_cement and not target_is_asphalt:
+            conflicts.append("路面材料冲突：描述为沥青混凝土，不得套用水泥混凝土路面")
+        elif source_is_cement and target_is_asphalt and not source_is_asphalt:
+            conflicts.append("路面材料冲突：描述为水泥混凝土，不得套用沥青混凝土路面")
         for specialized in ("隧道", "人行道", "基层", "铣刨", "板桩", "支撑", "构件运输"):
             if specialized in target_title and specialized not in source:
                 conflicts.append(f"道路类型冲突：候选为{specialized}专用项目，施工描述未说明该做法")
                 break
+    structural_source = bool(re.search(r"(?:柱|梁|板)", source))
+    if structural_source and "钢筋" in target_title and "钢筋" not in source:
+        conflicts.append("构件类型冲突：描述为混凝土构件，不得套用钢筋制作项目")
+    if structural_source and re.search(r"琉璃|木构|钢结构", target_title) and "琉璃" not in source and "木" not in source and "钢结构" not in source:
+        conflicts.append("构件材料冲突：描述未说明琉璃、木构或钢结构做法")
+    if "现浇" in source and re.search(r"构件就位|安装", target_work_content) and "浇筑" not in target_work_content:
+        conflicts.append("施工方式冲突：现浇构件不得套用预制构件安装清单")
     if source_objects & {"给水管道", "排水管道"} and re.search(r"制粉|原煤|送粉|烟道|风道|煤管|通风|燃气|蒸汽|油管|气体驱动", target):
         conflicts.append("介质用途冲突：给排水管道不得套用制粉、风道、燃气、蒸汽或工艺管道子目")
+    if source_objects & {"给水管道", "排水管道"} and "塑料管材" in source_materials and re.search(r"钢管|铜管|铸铁管|复合管", target_title):
+        conflicts.append("管材冲突：PPR、PVC或PE塑料管不得套用钢管、铜管、铸铁管或复合管清单")
+    if source_objects & {"给水管道", "排水管道"}:
+        for accessory in ("消声器", "阻火圈", "伸缩节", "清扫口", "地漏"):
+            if accessory in target_title and accessory not in source:
+                conflicts.append(f"管道对象冲突：描述为管道主体，不得套用{accessory}附件清单")
+                break
+    if "暗装" in source and re.search(r"落地式|明装", target_title):
+        conflicts.append("安装方式冲突：暗装或嵌入式设备不得套用落地式、明装子目")
     return list(dict.fromkeys(conflicts))
 
 
@@ -494,9 +531,11 @@ def _link_relevance(link: dict[str, Any], work_item: WorkItem) -> float:
     for method, opposites in {
         "暗配": ("明配", "吊顶内敷设", "钢结构支架配管", "钢索配管"),
         "明配": ("暗配",),
+        "暗装": ("明装", "落地式"),
     }.items():
         if method in source:
-            if method in text:
+            method_matches = method in text or (method == "暗装" and "嵌入式" in text)
+            if method_matches:
                 score += 82
             elif any(value in text for value in opposites):
                 score -= 72
@@ -556,7 +595,9 @@ def _question_from_hint(work_item_id: str, hint: str, index: int, facets: dict[s
         ("material", r"材料|防水类型|卷材|砂浆类型|管材", "本项使用的材料类型是什么？", facets.get("material") or ("钢管", "塑料管", "钢导管", "不确定")),
         ("thickness", r"厚度|厚", "本项设计厚度属于哪个分档？", facets.get("thickness") or ("10mm以内", "10~30mm", "30mm以上", "不确定")),
         ("plant_spec", r"土球|胸径|苗木规格", "该苗木采用哪个土球或胸径规格？", facets.get("plant_spec") or ("土球20cm以内", "土球20~40cm", "土球40cm以上", "不确定")),
-        ("diameter", r"直径|管径|DN", "本项管径或直径属于哪个分档？", facets.get("diameter") or ("DN25以内", "DN25~50", "DN50以上", "不确定")),
+        ("hydrant_spec", r"消火栓.*(?:明装|暗装).*(?:单栓|双栓)", "请选择消火栓箱安装方式和栓口配置。", ("明装单栓", "暗装单栓", "明装双栓", "其他或不确定")),
+        ("bridge_spec", r"桥架.*材质.*结构类型", "请选择桥架材质和结构类型。", ("钢制槽式", "钢制梯式", "钢制托盘式", "其他或不确定")),
+        ("diameter", r"直径|管径|DN", "本项规格或直径属于哪个分档？", facets.get("diameter") or ("DN25以内", "DN25~50", "DN50以上", "不确定")),
         ("layer_combination", r"层数|遍数|每增一遍|增减层", "本项设计遍数如何组合？", ("主项已含设计遍数", "主项加每增一遍", "按定额说明人工确认", "不确定")),
         ("cross_section", r"电缆截面|截面分档", "本项电缆截面是多少？", ("10mm2以内", "10~50mm2", "50mm2以上", "不确定")),
         ("location", r"部位|位置|室内|室外", "本项施工部位在哪里？", ("室内", "室外", "地下或埋地", "不确定")),
@@ -583,6 +624,15 @@ def _questions_for_item(work_item: WorkItem, search_result: dict[str, Any], sele
         "thickness": ("20cm", "25cm", "30cm", "其他厚度")
         if "道路路面" in _family_hits(work_item.search_text(), _OBJECT_FAMILIES)
         else (),
+        "diameter": (
+            ("灯罩直径250mm以内", "灯罩直径300mm以内", "灯罩直径350mm以内", "其他规格")
+            if "灯具" in _family_hits(work_item.search_text(), _OBJECT_FAMILIES)
+            else ("DN50以内", "DN65以内", "DN80以内", "其他规格")
+            if "消火栓" in work_item.source_span
+            else ("DN15以内", "DN20以内", "DN25以内", "其他规格")
+            if "消防喷头" in _family_hits(work_item.search_text(), _OBJECT_FAMILIES)
+            else ()
+        ),
     }
     if work_item.material:
         known_fields.add("material")
@@ -734,6 +784,17 @@ def _assemble_proposal(
         and any(re.search(r"厚度|厚", str(value.get("title") or "")) for value in main_options)
     ):
         extra_hints.append("水泥混凝土路面厚度未明确，会影响厚度增减定额组合")
+    bridge_spec_missing = "桥架" in _family_hits(work_item.search_text(), _OBJECT_FAMILIES) and not re.search(
+        r"钢制|铝合金|玻璃钢|不锈钢|槽式|梯式|托盘式|组合式", work_item.source_span, re.I
+    )
+    if bridge_spec_missing:
+        extra_hints.append("桥架材质和结构类型未明确，请补充钢制、铝合金、玻璃钢以及槽式、梯式或托盘式做法")
+        selected = []
+    if "消火栓" in work_item.source_span and not (
+        re.search(r"明装|暗装|半暗装", work_item.source_span)
+        and re.search(r"单栓|双栓|双阀", work_item.source_span)
+    ):
+        extra_hints.append("消火栓明装或暗装以及单栓或双栓配置未明确")
     method_facets = [value for value in ("热熔", "冷粘", "自粘", "明配", "暗配", "人工", "机械") if any(value in str(link.get("title") or "") for link in main_options[:12])]
     if len(method_facets) > 1 and not any(value in work_item.source_span for value in method_facets):
         extra_hints.append("候选区分" + "/".join(method_facets[:4]) + "施工方法，请补充施工方法")
