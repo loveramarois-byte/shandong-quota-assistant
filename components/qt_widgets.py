@@ -118,34 +118,44 @@ def _bill_sheet(bill: dict) -> QFrame:
     grid.setContentsMargins(0, 0, 0, 0)
     grid.setHorizontalSpacing(0)
     grid.setVerticalSpacing(0)
-    grid.setColumnStretch(0, 2)
-    grid.setColumnStretch(1, 5)
-    grid.setColumnStretch(2, 1)
+    grid.setColumnStretch(0, 1)
+    grid.setColumnStretch(1, 2)
+    grid.setColumnStretch(2, 6)
+    grid.setColumnStretch(3, 1)
 
     def cell(text: object, object_name: str, *, wrap: bool = True) -> QLabel:
-        label = QLabel(str(text or "未明确"))
+        value = str(text or "").strip()
+        label = QLabel(value or "未明确")
         label.setObjectName(object_name)
+        label.setProperty("filled", bool(value))
         label.setWordWrap(wrap)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return label
 
-    for column, title in enumerate(("项目编码", "项目名称", "计量单位")):
-        grid.addWidget(cell(title, "billSheetHeader", wrap=False), 0, column)
-    grid.addWidget(cell(bill.get("code"), "billSheetValue"), 1, 0)
-    grid.addWidget(cell(bill.get("name") or bill.get("title"), "billSheetValue"), 1, 1)
-    grid.addWidget(cell(bill.get("unit"), "billSheetValue"), 1, 2)
+    caption = cell("工程量清单成果", "billSheetCaption", wrap=False)
+    grid.addWidget(caption, 0, 0, 1, 3)
+    caption_state = cell("已填字段", "billSheetState", wrap=False)
+    caption_state.setProperty("filled", all(str(bill.get(key) or "").strip() for key in ("code", "name", "unit")))
+    grid.addWidget(caption_state, 0, 3)
+
+    for column, title in enumerate(("序号", "项目编码", "项目名称", "计量单位")):
+        grid.addWidget(cell(title, "billSheetHeader", wrap=False), 1, column)
+    grid.addWidget(cell(bill.get("serial") or "01", "billSheetValue", wrap=False), 2, 0)
+    grid.addWidget(cell(bill.get("code"), "billSheetValue"), 2, 1)
+    grid.addWidget(cell(bill.get("name") or bill.get("title"), "billSheetValue"), 2, 2)
+    grid.addWidget(cell(bill.get("unit"), "billSheetValue", wrap=False), 2, 3)
 
     rows = (
         ("项目特征描述", bill.get("feature_description"), "billFeatureDescription"),
         ("工程量计算规则", bill.get("calculation_rule"), "billCalculationRule"),
         ("工作内容", bill.get("work_content"), "billWorkContent"),
     )
-    row = 2
+    row = 3
     for title, value, object_name in rows:
-        grid.addWidget(cell(title, "billSheetHeader", wrap=False), row, 0, 1, 3)
-        grid.addWidget(cell(value, object_name), row + 1, 0, 1, 3)
-        row += 2
+        grid.addWidget(cell(title, "billSheetHeader", wrap=False), row, 0, 1, 2)
+        grid.addWidget(cell(value, object_name), row, 2, 1, 2)
+        row += 1
     return frame
 
 
@@ -564,12 +574,12 @@ class MessageFeed(QWidget):
         }
         header = QHBoxLayout()
         header.setSpacing(10)
-        title = QLabel("本地匹配")
+        title = QLabel("工程量清单成果")
         title.setObjectName("resultTitle")
         title.setFont(_font(17, QFont.Weight.DemiBold, display=True))
         header.addWidget(title)
         header.addStretch(1)
-        count = QLabel(f"{len(proposals)} 个方案")
+        count = QLabel(f"{len(proposals)} 个候选方案")
         count.setObjectName("countBadge")
         header.addWidget(count)
         layout.addLayout(header)
@@ -638,9 +648,16 @@ class MessageFeed(QWidget):
             meta.setObjectName("secondaryText")
             meta.setWordWrap(True)
             row_layout.addWidget(meta)
+            evidence_refs = [str(value).strip() for value in proposal.get("evidence_refs") or [] if str(value).strip()]
+            if evidence_refs:
+                evidence = QLabel("资料依据 · " + " / ".join(evidence_refs[:4]))
+                evidence.setObjectName("proposalEvidence")
+                evidence.setWordWrap(True)
+                row_layout.addWidget(evidence)
             row_layout.addWidget(
                 _bill_sheet(
                     {
+                        "serial": f"{index:02d}",
                         "code": code,
                         "name": item_title,
                         "unit": proposal.get("bill_unit"),

@@ -593,9 +593,14 @@ class QuotaQtApp(QMainWindow):
         #rankBadge {{ color: {c.accent}; background: transparent; border: 0; font-family: Consolas; font-size: 11px; font-weight: 500; }}
         #proposalTitle {{ color: {c.text}; }}
         #billSheet {{ background: {c.elevated}; border: 1px solid {c.border}; border-radius: 4px; }}
+        #billSheetCaption {{ color: {c.text}; background: {c.elevated}; border: 0; padding: 9px 10px 6px; font-family: 'Source Han Serif SC'; font-size: 13px; font-weight: 600; }}
+        #billSheetState {{ color: {c.warning}; background: {c.elevated}; border: 0; padding: 9px 10px 6px; font-size: 11px; text-align: right; }}
+        #billSheetState[filled="true"] {{ color: {c.success}; }}
         #billSheetHeader {{ color: {c.text_muted}; background: {c.subtle}; border: 0; border-bottom: 1px solid {c.border}; padding: 6px 8px; font-size: 11px; font-weight: 500; }}
         #billSheetValue, #billFeatureDescription, #billCalculationRule, #billWorkContent {{ color: {c.text}; background: transparent; border: 0; border-bottom: 1px solid {c.border}; padding: 8px; font-size: 12px; }}
+        #billSheetValue[filled="false"], #billFeatureDescription[filled="false"], #billCalculationRule[filled="false"], #billWorkContent[filled="false"] {{ color: {c.warning}; }}
         #billFeatureDescription {{ color: {c.text}; font-weight: 500; }}
+        #proposalEvidence {{ color: {c.text_muted}; font-family: Consolas; font-size: 11px; padding: 1px 0 2px; }}
         #quotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateQuotaLine {{ color: {c.text_secondary}; background: {c.subtle}; border: 0; border-radius: 6px; }}
         #candidateHeading {{ color: {c.text_muted}; font-size: 11px; font-weight: 500; padding-top: 2px; }}

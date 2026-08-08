@@ -127,6 +127,40 @@ class QtThemeTests(unittest.TestCase):
             feature = card.findChild(QLabel, "billFeatureDescription")
             self.assertIsNotNone(feature)
             self.assertIn("SBS防水卷材；4mm", feature.text())
+            self.assertEqual(card.findChild(QLabel, "billSheetCaption").text(), "工程量清单成果")
+            self.assertEqual(
+                [label.text() for label in card.findChildren(QLabel, "billSheetHeader")][:4],
+                ["序号", "项目编码", "项目名称", "计量单位"],
+            )
+            self.assertIsNone(card.findChild(QLabel, "proposalEvidence"))
+        finally:
+            window.close()
+
+    def test_formal_bill_preview_exposes_evidence_without_overloading_the_table(self) -> None:
+        window = QuotaQtApp()
+        try:
+            card = window.feed.add_result(
+                {
+                    "proposals": [
+                        {
+                            "status": "ready_for_review",
+                            "bill_code": "010903001-000",
+                            "bill_title": "墙面卷材防水",
+                            "bill_unit": "m²",
+                            "bill_feature_description": "施工部位：地下室外墙；厚度：4mm",
+                            "bill_calculation_rule": "按设计图示面积计算",
+                            "bill_work_content": "基层处理；铺贴卷材",
+                            "evidence_refs": ["R1", "R18"],
+                        }
+                    ]
+                }
+            )
+            evidence = card.findChild(QLabel, "proposalEvidence")
+            self.assertIsNotNone(evidence)
+            self.assertEqual(evidence.text(), "资料依据 · R1 / R18")
+            serial = card.findChildren(QLabel, "billSheetValue")[0]
+            self.assertEqual(serial.text(), "01")
+            self.assertTrue(bool(serial.property("filled")))
         finally:
             window.close()
 
