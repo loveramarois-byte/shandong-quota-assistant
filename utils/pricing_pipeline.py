@@ -460,13 +460,30 @@ def _bill_relevance(bill: dict[str, Any], work_item: WorkItem) -> float:
     if work_item.material and _normalized_trade_text(work_item.material) in title:
         score += 75 if len(work_item.material) >= 5 else 55
         semantic_hit = True
+    plastic_pipe_source = bool(
+        source_families & {"给水管道", "排水管道"}
+        and "塑料管材" in _family_hits(source, _MATERIAL_GROUPS)
+    )
+    if plastic_pipe_source and ("塑料管" in title or bill_code.startswith("031001008")):
+        # Standard bill catalogs often use the generic title “塑料管”; the
+        # linked quota supplies the indoor/outdoor and connection detail.
+        score += 180
+        semantic_hit = True
+    stable_base_source = bool(re.search(r"基层|水稳|水泥稳定|稳定碎|稳定砾", source))
     if (
         "道路路面" in source_families
         and re.fullmatch(r"水泥混凝土(?:路面)?", title)
         and str(bill.get("code") or "").startswith("040203")
+        and not stable_base_source
     ):
         score += 180
         semantic_hit = True
+    if stable_base_source:
+        if re.search(r"基层|稳定", title) and re.search(r"稳定|碎|砾", title):
+            score += 220
+            semantic_hit = True
+        elif re.search(r"混凝土", title) and not re.search(r"稳定|基层", title):
+            score -= 240
     if _unit_dimension(bill.get("unit")) == "mass" and "钢筋" in title and "钢筋" not in source:
         # A concrete pouring description can lexically resemble a rebar bill
         # such as “现浇混凝土柱钢筋”.  Its mass unit is a decisive mismatch

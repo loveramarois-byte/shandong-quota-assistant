@@ -22,6 +22,7 @@ dist/
 release/
 work/
 install-test-*/
+install-smoke-*/
 *.spec
 !ShandongQuotaAssistant.spec
 *.exe

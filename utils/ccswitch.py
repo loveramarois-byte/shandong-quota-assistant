@@ -38,6 +38,25 @@ class AIRequestConfig:
     api_format: str = "openai"
 
 
+def friendly_ai_error(detail: object, *, provider: str = "") -> str:
+    """Translate transport failures into a clear next action for the user."""
+    text = str(detail or "").strip()
+    lowered = text.lower()
+    selected = normalize_provider(provider)
+    label = provider_config(selected).label
+    if "http 503" in lowered and selected == "ccswitch":
+        return f"{label}已启动，但当前没有可用上游模型（HTTP 503）。请先在 ccSwitch 中启用或登录一个模型，再重新连接。"
+    if "http 502" in lowered and selected == "ccswitch":
+        return f"{label}上游网关暂不可用（HTTP 502）。请检查 ccSwitch 的上游连接后重试。"
+    if "http 401" in lowered or "http 403" in lowered:
+        status = text.split("HTTP", 1)[-1].strip() if "HTTP" in text else "鉴权失败"
+        status = f"HTTP {status}" if status.isdigit() else status
+        return f"{label}拒绝了请求（{status}）。请检查 API Key 和权限。"
+    if "请求失败" in text or "timed out" in lowered or "timeout" in lowered:
+        return f"{label}连接超时或不可达。请检查服务是否运行、地址是否正确后重试。"
+    return text or f"{label}连接失败，请稍后重试。"
+
+
 @dataclass(frozen=True)
 class _AITextResponse:
     text: str

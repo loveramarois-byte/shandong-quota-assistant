@@ -14,7 +14,7 @@ from utils.ai_providers import (
     provider_config,
     provider_key_from_label,
 )
-from utils.ccswitch import EmptyModelListError, fetch_models, probe_ccswitch
+from utils.ccswitch import EmptyModelListError, fetch_models, friendly_ai_error, probe_ccswitch
 from utils.secrets import load_api_key, save_api_key
 from utils.settings import DISCIPLINE_OPTIONS, validate_ai_endpoint
 from .button import DSButton
@@ -514,7 +514,7 @@ class SettingsDialog(ctk.CTkToplevel):
                     status = f"已获取 {len(models)} 个模型，请选择后测试连接。"
                 self.error_label.configure(text=status, text_color=self.tokens.colors.success)
             else:
-                self._show_error(f"获取模型失败：{detail}")
+                self._show_error(f"获取模型失败：{friendly_ai_error(detail, provider=provider)}")
         elif action == "connect":
             self.test_button.set_loading(False)
             self.models_button.set_enabled(True)
@@ -533,13 +533,13 @@ class SettingsDialog(ctk.CTkToplevel):
                 else:
                     self._show_error("连接未返回可用模型。请检查服务地址后重试。")
             else:
-                self._show_error(f"连接失败：{detail}。请检查 API Key、网络和服务地址后重试。")
+                self._show_error(f"连接失败：{friendly_ai_error(detail, provider=provider)}")
         else:
             self.test_button.set_loading(False)
             if ok:
                 self.error_label.configure(text=f"连接成功 · {self.provider.get()} · {self._selected_model()}", text_color=self.tokens.colors.success)
             else:
-                self._show_error(f"连接失败：{detail}")
+                self._show_error(f"连接失败：{friendly_ai_error(detail, provider=provider)}")
         if should_continue_connection_poll(
             closed=self._closed,
             pending_requests=self._pending_requests,

@@ -28,6 +28,23 @@ if ($latestExe) {
     exit 0
 }
 
+# A silent installer keeps its payload in an install-* directory rather than
+# under build/. Prefer the newest installed app when no source-built release
+# is present, so old desktop shortcuts remain usable after a source cleanup.
+$installedCandidates = Get-ChildItem -LiteralPath $projectRoot -Directory -Filter "install-*" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    ForEach-Object {
+        $candidate = Join-Path $_.FullName "山东定额助手.exe"
+        if (Test-Path -LiteralPath $candidate) {
+            Get-Item -LiteralPath $candidate
+        }
+    }
+$installedExe = $installedCandidates | Select-Object -First 1
+if ($installedExe) {
+    Start-Process -FilePath $installedExe.FullName -WorkingDirectory $installedExe.DirectoryName
+    exit 0
+}
+
 $pythonw = Join-Path $projectRoot ".venv\Scripts\pythonw.exe"
 $entry = Join-Path $projectRoot "run.py"
 $database = Join-Path $projectRoot "data\shandong_quota.sqlite"

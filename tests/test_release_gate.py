@@ -41,7 +41,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn("Get-HardLinkCount $stagedDatabase", self.script)
 
     def test_release_version_is_consistent_across_runtime_and_packaging(self):
-        self.assertEqual(APP_VERSION, "0.9.4")
+        self.assertEqual(APP_VERSION, "0.9.5")
         self.assertEqual(self.catalog_manifest["app_version"], APP_VERSION)
         installer = (PROJECT_ROOT / "packaging" / "ShandongQuotaAssistant.iss").read_text(encoding="utf-8-sig")
         version_info = (PROJECT_ROOT / "packaging" / "windows_version_info.txt").read_text(encoding="utf-8-sig")

@@ -9,7 +9,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request
 
-from utils.ccswitch import AIRequestConfig, EmptyModelListError, IncompleteAIResponseError, MAX_RESPONSE_BYTES, _api_key, _base_url, _call_openai, _looks_incomplete, _read_max_tokens, _read_timeout, _request_text, build_ai_request_config, call_ccswitch, fetch_models, is_complete_ai_text, probe_ccswitch
+from utils.ccswitch import AIRequestConfig, EmptyModelListError, IncompleteAIResponseError, MAX_RESPONSE_BYTES, _api_key, _base_url, _call_openai, _looks_incomplete, _read_max_tokens, _read_timeout, _request_text, build_ai_request_config, call_ccswitch, fetch_models, friendly_ai_error, is_complete_ai_text, probe_ccswitch
 
 
 class _Response:
@@ -28,6 +28,18 @@ class _Response:
 
     def geturl(self):
         return self.final_url or "http://127.0.0.1:15721/v1/chat/completions"
+
+
+class FriendlyAiErrorTests(unittest.TestCase):
+    def test_ccswitch_503_explains_how_to_restore_an_upstream_model(self):
+        message = friendly_ai_error("ccSwitch（本机） HTTP 503", provider="ccswitch")
+        self.assertIn("没有可用上游模型", message)
+        self.assertIn("启用或登录一个模型", message)
+
+    def test_direct_provider_auth_error_keeps_status_and_next_action(self):
+        message = friendly_ai_error("智谱 AI HTTP 401", provider="zhipu")
+        self.assertIn("HTTP 401", message)
+        self.assertIn("API Key", message)
 
 
 class CCSwitchTests(unittest.TestCase):

@@ -10,7 +10,6 @@ import csv
 import json
 import logging
 import os
-import re
 import sys
 import threading
 import time
@@ -47,7 +46,7 @@ from utils.ai_structured import (
     validate_structured_ai_response,
 )
 from utils.ai_validate import validate_ai_answer
-from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch, fetch_models, probe_ccswitch
+from utils.ccswitch import AIRequestConfig, build_ai_request_config, call_ccswitch, fetch_models, friendly_ai_error, probe_ccswitch
 from utils.logging_setup import log_exception, setup_logging
 from utils.paths import APP_VERSION, catalog_manifest_path, resource_path
 from utils.pricing_pipeline import analyze_pricing_description, merge_clarification_context, proposal_confirmable
@@ -1055,9 +1054,7 @@ class QuotaQtApp(QMainWindow):
         pending = self._pending.get(request_id) or {}
         self._ai_connection_state = "unavailable"
         self.ai_status.setText(self._ai_status_text())
-        upstream_error = re.search(r"HTTP\s+(502|503)", detail, re.I)
-        if upstream_error and str(self.settings.get("ai_provider") or "") == "ccswitch":
-            detail = f"ccSwitch 上游服务暂不可用（HTTP {upstream_error.group(1)}）"
+        detail = friendly_ai_error(detail, provider=str(self.settings.get("ai_provider") or ""))
         if not pending.get("superseded"):
             self.feed.add_warning(f"AI 暂不可用：{detail}。本地套价草案仍可继续使用。", error=True)
         self._pending.pop(request_id, None)
