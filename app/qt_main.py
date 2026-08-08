@@ -582,6 +582,11 @@ class QuotaQtApp(QMainWindow):
         #statusCard {{ background: transparent; border: 0; border-left: 2px solid {c.accent}; border-radius: 0; }}
         #resultTitle {{ color: {c.text}; font-family: 'Source Han Serif SC'; font-weight: 600; }}
         #countBadge {{ color: {c.text_muted}; background: transparent; border: 0; padding: 4px 0; font-size: 11px; }}
+        #resultCompletion {{ color: {c.text_secondary}; background: {c.subtle}; border: 1px solid {c.border}; border-radius: 5px; }}
+        #resultCompletionItem {{ color: {c.text_secondary}; font-size: 11px; }}
+        #resultCompletionItem[complete="true"] {{ color: {c.success}; font-weight: 500; }}
+        #resultCompletionState {{ color: {c.warning}; background: {c.warning_soft}; border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 500; }}
+        #resultCompletionState[ready="true"] {{ color: {c.success}; background: {c.success_soft}; }}
         #proposalStatus {{ color: {c.text_secondary}; background: {c.subtle}; border-radius: 6px; padding: 4px 8px; font-size: 11px; }}
         #primaryProposal {{ background: {c.surface}; border: 1px solid {c.border}; border-left: 2px solid {c.accent}; border-radius: 8px; }}
         #proposalRow {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px; }}

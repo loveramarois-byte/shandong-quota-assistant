@@ -577,6 +577,28 @@ class MessageFeed(QWidget):
         summary.setObjectName("secondaryText")
         summary.setWordWrap(True)
         layout.addWidget(summary)
+        completion = _result_completion(result)
+        completion_row = QFrame()
+        completion_row.setObjectName("resultCompletion")
+        completion_layout = QHBoxLayout(completion_row)
+        completion_layout.setContentsMargins(10, 7, 10, 7)
+        completion_layout.setSpacing(12)
+        total = int(completion["total"])
+        for label, key in (("清单描述", "bill"), ("项目特征", "feature"), ("计算规则", "rule")):
+            value = QLabel(_completion_label(label, int(completion[key]), total))
+            value.setObjectName("resultCompletionItem")
+            value.setProperty("complete", total > 0 and int(completion[key]) == total)
+            completion_layout.addWidget(value)
+        quota_value = QLabel(_completion_label("定额", int(completion["quota"]), total, singular=True))
+        quota_value.setObjectName("resultCompletionItem")
+        quota_value.setProperty("complete", total > 0 and int(completion["quota"]) == total)
+        completion_layout.addWidget(quota_value)
+        completion_layout.addStretch(1)
+        readiness = QLabel("可直接复核" if total and int(completion["ready"]) == total else "待补条件")
+        readiness.setObjectName("resultCompletionState")
+        readiness.setProperty("ready", bool(total and int(completion["ready"]) == total))
+        completion_layout.addWidget(readiness)
+        layout.addWidget(completion_row)
         for index, proposal in enumerate(proposals[:6], 1):
             row = QFrame()
             row.setObjectName("primaryProposal" if index == 1 else "proposalRow")
@@ -1023,6 +1045,26 @@ def _result_summary(result: dict) -> str:
         result.get("discipline") or result.get("requested_discipline"), "建筑"
     )
     return f"{discipline}专业，识别 {len(items)} 个工作项，形成 {len(proposals)} 个候选方案"
+
+
+def _result_completion(result: dict) -> dict[str, int]:
+    """Summarize whether the local result is ready to become a formal bill row."""
+    proposals = [value for value in result.get("proposals") or [] if isinstance(value, dict)]
+    total = len(proposals)
+    filled = {
+        "bill": sum(bool(str(item.get("bill_title") or "").strip()) for item in proposals),
+        "feature": sum(bool(str(item.get("bill_feature_description") or "").strip()) for item in proposals),
+        "rule": sum(bool(str(item.get("bill_calculation_rule") or "").strip()) for item in proposals),
+        "quota": sum(bool(item.get("quota_lines")) for item in proposals),
+    }
+    ready = sum(str(item.get("status") or "") == "ready_for_review" for item in proposals)
+    return {**filled, "total": total, "ready": ready}
+
+
+def _completion_label(label: str, value: int, total: int, *, singular: bool = False) -> str:
+    if singular:
+        return f"{label} {value}条"
+    return f"{label} {value}/{total}"
 
 
 def _proposal_meta(proposal: dict) -> str:

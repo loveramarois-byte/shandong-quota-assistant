@@ -130,6 +130,39 @@ class QtThemeTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_result_completion_strip_makes_formal_bill_readiness_explicit(self) -> None:
+        window = QuotaQtApp()
+        try:
+            card = window.feed.add_result(
+                {
+                    "discipline": "building",
+                    "proposals": [
+                        {
+                            "status": "ready_for_review",
+                            "bill_title": "墙面卷材防水",
+                            "bill_feature_description": "施工部位：地下室外墙；厚度：4mm",
+                            "bill_calculation_rule": "按设计图示面积计算",
+                            "quota_lines": [{"code": "9-2-11"}],
+                        },
+                        {
+                            "status": "needs_clarification",
+                            "bill_title": "基础垫层",
+                            "bill_feature_description": "",
+                            "bill_calculation_rule": "",
+                            "quota_lines": [],
+                        },
+                    ],
+                }
+            )
+            items = card.findChildren(QLabel, "resultCompletionItem")
+            self.assertEqual([label.text() for label in items], ["清单描述 2/2", "项目特征 1/2", "计算规则 1/2", "定额 1条"])
+            readiness = card.findChild(QLabel, "resultCompletionState")
+            self.assertIsNotNone(readiness)
+            self.assertEqual(readiness.text(), "待补条件")
+            self.assertFalse(bool(readiness.property("ready")))
+        finally:
+            window.close()
+
     def test_candidate_copy_mime_preserves_codes_as_excel_text(self) -> None:
         mime = candidate_row_mime(
             {
